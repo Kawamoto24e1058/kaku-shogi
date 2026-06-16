@@ -30,11 +30,13 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   vsAiMode,
   onToggleVsAi,
 }) => {
-  const logEndRef = useRef<HTMLDivElement>(null);
+  const logContainerRef = useRef<HTMLDivElement>(null);
 
-  // Auto scroll logs
+  // Auto scroll logs internally without scrolling the browser window
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
   }, [logs]);
 
   const getLogColor = (type: string) => {
@@ -164,7 +166,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         <h3 className="cyber-title" style={{ fontSize: '15px', marginBottom: '8px' }}>
           戦術記録ログ
         </h3>
-        <div style={{
+        <div ref={logContainerRef} style={{
           flex: 1,
           background: 'rgba(5, 2, 18, 0.7)',
           borderRadius: '6px',
@@ -191,7 +193,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               <span style={{ color: getLogColor(log.type) }}>{log.message}</span>
             </div>
           ))}
-          <div ref={logEndRef} />
         </div>
       </div>
 
