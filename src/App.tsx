@@ -61,6 +61,19 @@ export const App: React.FC = () => {
   });
 
   const [setupSubPhase, setSetupSubPhase] = useState<'sente_create' | 'gote_create'>('sente_create');
+  const [turnChangeAlert, setTurnChangeAlert] = useState<'sente' | 'gote' | null>(null);
+
+  // ターン交代サイバーアラートのトリガー
+  useEffect(() => {
+    if (state.phase === 'playing' && !state.winner) {
+      setTurnChangeAlert(state.turn);
+      const timer = setTimeout(() => {
+        setTurnChangeAlert(null);
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [state.turn, state.phase, state.winner]);
+
   const [piecesToPlace, setPiecesToPlace] = useState<{ sente: Piece[]; gote: Piece[] }>({
     sente: [],
     gote: [],
@@ -623,7 +636,6 @@ export const App: React.FC = () => {
         row.map((piece, x) => {
           if (
             piece &&
-            !piece.isRevealed &&
             piece.mechanics_type === 'STEALTH_TRAP' &&
             piece.owner !== undefined &&
             (piece.owner === 'sente' || piece.owner === 'gote')
@@ -646,7 +658,9 @@ export const App: React.FC = () => {
                 }
               }
             }
-            if (hasAdjacentOpponent) {
+
+            // 1) 未開示状態で敵が隣接 -> 開示
+            if (!piece.isRevealed && hasAdjacentOpponent) {
               logs.push({
                 id: generateId(),
                 timestamp: new Date().toLocaleTimeString(),
@@ -655,6 +669,18 @@ export const App: React.FC = () => {
                 type: 'ability'
               });
               return { ...piece, isRevealed: true };
+            }
+
+            // 2) 開示状態で周囲に敵が不在 -> 再びステルス化
+            if (piece.isRevealed && !hasAdjacentOpponent) {
+              logs.push({
+                id: generateId(),
+                timestamp: new Date().toLocaleTimeString(),
+                player: piece.owner,
+                message: `🌫️ 【再隠蔽】${piece.owner === 'sente' ? '先手' : '後手'}の『${piece.word}』の周囲から敵が立ち去ったため、再びステルス状態（透明）に戻りました。`,
+                type: 'ability'
+              });
+              return { ...piece, isRevealed: false };
             }
           }
           return piece;
@@ -1563,6 +1589,20 @@ export const App: React.FC = () => {
   return (
     <div className={`app-container ${screenShake ? 'screen-shake' : ''} phase-${state.phase}`}>
       
+      {/* ターン交代サイバーアラート */}
+      {turnChangeAlert && (
+        <div className={`turn-change-overlay ${turnChangeAlert === 'sente' ? 'sente-turn-alert' : 'gote-turn-alert'}`}>
+          <div className="turn-change-content">
+            <div className="turn-change-scanline" />
+            <div className="turn-change-subtitle">SYSTEM STATUS UPDATE</div>
+            <div className="turn-change-title">
+              {turnChangeAlert === 'sente' ? '▲ 先手 (PLAYER) の手番' : '▽ 後手 (AI / OPPONENT) の手番'}
+            </div>
+            <div className="turn-change-bar" />
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="cyber-panel cyan-glow" style={{ padding: '10px 20px', margin: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(10, 5, 28, 0.9)' }}>
         <h1 className="cyber-title app-header-title" style={{ fontSize: '22px' }}>
