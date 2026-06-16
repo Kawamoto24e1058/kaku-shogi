@@ -10,6 +10,8 @@ interface StartScreenProps {
   onJoinRoom: (code: string) => void;
   isWaitingForOpponent: boolean;
   matchmakingError: string;
+  geminiApiKey: string;
+  onSetGeminiApiKey: (key: string) => void;
   onStartGame: () => void;
 }
 
@@ -23,6 +25,8 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   onJoinRoom,
   isWaitingForOpponent,
   matchmakingError,
+  geminiApiKey,
+  onSetGeminiApiKey,
   onStartGame,
 }) => {
   const [inputCode, setInputCode] = useState('');
@@ -243,6 +247,43 @@ export const StartScreen: React.FC<StartScreenProps> = ({
             )}
           </div>
         )}
+
+        {/* Gemini API Key Config */}
+        <div style={{ borderTop: '1px solid rgba(230, 208, 175, 0.1)', paddingTop: '20px' }}>
+          <h3 style={{ fontSize: '15px', color: 'var(--shogi-wood)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>🔑</span> Gemini API 設定
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                type="password"
+                placeholder="AI駆動生成用 Gemini API キーを入力 (AI-xxxxxx)"
+                value={geminiApiKey}
+                onChange={(e) => onSetGeminiApiKey(e.target.value)}
+                style={{
+                  flex: 1,
+                  minWidth: '240px',
+                  background: 'rgba(0,0,0,0.5)',
+                  border: geminiApiKey ? '1px solid rgba(86, 166, 191, 0.6)' : '1px solid rgba(219, 188, 98, 0.4)',
+                  color: '#fff',
+                  padding: '10px 14px',
+                  borderRadius: '3px',
+                  fontSize: '13px',
+                  fontFamily: 'monospace'
+                }}
+              />
+              {import.meta.env.VITE_GEMINI_API_KEY && (
+                <span style={{ fontSize: '11px', color: 'var(--neon-cyan)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span>✓</span> 環境変数から検出済み
+                </span>
+              )}
+            </div>
+            <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.4', fontFamily: 'var(--font-ui)' }}>
+              ※ APIキーはブラウザに安全に保存され、直接Google Gemini APIにのみリクエストを送信するために使用されます。
+              APIキーを設定すると、入力した任意の言葉からAIが自動で独自の能力を動的に生成します。設定しない場合は、オフライン簡易生成モード（テンプレート適用）で動作します。
+            </p>
+          </div>
+        </div>
 
         {/* Shogi Rules and Instructions */}
         <div style={{ borderTop: '1px solid rgba(230, 208, 175, 0.1)', paddingTop: '20px' }}>

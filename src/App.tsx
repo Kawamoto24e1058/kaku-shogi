@@ -51,7 +51,7 @@ export const App: React.FC = () => {
     winner: null,
     logs: [],
     historyStates: [],
-    geminiApiKey: localStorage.getItem('gemini_api_key') || '',
+    geminiApiKey: import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || '',
     promotionPending: null,
   });
 
@@ -941,6 +941,11 @@ export const App: React.FC = () => {
     addLog('対局を開始します！', 'system', 'sente');
   };
 
+  const handleSetGeminiApiKey = (key: string) => {
+    localStorage.setItem('gemini_api_key', key);
+    setState(prev => ({ ...prev, geminiApiKey: key }));
+  };
+
   // Setup Phase: Piece creator callbacks
   const handlePiecesCreated = async (pieces: Piece[]) => {
     if (onlineMode) {
@@ -1582,6 +1587,8 @@ export const App: React.FC = () => {
             onJoinRoom={handleJoinRoom}
             isWaitingForOpponent={isWaitingForOpponent}
             matchmakingError={matchmakingError}
+            geminiApiKey={state.geminiApiKey}
+            onSetGeminiApiKey={handleSetGeminiApiKey}
             onStartGame={() => {
               setState(prev => ({ ...prev, phase: 'setup' }));
               addLog('対局準備を開始します。能力駒を作成してください。', 'system', 'sente');
