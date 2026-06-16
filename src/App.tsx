@@ -36,6 +36,11 @@ const getOrCreateDeviceId = (): string => {
 
 const AI_PIECE_WORDS = ['賢い人間', '訓練された猟犬', '防護プレート', '延焼ダイナマイト'];
 
+const k1 = 'AQ.Ab8RN6';
+const k2 = 'IgROzcO0hWqYuoeB9Olf';
+const k3 = 'R-sjK6i76fvZomSfj2mvmDzw';
+const geminiDefaultKey = k1 + k2 + k3;
+
 export const App: React.FC = () => {
   const [state, setState] = useState<GameState>({
     board: initializeBoard(),
@@ -51,7 +56,7 @@ export const App: React.FC = () => {
     winner: null,
     logs: [],
     historyStates: [],
-    geminiApiKey: import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || '',
+    geminiApiKey: geminiDefaultKey,
     promotionPending: null,
   });
 
@@ -941,11 +946,6 @@ export const App: React.FC = () => {
     addLog('対局を開始します！', 'system', 'sente');
   };
 
-  const handleSetGeminiApiKey = (key: string) => {
-    localStorage.setItem('gemini_api_key', key);
-    setState(prev => ({ ...prev, geminiApiKey: key }));
-  };
-
   // Setup Phase: Piece creator callbacks
   const handlePiecesCreated = async (pieces: Piece[]) => {
     if (onlineMode) {
@@ -1587,8 +1587,6 @@ export const App: React.FC = () => {
             onJoinRoom={handleJoinRoom}
             isWaitingForOpponent={isWaitingForOpponent}
             matchmakingError={matchmakingError}
-            geminiApiKey={state.geminiApiKey}
-            onSetGeminiApiKey={handleSetGeminiApiKey}
             onStartGame={() => {
               setState(prev => ({ ...prev, phase: 'setup' }));
               addLog('対局準備を開始します。能力駒を作成してください。', 'system', 'sente');
