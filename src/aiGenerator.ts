@@ -12,7 +12,7 @@ try {
     if (cachedData) {
       const cacheObj = JSON.parse(cachedData);
       let updated = false;
-      const keysToRemove = ['メタモン', 'スパイ'];
+      const keysToRemove = ['メタモン', 'スパイ', '𰻞𰻞麺'];
       for (const key of keysToRemove) {
         const normalizedKey = key.trim().toLowerCase();
         if (cacheObj[normalizedKey]) {
@@ -22,7 +22,7 @@ try {
       }
       if (updated) {
         localStorage.setItem('shogi_piece_cache', JSON.stringify(cacheObj));
-        console.info('Cleared outdated localStorage piece cache for Metamon and Spy.');
+        console.info('Cleared outdated localStorage piece cache for Metamon, Spy, and BiangBiangMian.');
       }
     }
   }
