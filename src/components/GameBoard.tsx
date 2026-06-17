@@ -52,6 +52,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   onlineMode = false,
   myRole = null,
 }) => {
+  const shouldRotate = onlineMode
+    ? (myRole === 'gote')
+    : (vsAiMode ? false : turn === 'gote');
+
   const prevBoardRef = useRef<Board | null>(null);
   const [damageFlashCells, setDamageFlashCells] = useState<Record<string, boolean>>({});
 
@@ -134,6 +138,17 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     const isActiveTarget = isActiveAbilityHighlight(y, x);
     const isSetupValid = isValidSetupCell(y, x);
     const isFlashActive = damageFlashCells[`${y},${x}`];
+
+    let cellClassName = '';
+    if (isActiveTarget) {
+      if (piece) {
+        if (piece.owner !== turn) {
+          cellClassName = 'ability-target-blue';
+        } else {
+          cellClassName = 'ability-target-yellow';
+        }
+      }
+    }
 
     let cellStyle: React.CSSProperties = {
       width: '100%',
@@ -250,7 +265,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           border: borderStyle,
           boxShadow: boxShadowStyle,
           background: baseBg,
-          transform: piece.owner === 'gote' ? 'rotate(180deg)' : 'none',
+          transform: piece.owner === 'sente' ? 'none' : 'rotate(180deg)',
           transition: 'all 0.2s ease',
           position: 'relative',
           overflow: 'hidden',
@@ -302,7 +317,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          transform: piece.owner === 'gote' ? 'rotate(180deg)' : 'none',
+          transform: piece.owner === 'sente' ? 'none' : 'rotate(180deg)',
           position: 'relative',
           overflow: 'hidden',
           boxSizing: 'border-box',
@@ -436,6 +451,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     return (
       <div
         key={`${y}-${x}`}
+        className={cellClassName}
         style={cellStyle}
         onClick={() => onCellClick(y, x)}
         onTouchEnd={(e) => {
@@ -458,12 +474,29 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         {pieceUI}
         
         {y === 0 && (
-          <div style={{ position: 'absolute', top: '-15px', left: '50%', transform: 'translateX(-50%)', fontSize: '8px', color: 'var(--text-muted)', fontFamily: 'var(--font-cyber)' }}>
+          <div style={{
+            position: 'absolute',
+            top: '-15px',
+            left: '50%',
+            transform: shouldRotate ? 'translateX(-50%) rotate(180deg)' : 'translateX(-50%)',
+            transition: 'transform 0.6s ease-in-out',
+            fontSize: '8px',
+            color: 'var(--text-muted)',
+            fontFamily: 'var(--font-cyber)'
+          }}>
             {9 - x}
           </div>
         )}
         {x === BOARD_SIZE - 1 && (
-          <div style={{ position: 'absolute', right: '-15px', top: '50%', transform: 'translateY(-50%)', fontSize: '8px', color: 'var(--text-muted)' }}>
+          <div style={{
+            position: 'absolute',
+            right: '-15px',
+            top: '50%',
+            transform: shouldRotate ? 'translateY(-50%) rotate(180deg)' : 'translateY(-50%)',
+            transition: 'transform 0.6s ease-in-out',
+            fontSize: '8px',
+            color: 'var(--text-muted)'
+          }}>
             {['一', '二', '三', '四', '五', '六', '七', '八', '九'][y]}
           </div>
         )}
@@ -472,10 +505,32 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      width: '100%',
+      transform: shouldRotate ? 'rotate(180deg)' : 'none',
+      transition: 'transform 0.6s ease-in-out',
+      transformOrigin: 'center center'
+    }}>
       
       {/* Gote Captured Hand */}
-      <div className="cyber-panel" style={{ width: '100%', maxWidth: '520px', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '8px', minHeight: '44px', marginBottom: '8px', border: '1px solid rgba(189,0,255,0.2)', background: 'rgba(189, 0, 255, 0.03)', flexWrap: 'wrap' }}>
+      <div className="cyber-panel" style={{
+        width: '100%',
+        maxWidth: '520px',
+        padding: '6px 10px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        minHeight: '44px',
+        marginBottom: '8px',
+        border: '1px solid rgba(189,0,255,0.2)',
+        background: 'rgba(189, 0, 255, 0.03)',
+        flexWrap: 'wrap',
+        transform: shouldRotate ? 'rotate(180deg)' : 'none',
+        transition: 'transform 0.6s ease-in-out',
+      }}>
         <div style={{ fontSize: '10px', color: 'var(--neon-purple)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
           後手 持ち駒
         </div>
@@ -509,7 +564,20 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       </div>
 
       {/* Shared cooperative pool (Coexistence tray) */}
-      <div className="cyber-panel pink-glow" style={{ width: '100%', maxWidth: '520px', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '8px', minHeight: '44px', marginBottom: '8px', background: 'rgba(255, 0, 127, 0.03)', flexWrap: 'wrap' }}>
+      <div className="cyber-panel pink-glow" style={{
+        width: '100%',
+        maxWidth: '520px',
+        padding: '6px 10px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        minHeight: '44px',
+        marginBottom: '8px',
+        background: 'rgba(255, 0, 127, 0.03)',
+        flexWrap: 'wrap',
+        transform: shouldRotate ? 'rotate(180deg)' : 'none',
+        transition: 'transform 0.6s ease-in-out',
+      }}>
         <div style={{ fontSize: '10px', color: 'var(--neon-pink)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
           共有プール
         </div>
@@ -566,7 +634,21 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       </div>
 
       {/* Sente Captured Hand */}
-      <div className="cyber-panel" style={{ width: '100%', maxWidth: '520px', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '8px', minHeight: '44px', marginTop: '8px', border: '1px solid rgba(0,243,255,0.2)', background: 'rgba(0, 243, 255, 0.03)', flexWrap: 'wrap' }}>
+      <div className="cyber-panel" style={{
+        width: '100%',
+        maxWidth: '520px',
+        padding: '6px 10px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        minHeight: '44px',
+        marginTop: '8px',
+        border: '1px solid rgba(0,243,255,0.2)',
+        background: 'rgba(0, 243, 255, 0.03)',
+        flexWrap: 'wrap',
+        transform: shouldRotate ? 'rotate(180deg)' : 'none',
+        transition: 'transform 0.6s ease-in-out',
+      }}>
         <div style={{ fontSize: '10px', color: 'var(--neon-cyan)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
           先手 持ち駒
         </div>

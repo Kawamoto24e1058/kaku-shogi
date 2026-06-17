@@ -1056,3 +1056,36 @@ button, input, [role="button"] {
   100% { width: 80px; }
 }
 
+@keyframes targetPulseBlue {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(0, 150, 255, 0.4), inset 0 0 4px rgba(0, 150, 255, 0.2) !important;
+    border-color: rgba(0, 150, 255, 0.6) !important;
+    background-color: rgba(0, 150, 255, 0.15) !important;
+  }
+  50% {
+    box-shadow: 0 0 16px #00aaff, inset 0 0 8px rgba(0, 170, 255, 0.6) !important;
+    border-color: #00aaff !important;
+    background-color: rgba(0, 170, 255, 0.35) !important;
+  }
+}
+
+@keyframes targetPulseYellow {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(255, 200, 0, 0.4), inset 0 0 4px rgba(255, 200, 0, 0.2) !important;
+    border-color: rgba(255, 200, 0, 0.6) !important;
+    background-color: rgba(255, 200, 0, 0.15) !important;
+  }
+  50% {
+    box-shadow: 0 0 16px #ffcc00, inset 0 0 8px rgba(255, 204, 0, 0.6) !important;
+    border-color: #ffcc00 !important;
+    background-color: rgba(255, 204, 0, 0.35) !important;
+  }
+}
+
+.ability-target-blue {
+  animation: targetPulseBlue 1s infinite alternate ease-in-out !important;
+}
+
+.ability-target-yellow {
+  animation: targetPulseYellow 1s infinite alternate ease-in-out !important;
+}

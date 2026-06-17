@@ -97,7 +97,7 @@ export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHover
         <div style={{ borderRight: '1px solid rgba(219, 188, 98, 0.09)' }}>
           <span style={{ color: '#71717a', display: 'block', fontSize: '9px', fontFamily: 'var(--font-cyber)', marginBottom: '2px' }}>【属性】</span>
           <span style={{ color: 'var(--shogi-sente)', fontWeight: 'bold', fontSize: '11px' }}>
-            {piece.mechanics_type === 'MOVEMENT_HACK' ? '変則移動' : piece.mechanics_type === 'STEALTH_TRAP' ? '正体隠蔽' : piece.mechanics_type === 'RULE_BREAK' ? '環境ハック' : piece.mechanics_type === 'DYNAMICS_HACK' ? 'ルール破壊' : '通常駒'}
+            {piece.ability_genre || (piece.mechanics_type === 'MOVEMENT_HACK' ? '変則移動' : piece.mechanics_type === 'STEALTH_TRAP' ? '正体隠蔽' : piece.mechanics_type === 'RULE_BREAK' ? '環境ハック' : piece.mechanics_type === 'DYNAMICS_HACK' ? 'ルール破壊' : '通常駒')}
           </span>
         </div>
         <div style={{ borderRight: '1px solid rgba(219, 188, 98, 0.09)' }}>
@@ -148,7 +148,7 @@ export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHover
           </div>
           {piece.range_geometry.charging_grid && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-              <span style={{ fontSize: '8px', color: 'var(--neon-pink)', fontFamily: 'var(--font-cyber)' }}>充填中（前進のみ）</span>
+              <span style={{ fontSize: '8px', color: 'var(--neon-pink)', fontFamily: 'var(--font-cyber)' }}>充填中（十字移動）</span>
               <RangeGrid gridStr={piece.range_geometry.charging_grid} size={36} />
             </div>
           )}

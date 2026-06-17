@@ -13,6 +13,7 @@ import {
   generateId,
   getValidDropCells,
   isKingInCheck,
+  getAbilityTargets,
 } from './gameLogic';
 import { PieceCreator } from './components/PieceCreator';
 import { GameBoard } from './components/GameBoard';
@@ -101,6 +102,88 @@ export const App: React.FC = () => {
   const [matchmakingError, setMatchmakingError] = useState<string>('');
   const [matchDoc, setMatchDoc] = useState<any>(null);
 
+  const [suspendedAbility, setSuspendedAbility] = useState<{
+    source: [number, number];
+    targets: [number, number][];
+    type: 'transform' | 'mind_control' | 'swap';
+    triggerType: 'ON_MOVE' | 'TURN_START';
+    fromPosition?: [number, number];
+    board: Board;
+    capturedPieces: typeof state.capturedPieces;
+    logs: GameLog[];
+    customStateUpdates?: Partial<GameState>;
+  } | null>(null);
+
+  const isPieceOwnerHuman = (owner: Player): boolean => {
+    if (onlineMode) {
+      return owner === myRole;
+    }
+    if (vsAiMode) {
+      return owner === 'sente';
+    }
+    return true; // Local PvP: both Sente and Gote are human
+  };
+
+  const adjacentOffsets: [number, number][] = [
+    [-1, -1], [-1, 0], [-1, 1],
+    [0, -1],           [0, 1],
+    [1, -1],  [1, 0],  [1, 1]
+  ];
+
+  const scanStealthPieces = (board: Board, logs: GameLog[]): Board => {
+    return board.map((row, y) =>
+      row.map((piece, x) => {
+        if (
+          piece &&
+          piece.mechanics_type === 'STEALTH_TRAP' &&
+          piece.owner !== undefined &&
+          (piece.owner === 'sente' || piece.owner === 'gote')
+        ) {
+          let hasAdjacentOpponent = false;
+          for (const [dy, dx] of adjacentOffsets) {
+            const ny = y + dy;
+            const nx = x + dx;
+            if (ny >= 0 && ny < BOARD_SIZE && nx >= 0 && nx < BOARD_SIZE) {
+              const adjPiece = board[ny][nx];
+              if (
+                adjPiece &&
+                adjPiece.owner !== undefined &&
+                (adjPiece.owner === 'sente' || adjPiece.owner === 'gote') &&
+                adjPiece.owner !== piece.owner
+              ) {
+                hasAdjacentOpponent = true;
+                break;
+              }
+            }
+          }
+
+          if (!piece.isRevealed && hasAdjacentOpponent) {
+            logs.push({
+              id: generateId(),
+              timestamp: new Date().toLocaleTimeString(),
+              player: piece.owner,
+              message: `👁️ 【気配感知】${piece.owner === 'sente' ? '先手' : '後手'}の『${piece.word}』の周囲1マス以内に敵が侵入したため、ステルスが解除され姿が露見しました！`,
+              type: 'ability'
+            });
+            return { ...piece, isRevealed: true };
+          }
+
+          if (piece.isRevealed && !hasAdjacentOpponent) {
+            logs.push({
+              id: generateId(),
+              timestamp: new Date().toLocaleTimeString(),
+              player: piece.owner,
+              message: `🌫️ 【再隠蔽】${piece.owner === 'sente' ? '先手' : '後手'}の『${piece.word}』の周囲から敵が立ち去ったため、再びステルス状態（透明）に戻りました。`,
+              type: 'ability'
+            });
+            return { ...piece, isRevealed: false };
+          }
+        }
+        return piece;
+      })
+    );
+  };
+
   const isPromotionEligible = (
     piece: Piece,
     fromY: number,
@@ -182,19 +265,45 @@ export const App: React.FC = () => {
     // Check for ON_MOVE automatic trigger
     const landingPiece = finalBoard[y][x];
     if (landingPiece && landingPiece.owner === state.turn && getPieceTrigger(landingPiece) === 'ON_MOVE' && landingPiece.coolDownTurnsRemaining === 0) {
-      const effectRes = applyAutomatedEffect(finalBoard, [y, x], 'ON_MOVE', state.turn, nextCaptured[state.turn], [sy, sx]);
-      if (effectRes.triggered || effectRes.logs.length > 0) {
-        if (effectRes.triggered) {
-          finalBoard = effectRes.board;
-          nextCaptured[state.turn] = effectRes.capturedPieces;
-          setScreenShake(true);
-          setTimeout(() => setScreenShake(false), 300);
+      const targetsInfo = getAbilityTargets(finalBoard, [y, x], state.turn);
+      if (targetsInfo && isPieceOwnerHuman(state.turn)) {
+        // Suspend!
+        setSuspendedAbility({
+          source: [y, x],
+          targets: targetsInfo.targets,
+          type: targetsInfo.type,
+          triggerType: 'ON_MOVE',
+          fromPosition: [sy, sx],
+          board: finalBoard,
+          capturedPieces: nextCaptured,
+          logs: finalLogs
+        });
+        
+        setState(prev => ({
+          ...prev,
+          board: finalBoard,
+          capturedPieces: nextCaptured,
+          selectedCell: null,
+          activeAbilityMode: true,
+          activeAbilitySource: [y, x],
+          activeAbilityTargets: targetsInfo.targets
+        }));
+        return; // Return early, do NOT finalize turn yet!
+      } else {
+        const effectRes = applyAutomatedEffect(finalBoard, [y, x], 'ON_MOVE', state.turn, nextCaptured[state.turn], [sy, sx]);
+        if (effectRes.triggered || effectRes.logs.length > 0) {
+          if (effectRes.triggered) {
+            finalBoard = effectRes.board;
+            nextCaptured[state.turn] = effectRes.capturedPieces;
+            setScreenShake(true);
+            setTimeout(() => setScreenShake(false), 300);
+          }
+          finalLogs.push(...effectRes.logs.map(l => ({
+            ...l,
+            id: generateId(),
+            timestamp: new Date().toLocaleTimeString()
+          })));
         }
-        finalLogs.push(...effectRes.logs.map(l => ({
-          ...l,
-          id: generateId(),
-          timestamp: new Date().toLocaleTimeString()
-        })));
       }
     }
 
@@ -648,68 +757,7 @@ export const App: React.FC = () => {
       }
     }
 
-    // ステルス近接スキャン関数（再利用可能ヘルパー）
-    const adjacentOffsets: [number, number][] = [
-      [-1, -1], [-1, 0], [-1, 1],
-      [0, -1],           [0, 1],
-      [1, -1],  [1, 0],  [1, 1]
-    ];
-    const scanStealthPieces = (board: Board, logs: GameLog[]): Board => {
-      return board.map((row, y) =>
-        row.map((piece, x) => {
-          if (
-            piece &&
-            piece.mechanics_type === 'STEALTH_TRAP' &&
-            piece.owner !== undefined &&
-            (piece.owner === 'sente' || piece.owner === 'gote')
-          ) {
-            let hasAdjacentOpponent = false;
-            for (const [dy, dx] of adjacentOffsets) {
-              const ny = y + dy;
-              const nx = x + dx;
-              if (ny >= 0 && ny < BOARD_SIZE && nx >= 0 && nx < BOARD_SIZE) {
-                const adjPiece = board[ny][nx];
-                // 安全チェック: ownerが両方定義されており、かつ明確に異なるプレイヤーの場合のみ敵とみなす
-                if (
-                  adjPiece &&
-                  adjPiece.owner !== undefined &&
-                  (adjPiece.owner === 'sente' || adjPiece.owner === 'gote') &&
-                  adjPiece.owner !== piece.owner
-                ) {
-                  hasAdjacentOpponent = true;
-                  break;
-                }
-              }
-            }
 
-            // 1) 未開示状態で敵が隣接 -> 開示
-            if (!piece.isRevealed && hasAdjacentOpponent) {
-              logs.push({
-                id: generateId(),
-                timestamp: new Date().toLocaleTimeString(),
-                player: piece.owner,
-                message: `👁️ 【気配感知】${piece.owner === 'sente' ? '先手' : '後手'}の『${piece.word}』の周囲1マス以内に敵が侵入したため、ステルスが解除され姿が露見しました！`,
-                type: 'ability'
-              });
-              return { ...piece, isRevealed: true };
-            }
-
-            // 2) 開示状態で周囲に敵が不在 -> 再びステルス化
-            if (piece.isRevealed && !hasAdjacentOpponent) {
-              logs.push({
-                id: generateId(),
-                timestamp: new Date().toLocaleTimeString(),
-                player: piece.owner,
-                message: `🌫️ 【再隠蔽】${piece.owner === 'sente' ? '先手' : '後手'}の『${piece.word}』の周囲から敵が立ち去ったため、再びステルス状態（透明）に戻りました。`,
-                type: 'ability'
-              });
-              return { ...piece, isRevealed: false };
-            }
-          }
-          return piece;
-        })
-      );
-    };
 
     // Decrement cooldowns for nextPlayer's pieces on the board
     const finalBoard = nextBoard.map(row =>
@@ -738,17 +786,46 @@ export const App: React.FC = () => {
       for (let c = 0; c < BOARD_SIZE; c++) {
         const p = currentBoard[r][c];
         if (p && p.owner === nextPlayer && getPieceTrigger(p) === 'TURN_START' && p.coolDownTurnsRemaining === 0) {
-          const effectRes = applyAutomatedEffect(currentBoard, [r, c], 'TURN_START', nextPlayer, currentCaptured[nextPlayer]);
-          if (effectRes.triggered || effectRes.logs.length > 0) {
-            if (effectRes.triggered) {
-              currentBoard = effectRes.board;
-              currentCaptured[nextPlayer] = effectRes.capturedPieces;
+          const targetsInfo = getAbilityTargets(currentBoard, [r, c], nextPlayer);
+          if (targetsInfo && isPieceOwnerHuman(nextPlayer)) {
+            // Suspend turn start!
+            setSuspendedAbility({
+              source: [r, c],
+              targets: targetsInfo.targets,
+              type: targetsInfo.type,
+              triggerType: 'TURN_START',
+              board: currentBoard,
+              capturedPieces: currentCaptured,
+              logs: currentLogs,
+              customStateUpdates
+            });
+
+            setState(prev => ({
+              ...prev,
+              board: currentBoard,
+              capturedPieces: currentCaptured,
+              turn: nextPlayer, // SWITCH TURN NOW!
+              selectedCell: null,
+              activeAbilityMode: true,
+              activeAbilitySource: [r, c],
+              activeAbilityTargets: targetsInfo.targets,
+              logs: currentLogs,
+              ...customStateUpdates
+            }));
+            return; // Return early, do NOT finish finalization yet!
+          } else {
+            const effectRes = applyAutomatedEffect(currentBoard, [r, c], 'TURN_START', nextPlayer, currentCaptured[nextPlayer]);
+            if (effectRes.triggered || effectRes.logs.length > 0) {
+              if (effectRes.triggered) {
+                currentBoard = effectRes.board;
+                currentCaptured[nextPlayer] = effectRes.capturedPieces;
+              }
+              currentLogs.push(...effectRes.logs.map(l => ({
+                ...l,
+                id: generateId(),
+                timestamp: new Date().toLocaleTimeString()
+              })));
             }
-            currentLogs.push(...effectRes.logs.map(l => ({
-              ...l,
-              id: generateId(),
-              timestamp: new Date().toLocaleTimeString()
-            })));
           }
         }
       }
@@ -924,6 +1001,284 @@ export const App: React.FC = () => {
     });
 
     setValidMoves([]);
+  };
+
+  const resumeAbilitySelection = (ty: number, tx: number) => {
+    if (!suspendedAbility) return;
+
+    const { source, triggerType, fromPosition, board, capturedPieces, logs, customStateUpdates } = suspendedAbility;
+    const [sy, sx] = source;
+    const activePlayer = board[sy][sx]?.owner;
+    if (!activePlayer) return;
+
+    let finalBoard = board;
+    const nextCaptured = { ...capturedPieces };
+    const finalLogs = [...logs];
+
+    const effectRes = applyAutomatedEffect(
+      finalBoard,
+      source,
+      triggerType,
+      activePlayer,
+      capturedPieces[activePlayer],
+      fromPosition,
+      [ty, tx]
+    );
+
+    if (effectRes.triggered || effectRes.logs.length > 0) {
+      if (effectRes.triggered) {
+        finalBoard = effectRes.board;
+        nextCaptured[activePlayer] = effectRes.capturedPieces;
+        setScreenShake(true);
+        setTimeout(() => setScreenShake(false), 300);
+      }
+      finalLogs.push(...effectRes.logs.map(l => ({
+        ...l,
+        id: generateId(),
+        timestamp: new Date().toLocaleTimeString()
+      })));
+    }
+
+    setSuspendedAbility(null);
+
+    if (triggerType === 'ON_MOVE') {
+      const senteKing = finalBoard.some(row => row.some(p => p?.isKing && p.owner === 'sente'));
+      const goteKing = finalBoard.some(row => row.some(p => p?.isKing && p.owner === 'gote'));
+      let isGameOver = false;
+      let finalWinner: Player | null = null;
+
+      if (!senteKing && !goteKing) {
+        isGameOver = true;
+        finalWinner = activePlayer === 'sente' ? 'gote' : 'sente';
+      } else if (!senteKing) {
+        isGameOver = true;
+        finalWinner = 'gote';
+      } else if (!goteKing) {
+        isGameOver = true;
+        finalWinner = 'sente';
+      }
+
+      if (isGameOver) {
+        setState(prev => ({
+          ...prev,
+          board: finalBoard,
+          capturedPieces: nextCaptured,
+          selectedCell: null,
+          promotionPending: null,
+          activeAbilityMode: false,
+          activeAbilitySource: null,
+          activeAbilityTargets: []
+        }));
+
+        setTimeout(() => {
+          setState(prev => ({
+            ...prev,
+            winner: finalWinner,
+          }));
+          saveHistorySnapshot(finalBoard, nextCaptured, activePlayer, finalLogs);
+        }, 1200);
+      } else {
+        finalizeTurn(
+          finalBoard,
+          nextCaptured,
+          state.sharedPieces,
+          finalLogs,
+          { promotionPending: null }
+        );
+      }
+    } else if (triggerType === 'TURN_START') {
+      let currentBoard = finalBoard;
+      const currentCaptured = { ...nextCaptured };
+      const currentLogs = [...finalLogs];
+      let gameOver = false;
+      let winner: Player | null = null;
+
+      // Scan for other TURN_START triggers for activePlayer
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          const p = currentBoard[r][c];
+          if (p && p.owner === activePlayer && getPieceTrigger(p) === 'TURN_START' && p.coolDownTurnsRemaining === 0) {
+            const targetsInfo = getAbilityTargets(currentBoard, [r, c], activePlayer);
+            if (targetsInfo && isPieceOwnerHuman(activePlayer)) {
+              setSuspendedAbility({
+                source: [r, c],
+                targets: targetsInfo.targets,
+                type: targetsInfo.type,
+                triggerType: 'TURN_START',
+                board: currentBoard,
+                capturedPieces: currentCaptured,
+                logs: currentLogs,
+                customStateUpdates
+              });
+
+              setState(prev => ({
+                ...prev,
+                board: currentBoard,
+                capturedPieces: currentCaptured,
+                turn: activePlayer,
+                selectedCell: null,
+                activeAbilityMode: true,
+                activeAbilitySource: [r, c],
+                activeAbilityTargets: targetsInfo.targets,
+                logs: currentLogs,
+                ...customStateUpdates
+              }));
+              return;
+            } else {
+              const effectRes = applyAutomatedEffect(currentBoard, [r, c], 'TURN_START', activePlayer, currentCaptured[activePlayer]);
+              if (effectRes.triggered || effectRes.logs.length > 0) {
+                if (effectRes.triggered) {
+                  currentBoard = effectRes.board;
+                  currentCaptured[activePlayer] = effectRes.capturedPieces;
+                }
+                currentLogs.push(...effectRes.logs.map(l => ({
+                  ...l,
+                  id: generateId(),
+                  timestamp: new Date().toLocaleTimeString()
+                })));
+              }
+            }
+          }
+        }
+      }
+
+      // Check game over
+      const sKing = currentBoard.some(row => row.some(piece => piece?.isKing && piece.owner === 'sente'));
+      const gKing = currentBoard.some(row => row.some(piece => piece?.isKing && piece.owner === 'gote'));
+      if (!sKing && !gKing) {
+        gameOver = true;
+        winner = activePlayer === 'sente' ? 'gote' : 'sente';
+      } else if (!sKing) {
+        gameOver = true;
+        winner = 'gote';
+      } else if (!gKing) {
+        gameOver = true;
+        winner = 'sente';
+      }
+
+      // Autonomous moves
+      const autonomousCoords: [number, number][] = [];
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          const p = currentBoard[r][c];
+          if (p && p.owner === activePlayer && isAutonomous(p) && p.coolDownTurnsRemaining === 0) {
+            autonomousCoords.push([r, c]);
+          }
+        }
+      }
+
+      for (const [sy, sx] of autonomousCoords) {
+        if (gameOver) break;
+        const piece = currentBoard[sy][sx];
+        if (!piece || piece.owner !== activePlayer || !isAutonomous(piece)) continue;
+
+        const valid = getValidMoves(sy, sx, currentBoard);
+        if (valid.length > 0) {
+          const [ty, tx] = valid[Math.floor(Math.random() * valid.length)];
+          const promote = isPromotionEligible(piece, sy, ty, activePlayer);
+          const moveRes = executeMove(currentBoard, [sy, sx], [ty, tx], activePlayer, promote);
+          
+          currentBoard = moveRes.board;
+          if (moveRes.gameOver) {
+            gameOver = true;
+            winner = moveRes.winner;
+          }
+
+          currentLogs.push({
+            id: generateId(),
+            timestamp: new Date().toLocaleTimeString(),
+            player: activePlayer,
+            message: `【自律行動】操作不能の『${piece.word}』が勝手に${getCellLabel(ty, tx)}へ移動しました！`,
+            type: 'ability'
+          });
+
+          currentLogs.push(...moveRes.logs.map(l => ({ ...l, id: generateId(), timestamp: new Date().toLocaleTimeString() })));
+
+          const capturedList: Piece[] = [];
+          if (moveRes.capturedPieces && moveRes.capturedPieces.length > 0) {
+            capturedList.push(...moveRes.capturedPieces);
+          } else if (moveRes.capturedPiece) {
+            capturedList.push(moveRes.capturedPiece);
+          }
+
+          for (const cap of capturedList) {
+            if (cap) {
+              const isStillOnBoard = currentBoard.some(row => row.some(p => p?.id === cap.id));
+              if (!isStillOnBoard) {
+                const cleanCap = {
+                  ...cap,
+                  owner: activePlayer,
+                  isPromoted: false,
+                  coolDownTurnsRemaining: 0,
+                  isRevealed: true
+                };
+                if (!currentCaptured[activePlayer].some(p => p.id === cleanCap.id)) {
+                  currentCaptured[activePlayer].push(cleanCap);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Stealth proximity scan
+      currentBoard = scanStealthPieces(currentBoard, currentLogs);
+
+      if (gameOver) {
+        setState(prev => ({
+          ...prev,
+          board: currentBoard,
+          capturedPieces: currentCaptured,
+          selectedCell: null,
+          activeAbilityMode: false,
+          activeAbilitySource: null,
+          activeAbilityTargets: [],
+          logs: currentLogs,
+          ...customStateUpdates,
+        }));
+
+        setTimeout(() => {
+          setState(prev => ({
+            ...prev,
+            winner: winner,
+          }));
+          saveHistorySnapshot(currentBoard, currentCaptured, activePlayer, currentLogs);
+        }, 1200);
+
+        setValidMoves([]);
+        return;
+      }
+
+      const isChecked = isKingInCheck(currentBoard, activePlayer);
+      if (isChecked) {
+        setShowCheckOverlay(true);
+        currentLogs.push({
+          id: generateId(),
+          timestamp: new Date().toLocaleTimeString(),
+          player: activePlayer,
+          message: `🚨 王手！${activePlayer === 'sente' ? '先手' : '後手'}の玉将が狙われています！`,
+          type: 'system'
+        });
+      }
+
+      setState(prev => {
+        const nextState = {
+          ...prev,
+          board: currentBoard,
+          capturedPieces: currentCaptured,
+          selectedCell: null,
+          activeAbilityMode: false,
+          activeAbilitySource: null,
+          activeAbilityTargets: [],
+          logs: currentLogs,
+          ...customStateUpdates,
+        };
+        saveHistorySnapshot(currentBoard, currentCaptured, activePlayer, currentLogs);
+        return nextState;
+      });
+
+      setValidMoves([]);
+    }
   };
 
   // Save initial snapshot when playing starts
@@ -1232,6 +1587,13 @@ export const App: React.FC = () => {
   // Click Router
   const handleCellClick = (y: number, x: number) => {
     if (onlineMode && state.turn !== myRole) return;
+    if (state.activeAbilityMode && suspendedAbility) {
+      const isTarget = state.activeAbilityTargets.some(([ty, tx]) => ty === y && tx === x);
+      if (isTarget) {
+        resumeAbilitySelection(y, x);
+      }
+      return;
+    }
     if (state.phase === 'placement') {
       handlePlacementCellClick(y, x);
     } else if (state.phase === 'playing') {
@@ -1692,6 +2054,24 @@ export const App: React.FC = () => {
               
               {/* Left Side: Game Board (9x9) */}
               <div className="board-wrapper">
+                {state.activeAbilityMode && suspendedAbility && (
+                  <div style={{
+                    background: 'rgba(0, 243, 255, 0.15)',
+                    border: '1px solid var(--neon-cyan)',
+                    boxShadow: '0 0 10px rgba(0, 243, 255, 0.4)',
+                    color: '#fff',
+                    padding: '8px 15px',
+                    borderRadius: '4px',
+                    marginBottom: '10px',
+                    fontSize: '12px',
+                    textAlign: 'center',
+                    fontWeight: 'bold',
+                    fontFamily: 'var(--font-cyber)',
+                    animation: 'pulseGlow 1.5s infinite alternate'
+                  }}>
+                    ⚡ 【能力対象選択】効果を適用する対象の駒を盤上から選択してください（青く光るマス）。
+                  </div>
+                )}
                 <GameBoard
                   board={state.board}
                   turn={state.turn}

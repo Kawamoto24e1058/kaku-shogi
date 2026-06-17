@@ -126,7 +126,7 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
 
   let range_geometry: RangeGeometry = {
     normal_grid: '0000001110012100111000000',
-    charging_grid: '0000000100002000000000000' // Fixed to forward-1-cell during cooldown
+    charging_grid: '0000000100012100010000000' // Fixed to forward-1-cell during cooldown
   };
 
   const warningPrefix = isApiError
@@ -146,14 +146,14 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
       max_limit: 2,
       spawn_range_geometry: '0000001110012100111000000'
     };
-    description = '【能力効果】自ターン開始時に自動発動。周囲の空きマスに「複製社員」を1体生成する。発動後3手番の間は『充填中』となり、能力がフリーズし、移動が前進1マスのみに制限される。';
+    description = '【能力効果】自ターン開始時に自動発動。周囲の空きマスに「複製社員」を1体生成する。発動後3手番の間は『充填中』となり、能力がフリーズし、前後左右に1マス動ける充填状態となる。';
     promoted_effect = {
       effect_name: '定時退社 (ていじたいしゃ)',
       description: '【覚醒効果】成ることでクールダウン（充填手番）が1手番短縮される。'
     };
     range_geometry = {
       normal_grid: '0010001110112110111000100',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     };
   }
   // Keywords for "Restaurant" (飲食店) -> MOVEMENT_HACK, ALWAYS (Routine runaway)
@@ -170,7 +170,7 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     };
     range_geometry = {
       normal_grid: '0111011111112111111101110',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     };
   }
   // Keywords for "Pudding" (プリン) -> STEALTH_TRAP, ON_TAKEN (Explosion & destroy)
@@ -187,7 +187,7 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     };
     range_geometry = {
       normal_grid: '0000001110012100111000000',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     };
   }
   // Keywords for "Dog" (犬) -> RULE_BREAK, ALWAYS (Reveal stealth)
@@ -204,7 +204,7 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     };
     range_geometry = {
       normal_grid: '0111011111112111111101110',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     };
   }
   // Keywords for "Horse" (馬) -> MOVEMENT_HACK, ALWAYS (Leap jump)
@@ -221,7 +221,7 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     };
     range_geometry = {
       normal_grid: '0101001010002000000000000',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     };
   }
   // Keywords for Rook (飛車)
@@ -238,7 +238,7 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     };
     range_geometry = {
       normal_grid: '0010000100112110010000100',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     };
   }
   // Keywords for Bishop (角行)
@@ -255,7 +255,7 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     };
     range_geometry = {
       normal_grid: '1000101010002000101010001',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     };
   }
   // Keywords for Lance (香車)
@@ -272,7 +272,7 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     };
     range_geometry = {
       normal_grid: '0010000100002000000000000',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     };
   }
   // Keywords for Knight (桂馬)
@@ -289,7 +289,7 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     };
     range_geometry = {
       normal_grid: '0101000000002000000000000',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     };
   }
   // Keywords for Mimic (擬態・泥棒)
@@ -306,7 +306,7 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     };
     range_geometry = {
       normal_grid: '0000001110012100111000000',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     };
   }
   // Keywords for Puppet (洗脳・寄生)
@@ -323,7 +323,7 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     };
     range_geometry = {
       normal_grid: '0000001110012100111000000',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     };
   }
   // Keywords for Egg/Timer (卵・孵化・時限)
@@ -339,8 +339,8 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
       description: '【覚醒効果】成った瞬間、即座に孵化・進化を完了する。'
     };
     range_geometry = {
-      normal_grid: '0000000100002000000000000',
-      charging_grid: '0000000100002000000000000'
+      normal_grid: '0000000100012100010000000',
+      charging_grid: '0000000100012100010000000'
     };
   }
   // Keywords for Curse (呪い・身代わり)
@@ -357,7 +357,7 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     };
     range_geometry = {
       normal_grid: '0000000000002000000000000',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     };
   }
   // Keywords for Spawner (増殖・巣)
@@ -380,7 +380,7 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     };
     range_geometry = {
       normal_grid: '0000001110012100111000000',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     };
   }
   // Fallbacks
@@ -394,14 +394,14 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
       trigger = 'ON_MOVE';
       cool_down_turns = 2;
       logic_code = 'linear_charge';
-      description = `【能力効果】移動完了時自動発動。目的地に着地した際、進行方向の直線上にいるすべての敵駒を押しつぶし、捕獲して手駒にする。発動後2手番は充填中となり、移動が前進1マスに極小化する。`;
+      description = `【能力効果】移動完了時自動発動。目的地に着地した際、進行方向の直線上にいるすべての敵駒を押しつぶし、捕獲して手駒にする。発動後2手番は充填中となり、前後左右に1マス動ける充填状態となる。`;
       promoted_effect = {
         effect_name: '破山一撃 (はざんいちげき)',
         description: '【覚醒効果】成ることで、突撃によりなぎ倒す距離が3マス先まで増加する。'
       };
       range_geometry = {
         normal_grid: '0000001110002000000000000',
-        charging_grid: '0000000100002000000000000'
+        charging_grid: '0000000100012100010000000'
       };
     } else if (chosenType === 'STEALTH') {
       effect_name = '隠密デコイ (おんみつでこい)';
@@ -416,7 +416,7 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
       };
       range_geometry = {
         normal_grid: '0000001110012100111000000',
-        charging_grid: '0000000100002000000000000'
+        charging_grid: '0000000100012100010000000'
       };
     } else {
       effect_name = '鈍化結界 (どんかけっかい)';
@@ -431,15 +431,33 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
       };
       range_geometry = {
         normal_grid: '0111011111112111111101110',
-        charging_grid: '0000000100002000000000000'
+        charging_grid: '0000000100012100010000000'
       };
     }
+  }
+
+  let ability_genre = '武力・突撃';
+  if (logic_code === 'spawn_clone' || logic_code === 'spawn_minion') {
+    ability_genre = '置物・量産';
+  } else if (logic_code === 'runaway_buffet') {
+    ability_genre = '自律暴走';
+  } else if (logic_code === 'self_destruct_trap' || logic_code === 'curse_retaliation') {
+    ability_genre = '因果・罠';
+  } else if (logic_code === 'reveal_stealth' || logic_code === 'stealth_decoy') {
+    ability_genre = 'ステルス・隠密';
+  } else if (logic_code === 'mimic' || logic_code === 'mind_control') {
+    ability_genre = '擬態・洗脳';
+  } else if (logic_code === 'time_bomb') {
+    ability_genre = '空間操作';
+  } else if (logic_code === 'slowdown_aura') {
+    ability_genre = '能力無効化・結界';
   }
 
   const result: PieceData = {
     word,
     effect_name,
     mechanics_type,
+    ability_genre,
     trigger,
     cool_down_turns,
     range_geometry,
@@ -478,12 +496,30 @@ export async function generatePieceFromWord(word: string, apiKey?: string): Prom
 
   const prompt = `あなたは伝統的な将棋をハックし、言葉の本質から「変態的な移動・全自動効果」をゼロから創造する天才ゲームデザイナー兼プログラマーです。
 
-ユーザーが入力した単語から能力を【完全新規で創造】してください。以下の【5大ジャンルと15のサンプル（引き出し）】は、将棋のルールをどの程度までハックしてよいかという『技術的な許容基準（参考・ヒント）』です。サンプル通りのコピペは手抜きとみなし、制限します。入力単語の独自のニュアンスを深掘りし、サンプルの枠を飛び越えた、まったく新しい自動発動ギミックや戦術ロジックを即興でブレインストーミングして創造することを最優先（プライオリティ1）としてください。
+ユーザーが入力した単語から能力を【完全新規で創造】、または以下の【AI能力デザインの引き出し（参考例プール）】からロジックを自由に組み合わせて、対人戦が最もカオスに盛り上がるJSONオブジェクトを出力してください。
 ※体力や攻撃力、手動奥義ボタンは完全に廃止されています。一撃捕獲ルールです。
+
+### 🚨 最重要：ゲームバランスを壊さないための『4大・安全ブレーキルール』
+
+AIは能力をデザインする際、ゲームがワンサイドゲーム（大味な怪獣大戦争）になるのを防ぐため、以下の4つの調整弁（ペナルティ・制限）を【必ず】どれか1つ以上組み合わせ、効果テキスト（description）およびJSONデータに厳格に反映させてください。
+
+1. 【1ゲームに1回（使い捨て：is_once_per_game: true）の強制適用】
+   - 直線上の敵を全滅させる（CRUSH）、周囲の敵を全滅させる（SHOCKWAVE）、相手の強力な駒に自由に変身する（TRANSFORM）、敵を洗脳する（PUPPET）などの「1手で戦況を完全にひっくり返すレベルのチート能力」は、必ず \`is_once_per_game: true\` をセットすること。
+   - この必殺技を全自動発動した後は、ゲーム終了までその駒の移動範囲は一律で「前後左右の4方向へ1マス動ける十字移動（charging_grid）」の充填状態となるペナルティを課すこと。
+
+2. 【何度も使える能力には「重いクールタイム」を付与】
+   - 2マスジャンプ、味方へのバフ、位置入れ替えなど、何度も使える通常効果（is_once_per_game: false）を設計する場合、必ず \`cool_down_turns\`（再充填に必要な自手番数：2〜4ターン）を設定すること。
+   - クールタイム中の数ターンは、能力がフリーズし、移動範囲も「前後左右に1マス動ける十字移動」に制限されるペナルティ（充填状態）を課すこと。
+
+3. 【増殖系（SPAWNER）は「最大2体まで」を絶対死守】
+   - 別個体のトークン（複製兵など）を盤面に生み出す能力の場合、盤面に同時に存在できる最大上限数を【厳格に2体まで（max_limit: 2）】にロックすること。2体生き残っている場合は、クールタイムが明けても次の兵は生成されないロジックとすること。
+
+4. 【永続パッシブ能力（結界・バフ等）は「移動力ゼロ」の肉斬骨断】
+   - 「周囲にいる味方を永続的に強化する」「周囲の敵を永続的に鈍化させる」といった、使い捨てでもクールタイム制でもない永続パッシブ能力を持つ駒（ALWAYS）は、その強力さの代償として、本体の移動範囲（normal_grid）を「0マス（1マスも動けない完全固定の置物）」、または「前進1マスのみ」という最弱の足回りに設定すること。
 
 ---
 
-### 📐 幾何学範囲（grid_map）の空間計算ルールの厳格化
+### 🚨 幾何学範囲（grid_map）の空間計算ルールの厳格化
 AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッドで1マス分しか点灯させない計算ミスを絶対に起こさないでください。
 
 【5x5グリッドの距離インデックス構造（上が前方）】
@@ -501,84 +537,103 @@ AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッ�
 - 「十字スライド（飛車型）」→ 02 07 11 13 17 に 1 → '0010000100112100010000100'
 - 「斜め（角型）」→ 00 04 06 08 10 14 16 18 20 24 に 1 → '1000101010021010101010001'
 
-能力を使い切った後または充填中の charging_grid は一律「前進1マス（0000000100002000000000000）」に固定。
+能力を使い切った後または充填中の charging_grid は一律「前後左右の4方向へ1マス動ける十字移動（0000000100012100010000000）」に固定。
 
 ---
 
-### 📚 AI能力デザインの引き出し（5大ジャンルと15の参考例プール）
+### 📚 AI能力デザインの引き出し（10大ジャンルと24の参考例プール）
 
-#### 【ジャンル1：洗脳・擬態・強奪系（HACK_AND_STEAL）】
-敵の駒や能力をハックして戦況をひっくり返すトリッキーなジャンル。
-- No.1: [精神洗脳（PUPPET）] - trigger: 'TURN_START' または 'ON_MOVE'。周囲1マスに敵の大駒またはカスタム駒が存在する時のみ自動発動。1ゲームに1回限定（is_once_per_game: true）で、次の自ターンにその敵駒を乗っ取って操作。発動後は歩兵化。
-- No.2: [即時変身（TRANSFORM）] - 動いて着地した時、盤面の他駒の能力・移動範囲に自分を書き換え（1ゲームに1回限定）。logic_code: 'transform'
-- No.3: [能力強奪（STEAL）] - 敵駒を取った瞬間に自動発動。取った敵の固有能力と範囲を永続上書き。logic_code: 'ability_theft'
+#### 【ジャンル1：武力・突撃系（FORCE_CRUSH）】
+- No.1: [直線貫通（CRUSH）] - 移動軌道上の全マスを走査し、経路上にいた敵駒をすべて捕獲して突き抜ける（1ゲーム1回限定）。
+- No.2: [全方位衝撃波（SHOCKWAVE）] - 着地した瞬間、自分の周囲1マスにいる敵を全員捕獲する（1ゲーム1回限定）。
+- No.3: [障害跳躍（LEAP）] - 進路上の駒を無視して空間を飛び越え、目的のマスにワープ着地する（何度も使えるがクールタイム2ターン）。
 
-#### 【ジャンル2：ステルス・隠密系（STEALTH_GHOST）】
-心理戦・ブラフ特化のジャンル。
-- No.4: [近接探知型ステルス（INVISIBILITY）] - 相手画面からは完全な空きマスに見える。互いが周囲1マスに進入した瞬間のみ自動表示。2マス以上離れると再び見えなくなる。永続パッシブ（is_once_per_game: false）。
-- No.5: [偽装表示（DISGUISE）] - 相手画面からはただの歩兵に見えるが、自分側からは本来の姿と変則移動範囲が見える。
+#### 【ジャンル2：洗脳・擬態・強奪系（HACK_AND_STEAL）】
+- No.4: [精神洗脳（PUPPET）] - 周囲1マスに敵の飛車・角またはカスタム駒が存在するときに全自動トリガー。1ゲーム1回限定で、次の自ターンにその敵駒のコントロールを奪って操作できる。発動後は歩兵化。
+- No.5: [即時変身（TRANSFORM）] - 着地時、盤面の他の駒を1u指定し、その能力・移動範囲に自分のデータを完全に書き換えて成り代わる（1ゲーム1回限定）。
+- No.6: [能力強奪（STEAL）] - 敵の駒を取った瞬間に自動発動。取った敵の能力を奪い取り、自分の能力として永続上書きする。
 
-#### 【ジャンル3：武力・突撃系（FORCE_CRUSH）】
-盤面の物理破壊を目的とした攻撃型ジャンル。
-- No.6: [直線貫通（CRUSH）] - 動いた方向ベクトル上の全敵駒をすべて一気に捕獲して突き抜ける（1ゲームに1回限定）。logic_code: 'linear_charge'
-- No.7: [全方位衝撃波（SHOCKWAVE）] - 着地した瞬間、周囲1〜2マスの敵を全員一瞬で吹き飛ばして捕獲（1ゲームに1回限定）。logic_code: 'shockwave'
-- No.8: [障害跳躍（LEAP）] - 進路上の駒を完全無視してワープ着地。何度も使用可能な移動特性。logic_code: 'leap_move'
+#### 【ジャンル3：ステルス・隠密系（STEALTH_GHOST）】
+- No.7: [近接探知型ステルス] - 通常時は相手画面から「完全非表示（空きマス）」。ただし敵の周囲1マス（隣接）に互いが進入した瞬間のみ自動表示され、2マス以上離れると再び完全に見えなくなる。永続パッシブだが本体は歩兵並みに弱い。
+- No.8: [偽装表示（DISGUISE）] - 相手画面からはただの「歩兵」に見えているが、自分側からは本来の姿と変則移動範囲が見えている。
 
-#### 【ジャンル4：置物・自動生誕系（SPAWNER_BUILD）】
-移動を放棄し盤面を支配する嫌がらせジャンル。
-- No.9: [自動量産（SPAWNER）] - 自身は動けない代わりに毎ターン隣接マスに兵を自動生成。max_limit:2 の spawn_config 必須。logic_code: 'spawn_minion'
-- No.10: [環境鈍化（SLOWNESS）] - この駒が盤面にいる限り、周囲2マスの全駒の移動力を「前進1マス」に制限。logic_code: 'slowdown_aura'
-- No.11: [磁力操作（MAGNET）] - ターン開始時、同じ縦・横ライン上の全駒を自分の方へ1マス強制引き寄せ（または外側へ弾く）。logic_code: 'magnet_pull'
+#### 【ジャンル4：支援・戦意高揚系（SUPPORT_BUFF）】
+味方の能力を底上げし、軍勢としてラインを押し上げる王道ジャンル。
+- No.9: [軍神の号令（WAR_CRY）] - 1ゲーム1回限定。移動完了時（ON_MOVE）に発動。その時盤面にいる「自分のすべての通常歩兵」の移動範囲を、そのターンだけ一時的に「全方向1マス動ける（王将と同等）」に超強化する。発動後は自身は歩兵化する。
+- No.10: [金剛の加護（SHIELD）] - ターン開始時（TURN_START）、この駒の周囲1マスに隣接している味方の駒1枚に「一撃耐える聖盾」を付与。盾がある駒は、次に敵に取られそうになった瞬間、盾が身代わりに割れてそのマスに生き残る（何度も使えるがクールタイム3ターン）。
+- No.11: [神速の風（SPEED_BOOST）] - 永続パッシブ（ALWAYS）。この駒の周囲2マス（5x5範囲）に進入した味方のすべての駒は、前方への移動力がプラス1マス拡張される。この強大な恩恵の代償として、この駒自身は1マスも動けない（移動力ゼロ）。
 
-#### 【ジャンル5：因果逆転・罠系（TRAP_MINE）】
-相手の攻撃を逆手に取る防衛・カウンタージャンル。
-- No.12: [道連れ地雷（MINE）] - 裏向き配置。敵に取られた瞬間に開示・相打ち爆破（1回使い捨て）。logic_code: 'self_destruct_trap'
-- No.13: [落とし穴（TRAP）] - 裏向き配置。周囲1マスに敵が侵入した瞬間に開示。logic_code: 'stealth_decoy'
-- No.14: [身代わり（SUBSTITUTE）] - 味方の王将が危険な時、自動でその位置へワープして盾になり身代わりに捕獲される（1ゲームに1回限定）。logic_code: 'substitute'
-- No.15: [時限進化（TIMER）] - 配置後3ターンは動けないが、4ターン目開始時に最強駒へ強制進化または大爆発。logic_code: 'time_bomb'
+#### 【ジャンル5：置物・自動生誕系（SPAWNER_BUILD）】
+- No.12: [自動量産（SPAWNER）] - 移動力ゼロの代わりに、毎ターン開始時に隣接マスに「複製兵」等のトークンを自動生成する（盤面存在上限2体を厳守）。
+- No.13: [環境鈍化（SLOWNESS）] - この駒が盤面にいる限り、周囲2マスに進入したすべての敵駒は、本来の移動力を失い「前進1マス」しか動けなくなる（本体は移動力ゼロ）。
+
+#### 【ジャンル6：因果逆転・罠系（TRAP_MINE）】
+- No.14: [道連れ地雷（MINE）] - 配置時は裏向き。敵が取ろうと重なった瞬間に自動開示され、取った相手の駒を道連れに爆破消滅させる（使い捨て）。
+- No.15: [落とし穴（TRAP）] - 配置時は裏向き。周囲1マスに敵が侵入した瞬間に開示され、その敵をその場に2ターン拘束（移動不能化）する。
+- No.16: [身代わり（SUBSTITUTE）] - 味方の王将が取られそうになった瞬間、自動でその位置へワープして盾となり、身代わりに捕獲される（1ゲーム1回限定）。
+- No.17: [時限進化（TIMER）] - 盤面に打たれてから3ターンの間は動けないが、4ターン目の開始時に最強の駒へ強制進化する。
+
+#### 【ジャンル7：自律暴走・自動移動系（AUTOMATIC_DRIVE）】
+- No.18: [完全ランダム暴走] - 毎ターン開始時、プレイヤーの指示を無視して、盤面全体のランダムな空きマスへ勝手にワープする（例: 台風、酔っ払い）。
+- No.19: [猪突猛進] - 自分の手番の終わりに、自動的に前方に障害物にぶつかるまで真っ直ぐ進む移動を強制実行する。
+
+#### 【ジャンル8：感染・デバフ系（VIRUS_INFECT）】
+- No.20: [ウイルスパンデミック] - 着地した隣接1マスの敵を感染状態にする。感染した駒は移動範囲が前進1マスに固定され、ターン開始時にその周囲1マスの別の敵駒へもウイルスが二次感染していく。
+- No.21: [腐食の呪い] - 隣接した敵駒を毒状態にし、3ターン経過後にその場で自動消滅させる。
+
+#### 【ジャンル9：位置入れ替え系（SPACE_WARP）】
+- No.22: [位置スワップ（SWAP）] - 移動完了時、盤面にある「自分の通常歩兵1枚」を指定し、この駒と位置を一瞬で入れ替える（クールタイム3ターン）。
+
+#### 【ジャンル10：墓地利用・リサイクル系（NECROMANCY）】
+- No.23: [死者蘇生（RECYCLE）] - 1ゲーム1回限定。移動完了時、これまでに完全に破壊されて消滅したカスタム駒を1つ指定し、自分の「持ち駒（ストック）」として手札に復活させる。
+
+#### 【ジャンル11：能力無効化・結界系（NULLIFY）】
+- No.24: [呪文無効・結界（NULLIFY）] - 永続パッシブ（ALWAYS）または使い捨て。この駒が盤面に存在する限り、周囲2マス以内で発動した敵の自動能力（直線貫通や洗脳、変身など）の対象になった際、その効果を【1度だけ完全に無効化（フリーズ）】して防ぐ聖域ロジック。
 
 ---
 
 ### 🚨 必須ルール
 1. 【カタカナ語完全禁止】「ショット」「ノヴァ」「レーザー」「バリア」「スタン」「バフ」「デバフ」「HP」「MP」「クールダウン」「パッシブ」「アクティブ」を能力名・説明文に使うな。漢語・和語で表現すること。
 2. 【スタン・拘束禁止】敵駒を「行動不能・移動不能・拘束」にする効果は禁止。爆破・引き寄せ・変身・洗脳・盗取などで代替すること。
-3. 【1ゲーム1回限定の場合】is_once_per_game: true とし、cool_down_turns: 0 を設定すること（ゲームロジックが永続歩兵化を自動適用する）。
-4. 【何度も使える効果の場合】is_once_per_game: false とし、強力なものは cool_down_turns: 2〜4 を設定すること。
-5. 【サンプルを超えること】サンプルのコピペは手抜き。入力単語の独自性を深掘りした完全オリジナルの効果を最優先で創造すること。
+3. 【手動ボタン消費系（ACTIVE_USE）は完全禁止】すべて全自動発動（ALWAYS, ON_MOVE, TURN_START, ON_TAKEN, ON_APPROACH）に統一すること。
+4. 【1ゲームに1回（使い捨て）の場合】is_once_per_game: true とし、cool_down_turns: 0 を設定すること。発動後はゲーム終了まで移動力・移動範囲を一律で「前後左右に1マス動ける十字移動（charging_grid）」の充填状態となるペナルティを課すこと。効果説明内にも必ず「前後左右に1マス動ける充填状態となる」という統一した表現で明記すること。
+5. 【何度も使える効果の場合】is_once_per_game: false とし、cool_down_turns: 2〜4 を設定すること。クールタイム中の数ターンは移動範囲が前後左右に1マス動ける十字移動に極小化するペナルティ（充填状態）を課すこと。効果説明内にも必ず「前後左右に1マス動ける充填状態となる」という統一した表現で明記すること。
+6. 【増殖系（SPAWNER）の絶対制限】盤面に生み出すトークンの上限は最大2体（max_limit: 2）とすること。
+7. 【永続パッシブの制限】永続パッシブ能力（ALWAYS）を持つ強力な駒は、本体の移動範囲（normal_grid）を「0マス（1マスも動けない完全固定）」または「前進1マス」に設定すること。
 
 ---
 
 ### 💻 出力JSONフォーマット（純粋なJSONのみ。Markdownのバッククォートや解説文は一切禁止）
 {
   "word": "プレイヤーが入力した単語",
-  "effect_name": "その言葉のソウルを体現した、洗練された漢字の能力名",
-  "mechanics_type": "属性（'HACK_AND_STEAL' / 'STEALTH_GHOST' / 'FORCE_CRUSH' / 'SPAWNER_BUILD' / 'TRAP_MINE' / 'UNKNOWN_HERESY'）",
+  "effect_name": "漢字の能力名",
+  "mechanics_type": "内部属性コード（'FORCE_CRUSH' / 'HACK_AND_STEAL' / 'STEALTH_GHOST' / 'SUPPORT_BUFF' / 'SPAWNER_BUILD' / 'TRAP_MINE' / 'UNKNOWN_HERESY' 等）",
+  "ability_genre": "画面の属性欄に表示する日本語のジャンル名（例: '武力・突撃', '擬態・洗脳', 'ステルス・隠密', '能力無効化・結界', '支援・強化' など単語から適切に選択）",
   "trigger": "発動形式（'ALWAYS' / 'ON_MOVE' / 'TURN_START' / 'ON_TAKEN' / 'ON_APPROACH'）",
-  "is_once_per_game": false,
+  "is_once_per_game": true,
   "cool_down_turns": 0,
   "range_geometry": {
-    "normal_grid": "通常時の5x5範囲（25文字の0,1,2の数値文字列。中心インデックス12は必ず2。外周まで正確に計算すること）",
-    "charging_grid": "一律 '0000000100002000000000000' に固定"
+    "normal_grid": "通常時5x5範囲（周囲2マスの場合は外周の計算ミス厳禁）",
+    "charging_grid": "0000000100012100010000000" // 十字移動に完全固定
   },
-  "description": "【能力効果】（日本語。いつどういう条件で自動発動するのか。1ゲーム1回限定の場合は発動後の永続歩兵化ペナルティを明記。カタカナ語排除）",
-  "spawn_piece_name": null,
+  "description": "【能力効果】（日本語。いつどういう条件で【自動発動】するのか、1ゲーム1回限定の有無、能力使用後の十字移動への弱体化などを明記。カタカナ語排除）",
   "spawn_config": {
     "spawn_piece_name": "生み出す駒名（不要ならnull）",
-    "max_limit": 0,
-    "spawn_range_geometry": null
+    "max_limit": 2,
+    "spawn_range_geometry": "生み出す範囲の5x5グリッド（不要ならnull）"
   },
   "promoted_effect": {
     "effect_name": "成った時の能力名",
     "description": "【覚醒効果】敵陣に入って成った時の進化効果説明（カタカナ語排除）"
   },
-  "logic_code": "移動パターンまたは特殊ロジック（スライド移動は 'move_like_rook'/'move_like_bishop'/'move_like_lance'/'move_like_knight'。それ以外は上記サンプルのlogic_codeまたは適切な一意の英語識別子）",
-  "deep_search_analysis": "サンプルをどう参考にしたか、あるいはどう超越したか、この単語からどうやってこの全く新しいオリジナルのゲームバランスとロジックを導き出したのかの熱い解説"
+  "logic_code": "移動パターンまたは特殊ロジック（スライド移動は 'move_like_rook'/'move_like_bishop'/'move_like_lance'/'move_like_knight'。それ以外は一意の英語識別子）",
+  "deep_search_analysis": "ゲームバランス的解説"
 }
 
 ### 生成対象のユーザー入力単語:
 "${word}"
 
-上記の単語の持つ意味・イメージ・性質を徹底分析し、5大ジャンルと15の引き出しを参照しながら、それを超越した完全オリジナルの対人戦最高カオス駒オブジェクトをJSONで生成してください。
+上記の単語の持つ意味・イメージ・性質を徹底分析し、10大ジャンルと24の参考例プールを参照しながら、それを超越した完全オリジナルの対人戦最高カオス駒オブジェクトをJSONで生成してください。
 `;
 
 
@@ -620,12 +675,17 @@ AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッ�
 
     // Repair mechanics_type: map new 5-genre names to internal legacy names
     const mechanicsTypeMap: Record<string, string> = {
-      'HACK_AND_STEAL': 'DYNAMICS_HACK',
-      'STEALTH_GHOST':  'STEALTH_TRAP',
-      'FORCE_CRUSH':    'MOVEMENT_HACK',
-      'SPAWNER_BUILD':  'RULE_BREAK',
-      'TRAP_MINE':      'STEALTH_TRAP',
-      'UNKNOWN_HERESY': 'DYNAMICS_HACK',
+      'FORCE_CRUSH':     'MOVEMENT_HACK',
+      'HACK_AND_STEAL':  'DYNAMICS_HACK',
+      'STEALTH_GHOST':   'STEALTH_TRAP',
+      'SUPPORT_BUFF':    'RULE_BREAK',
+      'SPAWNER_BUILD':   'RULE_BREAK',
+      'TRAP_MINE':       'STEALTH_TRAP',
+      'AUTOMATIC_DRIVE': 'MOVEMENT_HACK',
+      'VIRUS_INFECT':    'DYNAMICS_HACK',
+      'SPACE_WARP':      'DYNAMICS_HACK',
+      'NECROMANCY':      'DYNAMICS_HACK',
+      'UNKNOWN_HERESY':  'DYNAMICS_HACK'
     };
     if (parsed.mechanics_type && mechanicsTypeMap[parsed.mechanics_type]) {
       parsed.mechanics_type = mechanicsTypeMap[parsed.mechanics_type];
@@ -637,6 +697,17 @@ AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッ�
     // Repair trigger
     if (!parsed.trigger || !['ALWAYS', 'ON_MOVE', 'TURN_START', 'ON_TAKEN', 'ON_APPROACH'].includes(parsed.trigger)) {
       parsed.trigger = 'ALWAYS';
+    }
+
+    // Repair ability_genre
+    if (!parsed.ability_genre || typeof parsed.ability_genre !== 'string') {
+      const genreMap: Record<string, string> = {
+        'MOVEMENT_HACK': '武力・突撃',
+        'STEALTH_TRAP': 'ステルス・隠密',
+        'RULE_BREAK': '支援・強化',
+        'DYNAMICS_HACK': '擬態・洗脳'
+      };
+      parsed.ability_genre = genreMap[parsed.mechanics_type] || '未知の能力';
     }
 
     // Repair is_once_per_game → convert to cool_down_turns=99 (永続歩兵化)
@@ -748,7 +819,7 @@ AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッ�
     if (!parsed.range_geometry || typeof parsed.range_geometry !== 'object') {
       parsed.range_geometry = {
         normal_grid: '0000001110012100111000000',
-        charging_grid: '0000000100002000000000000'
+        charging_grid: '0000000100012100010000000'
       };
     } else {
       let norm = parsed.range_geometry.normal_grid;
@@ -765,7 +836,7 @@ AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッ�
         norm = '0000001110012100111000000';
       }
       if (typeof charg !== 'string' || charg.length !== 25) {
-        charg = '0000000100002000000000000';
+        charg = '0000000100012100010000000';
       }
 
       parsed.range_geometry = {

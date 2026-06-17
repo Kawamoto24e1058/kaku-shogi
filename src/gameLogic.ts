@@ -32,7 +32,7 @@ export function initializeBoard(): Board {
     cool_down_turns: 0,
     range_geometry: {
       normal_grid: '0000001110012100111000000',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     },
     description: 'このゲームの王。捕獲されると敗北する。',
     spawn_piece_name: null,
@@ -60,7 +60,7 @@ export function initializeBoard(): Board {
     cool_down_turns: 0,
     range_geometry: {
       normal_grid: '0000001110012100111000000',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     },
     description: 'このゲームの王。捕獲されると敗北する。',
     spawn_piece_name: null,
@@ -88,8 +88,8 @@ export function initializeBoard(): Board {
       trigger: 'ALWAYS',
       cool_down_turns: 0,
       range_geometry: {
-        normal_grid: '0000000100002000000000000',
-        charging_grid: '0000000100002000000000000',
+        normal_grid: '0000000100012100010000000',
+        charging_grid: '0000000100012100010000000',
         promoted_grid: '0000001110012100010000000'
       },
       description: '前方に1マス進むことができる基本の歩兵。',
@@ -119,8 +119,8 @@ export function initializeBoard(): Board {
       trigger: 'ALWAYS',
       cool_down_turns: 0,
       range_geometry: {
-        normal_grid: '0000000100002000000000000',
-        charging_grid: '0000000100002000000000000',
+        normal_grid: '0000000100012100010000000',
+        charging_grid: '0000000100012100010000000',
         promoted_grid: '0000001110012100010000000'
       },
       description: '前方に1マス進むことができる基本の歩兵。',
@@ -150,7 +150,7 @@ export function initializeBoard(): Board {
     cool_down_turns: 0,
     range_geometry: {
       normal_grid: '0010000100112110010000100',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     },
     description: '縦横に遮るものがなければどこまでも進める強力な大駒。',
     spawn_piece_name: null,
@@ -179,7 +179,7 @@ export function initializeBoard(): Board {
     cool_down_turns: 0,
     range_geometry: {
       normal_grid: '1000101010002000101010001',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     },
     description: '斜め4方向に遮るものがなければどこまでも進める強力な大駒。',
     spawn_piece_name: null,
@@ -209,7 +209,7 @@ export function initializeBoard(): Board {
     cool_down_turns: 0,
     range_geometry: {
       normal_grid: '0010000100112110010000100',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     },
     description: '縦横に遮るものがなければどこまでも進める強力な大駒。',
     spawn_piece_name: null,
@@ -238,7 +238,7 @@ export function initializeBoard(): Board {
     cool_down_turns: 0,
     range_geometry: {
       normal_grid: '1000101010002000101010001',
-      charging_grid: '0000000100002000000000000'
+      charging_grid: '0000000100012100010000000'
     },
     description: '斜め4方向に遮るものがなければどこまでも進める強力な大駒。',
     spawn_piece_name: null,
@@ -278,16 +278,25 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
 
   const validMoves: [number, number][] = [];
 
-  // 1. クールダウン（充填中）の移動制限：前進1マスのみにする
+  // 1. クールダウン（充填中）の移動制限：前後左右の十字移動（charging_grid）にする
   if (piece.coolDownTurnsRemaining > 0) {
+    const grid = piece.range_geometry?.charging_grid || '0000000100012100010000000';
     const isSente = piece.owner === 'sente';
-    const dy = isSente ? -1 : 1;
-    const ny = y + dy;
-    const nx = x;
-    if (isWithinBounds(ny, nx)) {
-      const target = board[ny][nx];
-      if (!target || target.owner !== piece.owner) {
-        validMoves.push([ny, nx]);
+    for (let r = 0; r < 5; r++) {
+      for (let c = 0; c < 5; c++) {
+        const idx = r * 5 + c;
+        if (grid[idx] === '1') {
+          const dy = isSente ? (r - 2) : (2 - r);
+          const dx = isSente ? (c - 2) : (2 - c);
+          const ny = y + dy;
+          const nx = x + dx;
+          if (isWithinBounds(ny, nx)) {
+            const target = board[ny][nx];
+            if (!target || target.owner !== piece.owner) {
+              validMoves.push([ny, nx]);
+            }
+          }
+        }
       }
     }
     return validMoves;
@@ -1002,13 +1011,60 @@ export function getValidDropCells(board: Board, piece: Piece, player: Player): [
   return validCells;
 }
 
+export function checkAndApplyNullification(
+  board: Board,
+  attackerPosition: [number, number],
+  attackerPiece: Piece,
+  effectName: string,
+  affectedPositions: [number, number][],
+  attackerPlayer: Player,
+  logs: Omit<GameLog, 'id' | 'timestamp'>[]
+): { board: Board; nullified: boolean } {
+  const defender = attackerPlayer === 'sente' ? 'gote' : 'sente';
+  // Find all active nullifiers on the board
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const p = board[r][c];
+      if (
+        p &&
+        p.owner === defender &&
+        p.coolDownTurnsRemaining === 0 &&
+        (p.logic_code === 'nullify' || p.description.includes('無効化') || p.description.includes('結界') || p.description.includes('NULLIFY'))
+      ) {
+        // Check if any of the affected positions are within 2 cells of this nullifier (Chebyshev distance <= 2)
+        const isTargetInRange = affectedPositions.some(([ty, tx]) => {
+          return Math.max(Math.abs(ty - r), Math.abs(tx - c)) <= 2;
+        });
+        
+        if (isTargetInRange) {
+          // Nullify triggered!
+          const nextBoard = board.map(row => [...row]);
+          const updatedNullifier = { ...p };
+          updatedNullifier.coolDownTurnsRemaining = p.cool_down_turns > 0 ? p.cool_down_turns : 99;
+          nextBoard[r][c] = updatedNullifier;
+          
+          logs.push({
+            player: defender,
+            message: `【能力無効化】${getCellLabel(r, c)} にある ${p.word} の結界効果により、${attackerPiece.word} の能力「${effectName}」は無効化されました！`,
+            type: 'ability'
+          });
+          
+          return { board: nextBoard, nullified: true };
+        }
+      }
+    }
+  }
+  return { board, nullified: false };
+}
+
 export function applyAutomatedEffect(
   board: Board,
   position: [number, number],
   triggerType: 'ON_MOVE' | 'TURN_START',
   player: Player,
   capturedPieces: Piece[],
-  fromPosition?: [number, number]
+  fromPosition?: [number, number],
+  targetPosition?: [number, number]
 ): {
   board: Board;
   capturedPieces: Piece[];
@@ -1090,8 +1146,8 @@ export function applyAutomatedEffect(
           trigger: 'ALWAYS',
           cool_down_turns: 0,
           range_geometry: {
-            normal_grid: '0000000100002000000000000',
-            charging_grid: '0000000100002000000000000'
+            normal_grid: '0000000100012100010000000',
+            charging_grid: '0000000100012100010000000'
           },
           description: `生み出された${spawnPieceName}。`,
           spawn_piece_name: null,
@@ -1135,13 +1191,26 @@ export function applyAutomatedEffect(
       [0, -1],           [0, 1],
       [1, -1],  [1, 0],  [1, 1]
     ];
-    let explodedCount = 0;
+    const targets: [number, number][] = [];
     for (const [dy, dx] of adjacent) {
       const ny = y + dy;
       const nx = x + dx;
       if (isWithinBounds(ny, nx)) {
         const victim = nextBoard[ny][nx];
         if (victim && victim.owner !== player && !victim.isKing) {
+          targets.push([ny, nx]);
+        }
+      }
+    }
+    if (targets.length > 0) {
+      const nullifyRes = checkAndApplyNullification(nextBoard, position, piece, effectName, targets, player, logs);
+      if (nullifyRes.nullified) {
+        return { board: nullifyRes.board, capturedPieces: nextCaptured, logs, triggered: true };
+      }
+
+      for (const [ny, nx] of targets) {
+        const victim = nextBoard[ny][nx];
+        if (victim) {
           logs.push({
             player,
             message: `【自動発動】${piece.word} の効果「${effectName}」の衝撃波が命中！ ${victim.word} (${getCellLabel(ny, nx)}) を爆破捕獲しました！`,
@@ -1155,11 +1224,8 @@ export function applyAutomatedEffect(
             isRevealed: true
           });
           nextBoard[ny][nx] = null;
-          explodedCount++;
         }
       }
-    }
-    if (explodedCount > 0) {
       triggered = true;
     }
   }
@@ -1170,7 +1236,7 @@ export function applyAutomatedEffect(
       [-1, 0], [1, 0], [0, -1], [0, 1],
       [-1, -1], [-1, 1], [1, -1], [1, 1]
     ];
-    let pulledCount = 0;
+    const targets: [number, number][] = [];
     for (const [dy, dx] of directions) {
       const targetY = y + dy * 2;
       const targetX = x + dx * 2;
@@ -1180,21 +1246,38 @@ export function applyAutomatedEffect(
         const victim = nextBoard[targetY][targetX];
         const pathEmpty = nextBoard[intermediateY][intermediateX] === null;
         if (victim && victim.owner !== player && pathEmpty) {
-          nextBoard[intermediateY][intermediateX] = {
-            ...victim,
-            originalPosition: [intermediateY, intermediateX]
-          };
-          nextBoard[targetY][targetX] = null;
-          pulledCount++;
-          logs.push({
-            player,
-            message: `【自動発動】${piece.word} の効果「${effectName}」により、${victim.word} (${getCellLabel(targetY, targetX)}) が ${getCellLabel(intermediateY, intermediateX)} に引き寄せられました！`,
-            type: 'ability'
-          });
+          targets.push([targetY, targetX]);
         }
       }
     }
-    if (pulledCount > 0) {
+    if (targets.length > 0) {
+      const nullifyRes = checkAndApplyNullification(nextBoard, position, piece, effectName, targets, player, logs);
+      if (nullifyRes.nullified) {
+        return { board: nullifyRes.board, capturedPieces: nextCaptured, logs, triggered: true };
+      }
+
+      for (const [dy, dx] of directions) {
+        const targetY = y + dy * 2;
+        const targetX = x + dx * 2;
+        const intermediateY = y + dy;
+        const intermediateX = x + dx;
+        if (isWithinBounds(targetY, targetX) && isWithinBounds(intermediateY, intermediateX)) {
+          const victim = nextBoard[targetY][targetX];
+          const pathEmpty = nextBoard[intermediateY][intermediateX] === null;
+          if (victim && victim.owner !== player && pathEmpty) {
+            nextBoard[intermediateY][intermediateX] = {
+              ...victim,
+              originalPosition: [intermediateY, intermediateX]
+            };
+            nextBoard[targetY][targetX] = null;
+            logs.push({
+              player,
+              message: `【自動発動】${piece.word} の効果「${effectName}」により、${victim.word} (${getCellLabel(targetY, targetX)}) が ${getCellLabel(intermediateY, intermediateX)} に引き寄せられました！`,
+              type: 'ability'
+            });
+          }
+        }
+      }
       triggered = true;
     }
   }
@@ -1243,18 +1326,72 @@ export function applyAutomatedEffect(
       const stepY = deltaY === 0 ? 0 : deltaY / Math.abs(deltaY);
       const stepX = deltaX === 0 ? 0 : deltaX / Math.abs(deltaX);
 
-      triggered = true; // Ability is triggered, will trigger cooldown
-
-      // Path 1: From source to target (exclusive of target and source)
+      // Gather potential victims first
+      const targets: [number, number][] = [];
       let cy1 = fy + stepY;
       let cx1 = fx + stepX;
       while (cy1 !== y || cx1 !== x) {
         if (isWithinBounds(cy1, cx1)) {
           const victim = nextBoard[cy1][cx1];
           if (victim && victim.owner !== player) {
+            targets.push([cy1, cx1]);
+          }
+        }
+        cy1 += stepY;
+        cx1 += stepX;
+      }
+
+      let cy2 = y + stepY;
+      let cx2 = x + stepX;
+      while (isWithinBounds(cy2, cx2)) {
+        const victim = nextBoard[cy2][cx2];
+        if (victim && victim.owner !== player) {
+          targets.push([cy2, cx2]);
+        }
+        cy2 += stepY;
+        cx2 += stepX;
+      }
+
+      if (targets.length > 0) {
+        const nullifyRes = checkAndApplyNullification(nextBoard, position, piece, effectName, targets, player, logs);
+        if (nullifyRes.nullified) {
+          return { board: nullifyRes.board, capturedPieces: nextCaptured, logs, triggered: true };
+        }
+
+        // Apply effect
+        let cy1_act = fy + stepY;
+        let cx1_act = fx + stepX;
+        while (cy1_act !== y || cx1_act !== x) {
+          if (isWithinBounds(cy1_act, cx1_act)) {
+            const victim = nextBoard[cy1_act][cx1_act];
+            if (victim && victim.owner !== player) {
+              logs.push({
+                player,
+                message: `【一気貫通】${piece.word} の突撃進路上にいた敵の ${victim.word} (${getCellLabel(cy1_act, cx1_act)}) を一撃で捕獲しました！`,
+                type: 'capture'
+              });
+              nextCaptured.push({
+                ...victim,
+                owner: player,
+                isPromoted: false,
+                coolDownTurnsRemaining: 0,
+                isRevealed: true
+              });
+              nextBoard[cy1_act][cx1_act] = null;
+            }
+          }
+          cy1_act += stepY;
+          cx1_act += stepX;
+        }
+
+        let cy2_act = y + stepY;
+        let cx2_act = x + stepX;
+        while (isWithinBounds(cy2_act, cx2_act)) {
+          const victim = nextBoard[cy2_act][cx2_act];
+          if (victim && victim.owner !== player) {
             logs.push({
               player,
-              message: `【一気貫通】${piece.word} の突撃進路上にいた敵の ${victim.word} (${getCellLabel(cy1, cx1)}) を一撃で捕獲しました！`,
+              message: `【一気貫通】${piece.word} の一気貫通の衝撃！ 直線上の敵 ${victim.word} (${getCellLabel(cy2_act, cx2_act)}) を捕獲しました！`,
               type: 'capture'
             });
             nextCaptured.push({
@@ -1264,89 +1401,121 @@ export function applyAutomatedEffect(
               coolDownTurnsRemaining: 0,
               isRevealed: true
             });
-            nextBoard[cy1][cx1] = null;
+            nextBoard[cy2_act][cx2_act] = null;
           }
+          cy2_act += stepY;
+          cy2_act += stepX;
         }
-        cy1 += stepY;
-        cx1 += stepX;
       }
-
-      // Path 2: Beyond target to the edge of the board in same direction (exclusive of target)
-      let cy2 = y + stepY;
-      let cx2 = x + stepX;
-      while (isWithinBounds(cy2, cx2)) {
-        const victim = nextBoard[cy2][cx2];
-        if (victim && victim.owner !== player) {
-          logs.push({
-            player,
-            message: `【一気貫通】${piece.word} の一気貫通の衝撃！ 直線上の敵 ${victim.word} (${getCellLabel(cy2, cx2)}) を捕獲しました！`,
-            type: 'capture'
-          });
-          nextCaptured.push({
-            ...victim,
-            owner: player,
-            isPromoted: false,
-            coolDownTurnsRemaining: 0,
-            isRevealed: true
-          });
-          nextBoard[cy2][cx2] = null;
-        }
-        cy2 += stepY;
-        cx2 += stepX;
-      }
+      triggered = true;
     }
   }
   // 6. Mimic / Copy (ON_MOVE or TURN_START trigger)
-  else if (logic === 'mimic' || logic === 'ability_theft' || desc.includes('擬態') || desc.includes('コピー')) {
-    const adjacent = [
-      [-1, -1], [-1, 0], [-1, 1],
-      [0, -1],           [0, 1],
-      [1, -1],  [1, 0],  [1, 1]
-    ];
-    for (const [dy, dx] of adjacent) {
-      const ny = y + dy;
-      const nx = x + dx;
-      if (isWithinBounds(ny, nx)) {
-        const target = nextBoard[ny][nx];
-        if (target && target.owner !== player && !target.isKing && !target.isPawn) {
-          nextBoard[y][x] = {
-            ...piece,
-            word: `擬態・${target.word}`,
-            effect_name: target.effect_name,
-            description: `【擬態化中】${target.word} の能力をコピーしています。${target.description}`,
-            range_geometry: { ...target.range_geometry },
-            logic_code: target.logic_code,
-            mechanics_type: target.mechanics_type,
-            trigger: target.trigger,
-            cool_down_turns: target.cool_down_turns,
-            spawn_piece_name: target.spawn_piece_name
-          };
-          triggered = true;
-          logs.push({
-            player,
-            message: `【擬態発動】${piece.word} が隣接する ${target.word} (${getCellLabel(ny, nx)}) の能力を完全にコピーしました！`,
-            type: 'ability'
-          });
-          break;
+  else if (logic === 'mimic' || logic === 'ability_theft' || logic === 'transform' || desc.includes('擬態') || desc.includes('コピー') || desc.includes('変身')) {
+    let target: Piece | null = null;
+    let ty = -1, tx = -1;
+
+    if (targetPosition) {
+      [ty, tx] = targetPosition;
+      target = nextBoard[ty][tx];
+    } else {
+      // Fallback / AI automated selection
+      const adjacent = [
+        [-1, -1], [-1, 0], [-1, 1],
+        [0, -1],           [0, 1],
+        [1, -1],  [1, 0],  [1, 1]
+      ];
+      let found = false;
+      for (const [dy, dx] of adjacent) {
+        const ny = y + dy;
+        const nx = x + dx;
+        if (isWithinBounds(ny, nx)) {
+          const p = nextBoard[ny][nx];
+          if (p && p.owner !== player && !p.isKing) {
+            target = p;
+            ty = ny;
+            tx = nx;
+            found = true;
+            break;
+          }
         }
       }
+      if (!found && (logic === 'transform' || desc.includes('変身') || desc.includes('コピー'))) {
+        for (let r = 0; r < BOARD_SIZE; r++) {
+          for (let c = 0; c < BOARD_SIZE; c++) {
+            const p = nextBoard[r][c];
+            if (p && (r !== y || c !== x) && !p.isKing) {
+              target = p;
+              ty = r;
+              tx = c;
+              found = true;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (target && !target.isKing) {
+      const nullifyRes = checkAndApplyNullification(nextBoard, position, piece, effectName, [[ty, tx]], player, logs);
+      if (nullifyRes.nullified) {
+        return { board: nullifyRes.board, capturedPieces: nextCaptured, logs, triggered: true };
+      }
+
+      nextBoard[y][x] = {
+        ...piece,
+        word: `擬態・${target.word}`,
+        effect_name: target.effect_name,
+        description: `【擬態化中】${target.word} の能力をコピーしています。${target.description}`,
+        range_geometry: { ...target.range_geometry },
+        logic_code: target.logic_code,
+        mechanics_type: target.mechanics_type,
+        trigger: target.trigger,
+        cool_down_turns: target.cool_down_turns,
+        spawn_piece_name: target.spawn_piece_name
+      };
+      triggered = true;
+      logs.push({
+        player,
+        message: `【擬態発動】${piece.word} が ${target.word} (${getCellLabel(ty, tx)}) の能力を完全にコピーしました！`,
+        type: 'ability'
+      });
     }
   }
   // 7. Puppet / Mind Control (ON_MOVE or TURN_START trigger)
   else if (logic === 'mind_control' || logic === 'puppet' || logic === 'parasite' || desc.includes('洗脳') || desc.includes('寄生') || desc.includes('支配')) {
-    const adjacent = [
-      [-1, -1], [-1, 0], [-1, 1],
-      [0, -1],           [0, 1],
-      [1, -1],  [1, 0],  [1, 1]
-    ];
-    let controlledCount = 0;
-    for (const [dy, dx] of adjacent) {
-      const ny = y + dy;
-      const nx = x + dx;
-      if (isWithinBounds(ny, nx)) {
-        const target = nextBoard[ny][nx];
+    let targetsToControl: [number, number][] = [];
+    if (targetPosition) {
+      targetsToControl.push(targetPosition);
+    } else {
+      const adjacent = [
+        [-1, -1], [-1, 0], [-1, 1],
+        [0, -1],           [0, 1],
+        [1, -1],  [1, 0],  [1, 1]
+      ];
+      for (const [dy, dx] of adjacent) {
+        const ny = y + dy;
+        const nx = x + dx;
+        if (isWithinBounds(ny, nx)) {
+          const p = nextBoard[ny][nx];
+          if (p && p.owner !== player && !p.isKing) {
+            targetsToControl.push([ny, nx]);
+          }
+        }
+      }
+    }
+
+    if (targetsToControl.length > 0) {
+      const nullifyRes = checkAndApplyNullification(nextBoard, position, piece, effectName, targetsToControl, player, logs);
+      if (nullifyRes.nullified) {
+        return { board: nullifyRes.board, capturedPieces: nextCaptured, logs, triggered: true };
+      }
+
+      let controlledCount = 0;
+      for (const [ty, tx] of targetsToControl) {
+        const target = nextBoard[ty][tx];
         if (target && target.owner !== player && !target.isKing) {
-          nextBoard[ny][nx] = {
+          nextBoard[ty][tx] = {
             ...target,
             owner: player,
             isRevealed: true
@@ -1354,14 +1523,54 @@ export function applyAutomatedEffect(
           controlledCount++;
           logs.push({
             player,
-            message: `【洗脳支配】${piece.word} の精神干渉により、${target.word} (${getCellLabel(ny, nx)}) を支配し味方にしました！`,
+            message: `【洗脳支配】${piece.word} の精神干渉により、${target.word} (${getCellLabel(ty, tx)}) を支配し味方にしました！`,
             type: 'ability'
           });
         }
       }
+      if (controlledCount > 0) {
+        triggered = true;
+      }
     }
-    if (controlledCount > 0) {
-      triggered = true;
+  }
+  // 7.5. Swap (ON_MOVE or TURN_START trigger)
+  else if (logic === 'swap' || logic === 'swap_pawn' || desc.includes('スワップ') || desc.includes('入れ替え')) {
+    let ty = -1, tx = -1;
+    if (targetPosition) {
+      [ty, tx] = targetPosition;
+    } else {
+      // Fallback: first friendly normal pawn
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          const p = nextBoard[r][c];
+          if (p && p.owner === player && p.isPawn && !p.isPromoted) {
+            ty = r;
+            tx = c;
+            break;
+          }
+        }
+        if (ty !== -1) break;
+      }
+    }
+
+    if (ty !== -1 && tx !== -1) {
+      const target = nextBoard[ty][tx];
+      if (target) {
+        nextBoard[ty][tx] = {
+          ...piece,
+          originalPosition: [ty, tx]
+        };
+        nextBoard[y][x] = {
+          ...target,
+          originalPosition: [y, x]
+        };
+        triggered = true;
+        logs.push({
+          player,
+          message: `【位置入替】${piece.word} が ${target.word} (${getCellLabel(ty, tx)}) と位置を入れ替えました！`,
+          type: 'ability'
+        });
+      }
     }
   }
   // 8. Timer / Egg / Hatch (TURN_START trigger)
@@ -1376,7 +1585,7 @@ export function applyAutomatedEffect(
       cool_down_turns: 1,
       range_geometry: {
         normal_grid: '1111111111112111111111111',
-        charging_grid: '0000000100002000000000000'
+        charging_grid: '0000000100012100010000000'
       },
       logic_code: 'kill_adjacent_remote',
       spawn_piece_name: null,
@@ -1441,3 +1650,86 @@ export function isKingInCheck(board: Board, player: Player): boolean {
   return false;
 }
 
+export function getAbilityTargets(
+  board: Board,
+  position: [number, number],
+  player: Player
+): { targets: [number, number][]; type: 'transform' | 'mind_control' | 'swap' } | null {
+  const [y, x] = position;
+  const piece = board[y][x];
+  if (!piece || piece.coolDownTurnsRemaining > 0) return null;
+
+  const desc = piece.description || '';
+  const logic = getPieceLogicCode(piece);
+
+  const isTransform = logic === 'transform' || logic === 'mimic' || logic === 'ability_theft' || desc.includes('擬態') || desc.includes('コピー') || desc.includes('変身');
+  const isMindControl = logic === 'mind_control' || logic === 'puppet' || logic === 'parasite' || desc.includes('洗脳') || desc.includes('寄生') || desc.includes('支配');
+  const isSwap = logic === 'swap' || logic === 'swap_pawn' || desc.includes('スワップ') || desc.includes('入れ替え');
+
+  if (isTransform) {
+    const targets: [number, number][] = [];
+    const isAdjacentOnly = desc.includes('周囲') || desc.includes('隣接') || logic === 'mimic';
+    if (isAdjacentOnly) {
+      const adjacent = [
+        [-1, -1], [-1, 0], [-1, 1],
+        [0, -1],           [0, 1],
+        [1, -1],  [1, 0],  [1, 1]
+      ];
+      for (const [dy, dx] of adjacent) {
+        const ny = y + dy;
+        const nx = x + dx;
+        if (isWithinBounds(ny, nx)) {
+          const p = board[ny][nx];
+          if (p && p.owner !== player && !p.isKing) {
+            targets.push([ny, nx]);
+          }
+        }
+      }
+    } else {
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          const p = board[r][c];
+          if (p && (r !== y || c !== x) && !p.isKing) {
+            targets.push([r, c]);
+          }
+        }
+      }
+    }
+    return targets.length > 0 ? { targets, type: 'transform' } : null;
+  }
+
+  if (isMindControl) {
+    const targets: [number, number][] = [];
+    const adjacent = [
+      [-1, -1], [-1, 0], [-1, 1],
+      [0, -1],           [0, 1],
+      [1, -1],  [1, 0],  [1, 1]
+    ];
+    for (const [dy, dx] of adjacent) {
+      const ny = y + dy;
+      const nx = x + dx;
+      if (isWithinBounds(ny, nx)) {
+        const p = board[ny][nx];
+        if (p && p.owner !== player && !p.isKing) {
+          targets.push([ny, nx]);
+        }
+      }
+    }
+    return targets.length > 0 ? { targets, type: 'mind_control' } : null;
+  }
+
+  if (isSwap) {
+    const targets: [number, number][] = [];
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const p = board[r][c];
+        if (p && p.owner === player && p.isPawn && !p.isPromoted) {
+          targets.push([r, c]);
+        }
+      }
+    }
+    return targets.length > 0 ? { targets, type: 'swap' } : null;
+  }
+
+  return null;
+}

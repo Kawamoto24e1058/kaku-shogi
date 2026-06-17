@@ -27,6 +27,7 @@ export interface PieceData {
   word: string;
   effect_name: string;
   mechanics_type: 'MOVEMENT_HACK' | 'STEALTH_TRAP' | 'RULE_BREAK' | 'DYNAMICS_HACK';
+  ability_genre: string; // Display-only Japanese genre name
   trigger: 'ALWAYS' | 'ON_MOVE' | 'TURN_START' | 'ON_TAKEN' | 'ON_APPROACH';
   cool_down_turns: number; // Cooldown (charging) turns required. 99 = once-per-game (永続歩兵化)
   is_once_per_game?: boolean; // 1ゲームに1回限りの必殺技フラグ（発動後は永続歩兵化）
