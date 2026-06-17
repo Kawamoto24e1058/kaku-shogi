@@ -42,6 +42,15 @@ const k3 = 'R-sjK6i76fvZomSfj2mvmDzw';
 const geminiDefaultKey = k1 + k2 + k3;
 
 export const App: React.FC = () => {
+  // ユーザー名の読み込み（localStorage から）
+  const savedSenteName = typeof window !== 'undefined' ? (localStorage.getItem('shogi_player_name_sente') || '') : '';
+  const savedGoteName  = typeof window !== 'undefined' ? (localStorage.getItem('shogi_player_name_gote')  || '') : '';
+
+  const [playerNames, setPlayerNames] = useState<{ sente: string; gote: string }>({
+    sente: savedSenteName,
+    gote: savedGoteName,
+  });
+
   const [state, setState] = useState<GameState>({
     board: initializeBoard(),
     turn: 'sente',
@@ -57,6 +66,7 @@ export const App: React.FC = () => {
     logs: [],
     historyStates: [],
     geminiApiKey: geminiDefaultKey,
+    playerNames: { sente: savedSenteName, gote: savedGoteName },
     promotionPending: null,
   });
 
@@ -313,6 +323,7 @@ export const App: React.FC = () => {
 
       const clientDeviceId = getOrCreateDeviceId();
       const initialB = initializeBoard();
+      const senteName = playerNames.sente || '先手プレイヤー';
 
       const docRef = doc(db, 'matches', code);
       await setDoc(docRef, {
@@ -320,6 +331,8 @@ export const App: React.FC = () => {
         status: 'waiting',
         senteDeviceId: clientDeviceId,
         goteDeviceId: null,
+        senteName: senteName,
+        goteName: '',
         senteWords: [],
         goteWords: [],
         sentePiecesReady: false,
@@ -372,9 +385,11 @@ export const App: React.FC = () => {
       }
 
       const clientDeviceId = getOrCreateDeviceId();
+      const goteName = playerNames.gote || '後手プレイヤー';
       await updateDoc(docRef, {
         status: 'setup',
         goteDeviceId: clientDeviceId,
+        goteName: goteName,
         logs: arrayUnion({ player: 'system', message: '後手(対戦相手)が入室しました。能力駒の構築を開始します。', type: 'system' }),
         lastUpdated: Date.now()
       });
@@ -398,6 +413,14 @@ export const App: React.FC = () => {
       if (snapshot.exists()) {
         const data = snapshot.data();
         setMatchDoc(data);
+
+        // 相手のユーザー名を反映
+        setPlayerNames(prev => {
+          const newNames = { ...prev };
+          if (myRole === 'sente' && data.goteName) newNames.gote = data.goteName;
+          if (myRole === 'gote' && data.senteName) newNames.sente = data.senteName;
+          return newNames;
+        });
 
         if (data.status === 'setup') {
           setState(prev => {
@@ -1324,10 +1347,12 @@ export const App: React.FC = () => {
               let weight = 10;
               if (target) {
                 if (target.isKing) weight = 1000;
-                else if (target && getPieceTrigger(target) === 'ON_TAKEN' && getPieceLogicCode(target) === 'kill_adjacent') {
-                  weight = 1;
+                else if (target.isHisha || target.isKaku) weight = 200; // 大駒の捕獲価値
+                else if (!target.isPawn) weight = 100; // カスタム駒の捕獲価値
+                else if (getPieceTrigger(target) === 'ON_TAKEN' && getPieceLogicCode(target) === 'kill_adjacent') {
+                  weight = 1; // 罠の自爆は避ける
                 } else {
-                  weight = 40;
+                  weight = 40; // 歩兵などの捕獲価値
                 }
               }
               aiMoves.push({ type: 'move', from: [y, x], to: [ny, nx], weight });
@@ -1596,7 +1621,9 @@ export const App: React.FC = () => {
             <div className="turn-change-scanline" />
             <div className="turn-change-subtitle">SYSTEM STATUS UPDATE</div>
             <div className="turn-change-title">
-              {turnChangeAlert === 'sente' ? '▲ 先手 (PLAYER) の手番' : '▽ 後手 (AI / OPPONENT) の手番'}
+              {turnChangeAlert === 'sente'
+                ? `▲ ${playerNames.sente || '先手'} の手番`
+                : `▽ ${playerNames.gote || (vsAiMode ? 'AI' : '後手')} の手番`}
             </div>
             <div className="turn-change-bar" />
           </div>
@@ -1627,6 +1654,12 @@ export const App: React.FC = () => {
             onJoinRoom={handleJoinRoom}
             isWaitingForOpponent={isWaitingForOpponent}
             matchmakingError={matchmakingError}
+            playerNames={playerNames}
+            onSetPlayerNames={(names) => {
+              setPlayerNames(names);
+              localStorage.setItem('shogi_player_name_sente', names.sente);
+              localStorage.setItem('shogi_player_name_gote', names.gote);
+            }}
             onStartGame={() => {
               setState(prev => ({ ...prev, phase: 'setup' }));
               addLog('対局準備を開始します。能力駒を作成してください。', 'system', 'sente');
@@ -1766,6 +1799,7 @@ export const App: React.FC = () => {
                   onPassTurn={handlePassTurn}
                   vsAiMode={vsAiMode}
                   onToggleVsAi={() => setVsAiMode(!vsAiMode)}
+                  playerNames={playerNames}
                 />
               </div>
 
@@ -1787,26 +1821,35 @@ export const App: React.FC = () => {
       )}
 
       {/* Cyberpunk Victory/Defeat Fullscreen Overlay */}
-      {state.winner && (
-        <div className={`game-over-overlay ${state.winner === 'sente' ? 'victory-theme' : 'defeat-theme'}`}>
-          <div className="game-over-panel">
-            <h1 className="game-over-title">
-              {state.winner === 'sente' ? '作戦完了' : '作戦失敗'}
-            </h1>
-            <div className="game-over-subtitle">
-              {state.winner === 'sente' ? '先手 勝利 / MISSION ACCOMPLISHED' : '後手 勝利 / TACTICAL DEFEAT'}
+      {state.winner && (() => {
+        const winnerName = state.winner === 'sente'
+          ? (playerNames.sente || '先手')
+          : (playerNames.gote || (vsAiMode ? 'AI' : '後手'));
+        const loserName = state.winner === 'sente'
+          ? (playerNames.gote || (vsAiMode ? 'AI' : '後手'))
+          : (playerNames.sente || '先手');
+        return (
+          <div className={`game-over-overlay ${state.winner === 'sente' ? 'victory-theme' : 'defeat-theme'}`}>
+            <div className="game-over-panel">
+              <h1 className="game-over-title">
+                {state.winner === 'sente' ? '作戦完了' : '作戦失敗'}
+              </h1>
+              <div className="game-over-subtitle">
+                🏆 {winnerName} の勝利 / MISSION ACCOMPLISHED
+              </div>
+              <p className="game-over-details">
+                {winnerName} が {loserName} に勝利しました。<br />
+                {state.winner === 'sente'
+                  ? '敵陣営の王将の完全排除を確認。戦略的勝利を達成しました。'
+                  : '玉将の機能停止を検知。防衛システム限界。直ちに後退してください。'}
+              </p>
+              <button className="cyber-btn game-over-btn" onClick={handleResetGame}>
+                再起動 (REBOOT SYSTEM)
+              </button>
             </div>
-            <p className="game-over-details">
-              {state.winner === 'sente' 
-                ? '敵陣営の王将の完全排除を確認。戦略的勝利を達成しました。システムを安定稼働に戻します。' 
-                : '味方陣営の玉将の機能停止を検知。防衛システム限界。直ちに全ユニットを後退させてください。'}
-            </p>
-            <button className="cyber-btn game-over-btn" onClick={handleResetGame}>
-              再起動 (REBOOT SYSTEM)
-            </button>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

@@ -15,6 +15,7 @@ interface ControlPanelProps {
   onPassTurn: () => void;
   vsAiMode: boolean;
   onToggleVsAi: () => void;
+  playerNames: { sente: string; gote: string };
 }
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -29,6 +30,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onPassTurn,
   vsAiMode,
   onToggleVsAi,
+  playerNames,
 }) => {
   const logContainerRef = useRef<HTMLDivElement>(null);
 
@@ -63,7 +65,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
         {winner ? (
           <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--neon-yellow)', textAlign: 'center', margin: '10px 0', fontFamily: 'var(--font-cyber)' }}>
-            ★ {winner === 'sente' ? '先手' : '後手'}の勝利！ ★
+            🏆 {winner === 'sente'
+              ? (playerNames.sente || '先手')
+              : (playerNames.gote || (vsAiMode ? 'AI' : '後手'))
+            } の勝利！
           </div>
         ) : (
           <div>
@@ -82,7 +87,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 textShadow: `0 0 5px ${turn === 'sente' ? 'rgba(0,243,255,0.4)' : 'rgba(189,0,255,0.4)'}`,
                 fontFamily: 'var(--font-cyber)'
               }}>
-                {turn === 'sente' ? '先手 (Player 1)' : '後手 (Player 2 / AI)'}
+                {turn === 'sente'
+                  ? `▲ ${playerNames.sente || '先手'}`
+                  : `▽ ${playerNames.gote || (vsAiMode ? 'AI' : '後手')}`
+                }
               </span>
             </div>
 

@@ -28,7 +28,8 @@ export interface PieceData {
   effect_name: string;
   mechanics_type: 'MOVEMENT_HACK' | 'STEALTH_TRAP' | 'RULE_BREAK' | 'DYNAMICS_HACK';
   trigger: 'ALWAYS' | 'ON_MOVE' | 'TURN_START' | 'ON_TAKEN' | 'ON_APPROACH';
-  cool_down_turns: number; // Cooldown (charging) turns required
+  cool_down_turns: number; // Cooldown (charging) turns required. 99 = once-per-game (永続歩兵化)
+  is_once_per_game?: boolean; // 1ゲームに1回限りの必殺技フラグ（発動後は永続歩兵化）
   range_geometry: RangeGeometry;
   description: string;
   spawn_piece_name: string | null; // For copy/replication type logic (clone name, otherwise null)
@@ -43,6 +44,8 @@ export interface Piece extends PieceData {
   owner: Player;
   isKing: boolean;
   isPawn: boolean;
+  isHisha?: boolean;
+  isKaku?: boolean;
   originalPosition: [number, number] | null;
   isPromoted: boolean;
   
@@ -95,6 +98,10 @@ export interface GameState {
   logs: GameLog[];
   historyStates: HistoryState[]; // Snapshots of previous turns for time rewind
   geminiApiKey: string;
+  playerNames: {
+    sente: string;
+    gote: string;
+  };
   promotionPending: {
     from: [number, number];
     to: [number, number];

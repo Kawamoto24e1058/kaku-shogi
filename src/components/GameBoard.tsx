@@ -192,7 +192,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 
       if (!shouldHide) {
         const isAutonomous = piece.trigger === 'ALWAYS' && (getPieceLogicCode(piece).includes('runaway') || piece.description.includes('操作不能'));
-        const isCustom = !piece.isKing && !piece.isPawn;
+        const isCustom = !piece.isKing && !piece.isPawn && !piece.isHisha && !piece.isKaku;
         const isGote = piece.owner === 'gote';
         
         // 1. 敵味方の基本カラーテーマ（先手＝シアン/ブルー、後手＝ピンク/レッド）
@@ -218,6 +218,12 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           widthStyle = '78%';
           heightStyle = '78%';
           borderRadiusStyle = '1px';
+        } else if (piece.isHisha || piece.isKaku) {
+          borderStyle = `1.5px solid ${baseBorderColor}`;
+          boxShadowStyle = `0 0 8px ${isGote ? 'rgba(255, 0, 85, 0.35)' : 'rgba(0, 243, 255, 0.35)'}, ${insetShadow}`;
+          widthStyle = '90%';
+          heightStyle = '90%';
+          borderRadiusStyle = '3px';
         } else if (isCustom) {
           borderStyle = '1px solid #e6d0af';
           let glowColor = 'rgba(230, 208, 175, 0.2)';
@@ -356,8 +362,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               )}
               {/* Piece Text - size locked with break-all to prevent cell warping */}
               <div style={{
-                fontSize: piece.isKing ? '14px' : (piece.isPawn ? '10px' : (piece.word.length > 5 ? '8px' : '11px')),
-                fontWeight: piece.isKing ? '900' : 'bold',
+                fontSize: piece.isKing ? '14px' : ((piece.isHisha || piece.isKaku) ? '12px' : (piece.isPawn ? '10px' : (piece.word.length > 5 ? '8px' : '11px'))),
+                fontWeight: (piece.isKing || piece.isHisha || piece.isKaku) ? '900' : 'bold',
                 color: textColor,
                 textAlign: 'center',
                 whiteSpace: 'normal',
@@ -366,10 +372,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                 textShadow: piece.isKing ? '0 0 8px rgba(219, 188, 98, 0.4)' : (isCustom ? `0 0 5px ${isGote ? 'rgba(255, 121, 198, 0.3)' : 'rgba(138, 233, 253, 0.3)'}` : 'none'),
                 marginTop: piece.isKing ? '6px' : '0' // Push down slightly for the crown icon
               }}>
-                {piece.word}
+                {piece.isHisha && piece.isPromoted ? '竜王' : (piece.isKaku && piece.isPromoted ? '竜馬' : (piece.isPawn && piece.isPromoted ? 'と金' : piece.word))}
               </div>
               {/* Abbreviated logic label */}
-              {!piece.isKing && !piece.isPawn && (
+              {!piece.isKing && !piece.isPawn && !piece.isHisha && !piece.isKaku && (
                 <div style={{ fontSize: '5px', color: piece.isPromoted ? 'rgba(255,255,255,0.6)' : 'var(--shogi-wood)', transform: 'scale(0.8)', maxWidth: '90%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--font-cyber)', marginTop: '1px' }}>
                   {piece.isPromoted ? piece.promoted_effect.effect_name.substring(0, 4) : piece.effect_name.split('「').pop()?.replace('」', '').substring(0, 4)}
                 </div>

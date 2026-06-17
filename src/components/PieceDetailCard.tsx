@@ -10,7 +10,7 @@ interface PieceDetailCardProps {
 export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHoverPreview = false }) => {
   if (!piece) return null;
 
-  const isCustom = !piece.isKing && !piece.isPawn;
+  const isCustom = !piece.isKing && !piece.isPawn && !piece.isHisha && !piece.isKaku;
 
   return (
     <div 
@@ -44,7 +44,7 @@ export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHover
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
           <h3 style={{ fontSize: '22px', color: 'var(--shogi-wood)', fontWeight: 'bold', letterSpacing: '0.05em', margin: 0, fontFamily: 'var(--font-cyber)' }}>
-            {piece.word}
+            {piece.isHisha && piece.isPromoted ? '竜王' : (piece.isKaku && piece.isPromoted ? '竜馬' : (piece.isPawn && piece.isPromoted ? 'と金' : piece.word))}
           </h3>
           <span style={{ fontSize: '11px', color: '#a1a1aa' }}>
             【{piece.effect_name || '通常能力'}】

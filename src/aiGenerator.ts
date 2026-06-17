@@ -409,7 +409,7 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
       trigger = 'ON_APPROACH';
       cool_down_turns = 0;
       logic_code = 'stealth_decoy';
-      description = `【能力効果】罠特性。裏向きで配置され、敵の駒が周囲1マス以内に接近した瞬間に姿が開示される。周囲を欺くためのデコイで、開示される以外に特殊な効果はない。`;
+      description = `【能力効果】罠特性。裏向きで配置され、敵の駒が周囲1マス以内に接近した瞬間に姿が開示される。`;
       promoted_effect = {
         effect_name: '影武者替身 (かげむしゃがわり)',
         description: '【覚醒効果】成った瞬間、再び裏向き（隠蔽状態）に戻る。'
@@ -455,7 +455,7 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
   return result;
 }
 
-// Online Gemini API call for 3 Grand Stratagem Gimmicks & Cooldown Turns (9x9 Shogi)
+// Online Gemini API call
 export async function generatePieceFromWord(word: string, apiKey?: string): Promise<PieceData> {
   // ① メモリ / localStorage キャッシュ（最速）
   const localCached = getFromCache(word);
@@ -476,96 +476,111 @@ export async function generatePieceFromWord(word: string, apiKey?: string): Prom
     return generateOfflinePiece(word);
   }
 
-  const prompt = `あなたは伝統的な将棋のルールをハックし、「変則移動」「正体隠蔽（ブラフ）」「環境ハック」「盤面ルール破壊」、そしてそれらの強大すぎる能力を制御する「充填手番（クールタイム）」の概念を融合させた、天才対人ゲームデザイナー兼プログラマーです。
-ユーザーが入力した単語から能力を【自動的にシステム側でトリガー（発動）する自動効果】をゼロから創造し、9x9マスの将棋盤を揺るがす、極めて個性的でユーモア溢れる能力オブジェクト（JSON）を出力してください。
-※体力（HP）、攻撃力、気力（MP）の概念は完全に廃止されています。すべての駒は重なれば一撃で捕獲されます。手動でボタンを押して発動する能力は絶対に設計しないでください。
+  const prompt = `あなたは伝統的な将棋をハックし、言葉の本質から「変態的な移動・全自動効果」をゼロから創造する天才ゲームデザイナー兼プログラマーです。
 
-### 🚨 4大奇策ギミックの自動判定ルール
-入力された単語の性質に応じて、以下のいずれかの【主特性（mechanics_type）】をAI自身が自動判断して必ず組み込んでください。
+ユーザーが入力した単語から能力を【完全新規で創造】してください。以下の【5大ジャンルと15のサンプル（引き出し）】は、将棋のルールをどの程度までハックしてよいかという『技術的な許容基準（参考・ヒント）』です。サンプル通りのコピペは手抜きとみなし、制限します。入力単語の独自のニュアンスを深掘りし、サンプルの枠を飛び越えた、まったく新しい自動発動ギミックや戦術ロジックを即興でブレインストーミングして創造することを最優先（プライオリティ1）としてください。
+※体力や攻撃力、手動奥義ボタンは完全に廃止されています。一撃捕獲ルールです。
 
-1. 【変則移動・自律特性（MOVEMENT_HACK）】
-   - 対象：動くもの、突撃、空間超越（例: 新幹線、忍者、カエル、ゴールドシップ、台風など）
-   - 仕様：障害物を飛び越える「跳躍（LEAP）」、進路上の敵を全滅させる「一気貫通（CRUSH）」、プレイヤーの指示を無視して勝手に動く「自律暴走（ROUTINE）」などを設計。5x5の範囲マップ（grid_map）もこれに合わせて点灯させること。
-2. 【正体隠蔽・罠特性（STEALTH_TRAP）】
-   - 対象：潜むもの、地雷、騙すもの（例: 爆弾、ウイルス、落とし穴、スパイ、詐欺師など）
-   - 仕様：盤面に存在する間、相手からはその駒が『完全に透明（空きマス）』に見えます（自分からは半透明で見えます）。敵の駒がその駒の周囲1マス以内に接近した時（気配感知）、またはそのステルス駒自身が移動した時に、自動でステルスが解除され姿が露見（開示）します。敵が重なった瞬間（ON_TAKEN）に爆発して敵を道連れにする罠（自爆）や、接近された時に逃げる（瞬間移動）等のユーモラスな効果を設計してください。※ゲームバランス維持のため、敵の駒を「行動不能（スタン・動揺・拘束・移動不可）」にする効果は絶対に禁止してください。
-3. 【環境ハック・結界特性（RULE_BREAK）】
-   - 対象：概念、法律、広域に影響を与えるもの（例: 裁判官、ブラック企業、沼、磁石、締め切りなど）
-   - 仕様：その駒が盤面に表向きで存在する限り、周囲2マスの移動力を1に制限する「鈍化結界」、直線上の駒を1マス引き寄せる・弾く「磁力操作」、お互いに持ち駒を打てなくする「禁忌」などの環境ルール上書きロジックを設計。
-4. 【その他、盤面ルールを破壊する自由な奇策（DYNAMICS_HACK）】
-   単語の本質に合わせて、将棋の概念を覆す特殊なロジックを自由に創造してください。ただし、類似した以下の性質は明確に区別して設計すること。
+---
 
-   - 【擬態・変身（MIMIC_TRANSFORM）】: 「メタモン」「鏡」「カメレオン」など。
-     ⇒ \`trigger\` を 'ON_MOVE' または 'ALWAYS' とし、移動先または隣接する「既存のカスタム駒（敵味方問わず）」を1つ指定し、その手番の間（または永続で）ターゲットの移動範囲や名称、効果を完全にコピーして自分自身をその場で書き換えるロジック（logic_code: 'identity_theft', 'transform'）。
-   
-   - 【強奪・泥棒（ABILITY_STEAL）】: 「泥棒」「ルパン」「ラーニング」など。
-     ⇒ 敵の駒を「取った瞬間」に発動。その取った敵の駒が元々持っていた固有能力や移動範囲をそのまま自分のものとして奪い取り、自分自身のステータスを上書きするロジック（logic_code: 'ability_theft'）。
+### 📐 幾何学範囲（grid_map）の空間計算ルールの厳格化
+AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッドで1マス分しか点灯させない計算ミスを絶対に起こさないでください。
 
-   - 【永続置物・自動生誕（SPAWNER）】: 「工場」「女王蜂」「巣」「インターネット」など。
-     ⇒ 自分自身は一切動けない、または極端に移動が苦手な代わりに、ターン開始時（TURN_START）に指定の空きマスへ自動的に別の小さな兵隊駒（「製品」「働き蜂」など）をポコポコと自動生成・増殖させるロジック（logic_code: 'spawn_minion'）。無限増殖によるゲームバランス崩壊を防ぐため、盤面に同時に存在できるミニオン（生み出された駒）の最大数は【厳格に2体まで（リミット）】の制約があります。
+【5x5グリッドの距離インデックス構造（上が前方）】
+ 00 01 02 03 04  ← 前方2マス行（02は「正面2マス先」）
+ 05 06 07 08 09  ← 前方1マス行（07は「正面1マス先」）
+ 10 11 12 13 14  ← 自分の行   （12は「自分自身=必ず2」）
+ 15 16 17 18 19  ← 後方1マス行（17は「背後1マス」）
+ 20 21 22 23 24  ← 後方2マス行（22は「背後2マス」）
 
-   - 【寄生・洗脳（PUPPET_CONTROL）】: 「洗脳」「寄生虫」「甘い罠」など。
-     ⇒ 移動して敵の駒の隣（周囲1マス）に着地した瞬間、その敵の駒を洗脳。次のターン、相手の駒であるはずのそれを、自分が手番を消費して勝手に操作・移動させることができるロジック（logic_code: 'mind_control'）。
+【重要な計算例】
+- 「周囲1マス（隣接8方向）」→ 06 07 08 11 13 16 17 18 に 1 → '0000001110012100111000000'
+- 「周囲2マス（外周まで全て）」→ 外周全20マスに 1 → '1111111111121111111111111'
+- 「前方2マス（直線）」→ 02と07に 1 → '0010000100002000000000000'
+- 「前方扇形」→ 01 02 03 と 06 07 08 に 1 → '0111001110020000000000000'
+- 「十字スライド（飛車型）」→ 02 07 11 13 17 に 1 → '0010000100112100010000100'
+- 「斜め（角型）」→ 00 04 06 08 10 14 16 18 20 24 に 1 → '1000101010021010101010001'
 
-   - 【時限・孵化（TIMER_BOMB）】: 「卵」「サナギ」「時限爆弾」など。
-     ⇒ 指定された数手番（ターン）の間は一切動けないが、ターン経過後にパッと殻を破って最強の駒へと強制進化する、あるいは周囲数マスを巻き込んで大爆発消滅するロジック（logic_code: 'timer_evolution', 'time_bomb'）。
+能力を使い切った後または充填中の charging_grid は一律「前進1マス（0000000100002000000000000）」に固定。
 
-### 🚨 効果トリガー（trigger）の厳密な分類
-発動タイミング（trigger）を以下のいずれかに厳密に分類してください。
+---
 
-1. 'ALWAYS'（常時永続）: 盤面に存在するだけで常に周囲に影響を与える（例: 鈍化結界、ルールハックなど）。クールタイムは0。
-2. 'ON_MOVE'（移動完了時自動発動）: プレイヤーがその駒を動かして目的地に着地した瞬間に自動で効果が誘発する（例: 着地した隣接マスに複製兵を生み出す、着地時に周囲を爆破するなど）。強力なものは cool_down_turns を設定。
-3. 'TURN_START'（自ターン開始時自動発動）: その駒が盤面に生き残っている場合、自分の手番が回ってきた瞬間に自動で効果が誘発する（例: 毎ターン自動で増殖する、周囲を引き寄せるなど）。
-4. 'ON_TAKEN' / 'ON_APPROACH': 伏せ駒（罠）や呪い身代わり駒が取られた時、または接近された時に自動開示されて発動する。
+### 📚 AI能力デザインの引き出し（5大ジャンルと15の参考例プール）
 
-### 🚨 強すぎる効果への「充填手番（クールタイム）」算定規則
-- 「着地時に周囲を爆破（ON_MOVE）」や「毎ターン周囲を引き寄せる（TURN_START）」など、強力な自動効果を設計した場合、必ず \`cool_down_turns\`（再充填に必要な手番数：2〜4ターン）を設定してください。
-- 効果が自動発動した次のターンから指定手番が経過するまでは、その駒の能力はフリーズし、移動範囲も「前進1マス（歩兵と同等）」に超弱体化するペナルティ（充填中状態）がゲーム上で適用されます。
-- 常時発動（ALWAYS）のパッシブ能力や、1回発動したら消滅する使い捨ての罠（TRAP）、または呪い（ON_TAKEN）の場合は、\`cool_down_turns\` を \`0\` にしてください。
+#### 【ジャンル1：洗脳・擬態・強奪系（HACK_AND_STEAL）】
+敵の駒や能力をハックして戦況をひっくり返すトリッキーなジャンル。
+- No.1: [精神洗脳（PUPPET）] - trigger: 'TURN_START' または 'ON_MOVE'。周囲1マスに敵の大駒またはカスタム駒が存在する時のみ自動発動。1ゲームに1回限定（is_once_per_game: true）で、次の自ターンにその敵駒を乗っ取って操作。発動後は歩兵化。
+- No.2: [即時変身（TRANSFORM）] - 動いて着地した時、盤面の他駒の能力・移動範囲に自分を書き換え（1ゲームに1回限定）。logic_code: 'transform'
+- No.3: [能力強奪（STEAL）] - 敵駒を取った瞬間に自動発動。取った敵の固有能力と範囲を永続上書き。logic_code: 'ability_theft'
 
-### 🚨 範囲幾何学データ（range_geometry）の生成規則（手抜き前進1マスは厳禁）
-カード上に移動や効果の及ぶ範囲を視覚的に表示するため、5x5マスの二次元配列を模した「25文字の数値文字列」を必ず計算して出力してください。
-1. normal_grid にには「通常時（能力発動可能時）」の5x5範囲を設定してください。
-2. charging_grid には「能力使用後、充填中（クールタイム中）の5x5範囲」を設定してください。手抜き厳禁、原則前進1マスのみの '0000000100002000000000000' に固定です。
-3. 5x5の中心（3行目の3列目、インデックス12番目。0から数えて12番目）は必ず自分自身を表す "2" にしてください。
-4. normal_grid の移動や効果 of 範囲（1を立てるマス）は、単語のイメージに合わせて【3マス〜6マス程度】を必ず大胆に点灯させてください。増殖の巣など動かないものは周囲のみを1にし、移動力がないことを説明してください。
+#### 【ジャンル2：ステルス・隠密系（STEALTH_GHOST）】
+心理戦・ブラフ特化のジャンル。
+- No.4: [近接探知型ステルス（INVISIBILITY）] - 相手画面からは完全な空きマスに見える。互いが周囲1マスに進入した瞬間のみ自動表示。2マス以上離れると再び見えなくなる。永続パッシブ（is_once_per_game: false）。
+- No.5: [偽装表示（DISGUISE）] - 相手画面からはただの歩兵に見えるが、自分側からは本来の姿と変則移動範囲が見える。
 
-### 🚨 カタカナ語（安易なゲーム用語）の禁止
-能力名や効果説明に、「ショット」「ノヴァ」「レーザー」「バリア」「ステータス」「バフ」「デバフ」「スキル」「シールド」「クールダウン」「クールタイム」「パッシブ」「アクティブ」「HP」「MP」といった、世界観を壊す安易なカタカナ語を一切使わないでください。代わりに「奥義」「常時」「充填」「体力」「気力」などと表現してください。手動で発動するボタンの記述は完全排除してください。
+#### 【ジャンル3：武力・突撃系（FORCE_CRUSH）】
+盤面の物理破壊を目的とした攻撃型ジャンル。
+- No.6: [直線貫通（CRUSH）] - 動いた方向ベクトル上の全敵駒をすべて一気に捕獲して突き抜ける（1ゲームに1回限定）。logic_code: 'linear_charge'
+- No.7: [全方位衝撃波（SHOCKWAVE）] - 着地した瞬間、周囲1〜2マスの敵を全員一瞬で吹き飛ばして捕獲（1ゲームに1回限定）。logic_code: 'shockwave'
+- No.8: [障害跳躍（LEAP）] - 進路上の駒を完全無視してワープ着地。何度も使用可能な移動特性。logic_code: 'leap_move'
 
-### 出力フォーマット（厳密にこのJSON構造のみを出力してください。Markdownのバッククォートなどの装飾は一切含めず、純粋なJSONテキストのみを返すか、またはJSON形式で出力してください。）
-\`\`\`json
+#### 【ジャンル4：置物・自動生誕系（SPAWNER_BUILD）】
+移動を放棄し盤面を支配する嫌がらせジャンル。
+- No.9: [自動量産（SPAWNER）] - 自身は動けない代わりに毎ターン隣接マスに兵を自動生成。max_limit:2 の spawn_config 必須。logic_code: 'spawn_minion'
+- No.10: [環境鈍化（SLOWNESS）] - この駒が盤面にいる限り、周囲2マスの全駒の移動力を「前進1マス」に制限。logic_code: 'slowdown_aura'
+- No.11: [磁力操作（MAGNET）] - ターン開始時、同じ縦・横ライン上の全駒を自分の方へ1マス強制引き寄せ（または外側へ弾く）。logic_code: 'magnet_pull'
+
+#### 【ジャンル5：因果逆転・罠系（TRAP_MINE）】
+相手の攻撃を逆手に取る防衛・カウンタージャンル。
+- No.12: [道連れ地雷（MINE）] - 裏向き配置。敵に取られた瞬間に開示・相打ち爆破（1回使い捨て）。logic_code: 'self_destruct_trap'
+- No.13: [落とし穴（TRAP）] - 裏向き配置。周囲1マスに敵が侵入した瞬間に開示。logic_code: 'stealth_decoy'
+- No.14: [身代わり（SUBSTITUTE）] - 味方の王将が危険な時、自動でその位置へワープして盾になり身代わりに捕獲される（1ゲームに1回限定）。logic_code: 'substitute'
+- No.15: [時限進化（TIMER）] - 配置後3ターンは動けないが、4ターン目開始時に最強駒へ強制進化または大爆発。logic_code: 'time_bomb'
+
+---
+
+### 🚨 必須ルール
+1. 【カタカナ語完全禁止】「ショット」「ノヴァ」「レーザー」「バリア」「スタン」「バフ」「デバフ」「HP」「MP」「クールダウン」「パッシブ」「アクティブ」を能力名・説明文に使うな。漢語・和語で表現すること。
+2. 【スタン・拘束禁止】敵駒を「行動不能・移動不能・拘束」にする効果は禁止。爆破・引き寄せ・変身・洗脳・盗取などで代替すること。
+3. 【1ゲーム1回限定の場合】is_once_per_game: true とし、cool_down_turns: 0 を設定すること（ゲームロジックが永続歩兵化を自動適用する）。
+4. 【何度も使える効果の場合】is_once_per_game: false とし、強力なものは cool_down_turns: 2〜4 を設定すること。
+5. 【サンプルを超えること】サンプルのコピペは手抜き。入力単語の独自性を深掘りした完全オリジナルの効果を最優先で創造すること。
+
+---
+
+### 💻 出力JSONフォーマット（純粋なJSONのみ。Markdownのバッククォートや解説文は一切禁止）
 {
   "word": "プレイヤーが入力した単語",
-  "effect_name": "その言葉の特性を体現した、洗練された漢字の能力名",
-  "mechanics_type": "自動判定された属性（'MOVEMENT_HACK' / 'STEALTH_TRAP' / 'RULE_BREAK' / 'DYNAMICS_HACK' / 'DYNAMICS_HACK'）",
+  "effect_name": "その言葉のソウルを体現した、洗練された漢字の能力名",
+  "mechanics_type": "属性（'HACK_AND_STEAL' / 'STEALTH_GHOST' / 'FORCE_CRUSH' / 'SPAWNER_BUILD' / 'TRAP_MINE' / 'UNKNOWN_HERESY'）",
   "trigger": "発動形式（'ALWAYS' / 'ON_MOVE' / 'TURN_START' / 'ON_TAKEN' / 'ON_APPROACH'）",
-  "cool_down_turns": 3, // 強すぎる自動効果の充填手番数（発動後、このターン数は再発動不可。パッシブや罠は0）
+  "is_once_per_game": false,
+  "cool_down_turns": 0,
   "range_geometry": {
-    "normal_grid": "通常時の5x5範囲（25文字 of 0,1,2の数値文字列。中心は2）",
-    "charging_grid": "能力発動後、充填中（クールタイム中）の5x5範囲（歩兵化: '0000000100002000000000000'）"
+    "normal_grid": "通常時の5x5範囲（25文字の0,1,2の数値文字列。中心インデックス12は必ず2。外周まで正確に計算すること）",
+    "charging_grid": "一律 '0000000100002000000000000' に固定"
   },
-  "description": "【能力効果】（日本語。いつ、どういう条件でこの能力が【自動発動】するのか、およびクールタイム中の弱体化ペナルティの挙動を明確に記述。手動ボタンの記述は完全排除）",
-  "spawn_piece_name": "ミニオン名など", // コピーや増殖系など、別駒を生み出すロジックが必要な場合のみAIに命名させる（不要ならnull）
+  "description": "【能力効果】（日本語。いつどういう条件で自動発動するのか。1ゲーム1回限定の場合は発動後の永続歩兵化ペナルティを明記。カタカナ語排除）",
+  "spawn_piece_name": null,
   "spawn_config": {
-    "spawn_piece_name": "生み出される駒の名称（不要な場合はnull）",
-    "max_limit": 2, // 盤面に同時に存在できる最大数（1または2。生み出さない場合は0）
-    "spawn_range_geometry": "どの範囲に生み出すかの5x5グリッドデータ（不要ならnull、通常は'0000001110012100111000000'など）"
+    "spawn_piece_name": "生み出す駒名（不要ならnull）",
+    "max_limit": 0,
+    "spawn_range_geometry": null
   },
   "promoted_effect": {
-    "effect_name": "覚醒時の能力名",
-    "description": "【覚醒効果】成った時の進化説明（自動発動のクールタイムが減少する、生み出す兵が強化されるなど）"
+    "effect_name": "成った時の能力名",
+    "description": "【覚醒効果】敵陣に入って成った時の進化効果説明（カタカナ語排除）"
   },
-  "logic_code": "移動パターンまたは特殊ロジック（スライド移動させたい場合は 'move_like_rook'（飛車型） / 'move_like_bishop'（角行型） / 'move_like_lance'（香車型） / 'move_like_knight'（桂馬型）。それ以外は適当な一意の英語識別子、または 'normal'）",
-  "deep_search_analysis": "なぜその言葉からこのギミック、およびこの充填手番（クールタイム）の長さを導き出したのか、対人戦のゲームバランスを踏まえたロジカルな解説"
+  "logic_code": "移動パターンまたは特殊ロジック（スライド移動は 'move_like_rook'/'move_like_bishop'/'move_like_lance'/'move_like_knight'。それ以外は上記サンプルのlogic_codeまたは適切な一意の英語識別子）",
+  "deep_search_analysis": "サンプルをどう参考にしたか、あるいはどう超越したか、この単語からどうやってこの全く新しいオリジナルのゲームバランスとロジックを導き出したのかの熱い解説"
 }
-\`\`\`
 
 ### 生成対象のユーザー入力単語:
 "${word}"
 
-上記の単語の持つ意味、イメージ、性質を徹底的に分析し、その特徴を完璧に体現する能力駒オブジェクトをJSONで生成してください。
+上記の単語の持つ意味・イメージ・性質を徹底分析し、5大ジャンルと15の引き出しを参照しながら、それを超越した完全オリジナルの対人戦最高カオス駒オブジェクトをJSONで生成してください。
 `;
+
 
   try {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
@@ -603,7 +618,18 @@ export async function generatePieceFromWord(word: string, apiKey?: string): Prom
       parsed.word = word;
     }
 
-    // Repair mechanics_type
+    // Repair mechanics_type: map new 5-genre names to internal legacy names
+    const mechanicsTypeMap: Record<string, string> = {
+      'HACK_AND_STEAL': 'DYNAMICS_HACK',
+      'STEALTH_GHOST':  'STEALTH_TRAP',
+      'FORCE_CRUSH':    'MOVEMENT_HACK',
+      'SPAWNER_BUILD':  'RULE_BREAK',
+      'TRAP_MINE':      'STEALTH_TRAP',
+      'UNKNOWN_HERESY': 'DYNAMICS_HACK',
+    };
+    if (parsed.mechanics_type && mechanicsTypeMap[parsed.mechanics_type]) {
+      parsed.mechanics_type = mechanicsTypeMap[parsed.mechanics_type];
+    }
     if (!parsed.mechanics_type || !['MOVEMENT_HACK', 'STEALTH_TRAP', 'RULE_BREAK', 'DYNAMICS_HACK'].includes(parsed.mechanics_type)) {
       parsed.mechanics_type = 'MOVEMENT_HACK';
     }
@@ -613,11 +639,19 @@ export async function generatePieceFromWord(word: string, apiKey?: string): Prom
       parsed.trigger = 'ALWAYS';
     }
 
+    // Repair is_once_per_game → convert to cool_down_turns=99 (永続歩兵化)
+    if (parsed.is_once_per_game === true) {
+      parsed.cool_down_turns = 99;
+    }
+
     // Repair cool_down_turns
     if (typeof parsed.cool_down_turns !== 'number') {
       parsed.cool_down_turns = parseInt(parsed.cool_down_turns as any) || 0;
     }
-    parsed.cool_down_turns = Math.max(0, Math.min(4, parsed.cool_down_turns));
+    // Allow 99 for once-per-game, otherwise cap at 4
+    if (parsed.cool_down_turns !== 99) {
+      parsed.cool_down_turns = Math.max(0, Math.min(4, parsed.cool_down_turns));
+    }
 
     // Repair spawn_config and spawn_piece_name
     if (parsed.spawn_config && typeof parsed.spawn_config === 'object') {

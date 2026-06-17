@@ -10,6 +10,8 @@ interface StartScreenProps {
   onJoinRoom: (code: string) => void;
   isWaitingForOpponent: boolean;
   matchmakingError: string;
+  playerNames: { sente: string; gote: string };
+  onSetPlayerNames: (names: { sente: string; gote: string }) => void;
   onStartGame: () => void;
 }
 
@@ -23,6 +25,8 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   onJoinRoom,
   isWaitingForOpponent,
   matchmakingError,
+  playerNames,
+  onSetPlayerNames,
   onStartGame,
 }) => {
   const [inputCode, setInputCode] = useState('');
@@ -50,6 +54,104 @@ export const StartScreen: React.FC<StartScreenProps> = ({
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0, fontFamily: 'var(--font-ui)', letterSpacing: '0.05em' }}>
             ― 言葉から能力を創造し、9×9の戦場をハックせよ ―
           </p>
+        </div>
+
+        {/* Player Name Setup */}
+        <div>
+          <h3 style={{ fontSize: '16px', color: 'var(--shogi-wood)', marginBottom: '12px' }}>
+            ■ プレイヤー名設定
+          </h3>
+          <div style={{
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(230, 208, 175, 0.12)',
+            borderRadius: '4px',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+          }}>
+            {/* Sente name */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <label style={{
+                fontSize: '13px',
+                color: 'var(--neon-cyan)',
+                fontFamily: 'var(--font-cyber)',
+                minWidth: '110px',
+                flexShrink: 0,
+              }}>
+                ▲ 先手名
+              </label>
+              <input
+                type="text"
+                placeholder="先手プレイヤーの名前"
+                maxLength={16}
+                value={playerNames.sente}
+                onChange={e => onSetPlayerNames({ ...playerNames, sente: e.target.value })}
+                style={{
+                  flex: 1,
+                  minWidth: '160px',
+                  background: 'rgba(0,243,255,0.04)',
+                  border: '1px solid rgba(0,243,255,0.3)',
+                  color: '#fff',
+                  padding: '8px 14px',
+                  borderRadius: '3px',
+                  fontSize: '14px',
+                  fontFamily: 'var(--font-ui)',
+                  outline: 'none',
+                  transition: 'border-color 0.2s',
+                }}
+                onFocus={e => (e.target.style.borderColor = 'var(--neon-cyan)')}
+                onBlur={e => (e.target.style.borderColor = 'rgba(0,243,255,0.3)')}
+              />
+            </div>
+            {/* Gote name (hidden in online mode - opponent fills their own) */}
+            {!onlineMode && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <label style={{
+                  fontSize: '13px',
+                  color: 'var(--neon-purple)',
+                  fontFamily: 'var(--font-cyber)',
+                  minWidth: '110px',
+                  flexShrink: 0,
+                }}>
+                  ▽ {vsAiMode ? 'AI' : '後手'}名
+                </label>
+                {vsAiMode ? (
+                  <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontFamily: 'var(--font-ui)', padding: '8px 14px' }}>
+                    Gemini AI (封印済み)
+                  </span>
+                ) : (
+                  <input
+                    type="text"
+                    placeholder="後手プレイヤーの名前"
+                    maxLength={16}
+                    value={playerNames.gote}
+                    onChange={e => onSetPlayerNames({ ...playerNames, gote: e.target.value })}
+                    style={{
+                      flex: 1,
+                      minWidth: '160px',
+                      background: 'rgba(189,0,255,0.04)',
+                      border: '1px solid rgba(189,0,255,0.3)',
+                      color: '#fff',
+                      padding: '8px 14px',
+                      borderRadius: '3px',
+                      fontSize: '14px',
+                      fontFamily: 'var(--font-ui)',
+                      outline: 'none',
+                      transition: 'border-color 0.2s',
+                    }}
+                    onFocus={e => (e.target.style.borderColor = 'var(--neon-purple)')}
+                    onBlur={e => (e.target.style.borderColor = 'rgba(189,0,255,0.3)')}
+                  />
+                )}
+              </div>
+            )}
+            {onlineMode && (
+              <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0, fontFamily: 'var(--font-ui)' }}>
+                オンライン対戦の場合、相手の名前は相手が入室後に自動で取得されます。
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Mode Selector */}

@@ -140,6 +140,124 @@ export function initializeBoard(): Board {
     };
   }
 
+  // --- Place Sente Hisha (飛車) at Y=7, X=7 (2八) and Kaku (角) at Y=7, X=1 (8八) ---
+  board[7][7] = {
+    id: generateId(),
+    word: '飛車',
+    effect_name: '飛翔無限',
+    mechanics_type: 'MOVEMENT_HACK',
+    trigger: 'ALWAYS',
+    cool_down_turns: 0,
+    range_geometry: {
+      normal_grid: '0010000100112110010000100',
+      charging_grid: '0000000100002000000000000'
+    },
+    description: '縦横に遮るものがなければどこまでも進める強力な大駒。',
+    spawn_piece_name: null,
+    promoted_effect: {
+      effect_name: '竜王',
+      description: '成ることで飛車の動きに加えて斜め4方向に1マス進めるようになる。',
+    },
+    deep_search_analysis: '縦横無限スライドの大駒。',
+    owner: 'sente',
+    isKing: false,
+    isPawn: false,
+    isHisha: true,
+    isKaku: false,
+    originalPosition: [7, 7],
+    coolDownTurnsRemaining: 0,
+    isRevealed: true,
+    isPromoted: false
+  };
+
+  board[7][1] = {
+    id: generateId(),
+    word: '角',
+    effect_name: '角行無限',
+    mechanics_type: 'MOVEMENT_HACK',
+    trigger: 'ALWAYS',
+    cool_down_turns: 0,
+    range_geometry: {
+      normal_grid: '1000101010002000101010001',
+      charging_grid: '0000000100002000000000000'
+    },
+    description: '斜め4方向に遮るものがなければどこまでも進める強力な大駒。',
+    spawn_piece_name: null,
+    promoted_effect: {
+      effect_name: '竜馬',
+      description: '成ることで角の動きに加えて縦横4方向に1マス進めるようになる。',
+    },
+    deep_search_analysis: '斜め無限スライドの大駒。',
+    owner: 'sente',
+    isKing: false,
+    isPawn: false,
+    isHisha: false,
+    isKaku: true,
+    originalPosition: [7, 1],
+    coolDownTurnsRemaining: 0,
+    isRevealed: true,
+    isPromoted: false
+  };
+
+  // --- Place Gote Hisha (飛車) at Y=1, X=1 (8二) and Kaku (角) at Y=1, X=7 (2二) ---
+  board[1][1] = {
+    id: generateId(),
+    word: '飛車',
+    effect_name: '飛翔無限',
+    mechanics_type: 'MOVEMENT_HACK',
+    trigger: 'ALWAYS',
+    cool_down_turns: 0,
+    range_geometry: {
+      normal_grid: '0010000100112110010000100',
+      charging_grid: '0000000100002000000000000'
+    },
+    description: '縦横に遮るものがなければどこまでも進める強力な大駒。',
+    spawn_piece_name: null,
+    promoted_effect: {
+      effect_name: '竜王',
+      description: '成ることで飛車の動きに加えて斜め4方向に1マス進めるようになる。',
+    },
+    deep_search_analysis: '縦横無限スライドの大駒。',
+    owner: 'gote',
+    isKing: false,
+    isPawn: false,
+    isHisha: true,
+    isKaku: false,
+    originalPosition: [1, 1],
+    coolDownTurnsRemaining: 0,
+    isRevealed: true,
+    isPromoted: false
+  };
+
+  board[1][7] = {
+    id: generateId(),
+    word: '角',
+    effect_name: '角行無限',
+    mechanics_type: 'MOVEMENT_HACK',
+    trigger: 'ALWAYS',
+    cool_down_turns: 0,
+    range_geometry: {
+      normal_grid: '1000101010002000101010001',
+      charging_grid: '0000000100002000000000000'
+    },
+    description: '斜め4方向に遮るものがなければどこまでも進める強力な大駒。',
+    spawn_piece_name: null,
+    promoted_effect: {
+      effect_name: '竜馬',
+      description: '成ることで角の動きに加えて縦横4方向に1マス進めるようになる。',
+    },
+    deep_search_analysis: '斜め無限スライドの大駒。',
+    owner: 'gote',
+    isKing: false,
+    isPawn: false,
+    isHisha: false,
+    isKaku: true,
+    originalPosition: [1, 7],
+    coolDownTurnsRemaining: 0,
+    isRevealed: true,
+    isPromoted: false
+  };
+
   return board;
 }
 
@@ -209,6 +327,76 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
         const target = board[ny][nx];
         if (!target || target.owner !== piece.owner) {
           validMoves.push([ny, nx]);
+        }
+      }
+    }
+  }
+  // 3.5. 飛車 移動 (縦横無限スライド & 竜王プロモーション)
+  else if (piece.isHisha) {
+    const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const [dy, dx] of directions) {
+      let ny = y + dy;
+      let nx = x + dx;
+      while (isWithinBounds(ny, nx)) {
+        const target = board[ny][nx];
+        if (!target) {
+          validMoves.push([ny, nx]);
+        } else {
+          if (target.owner !== piece.owner) {
+            validMoves.push([ny, nx]);
+          }
+          break; // Blocked by any piece
+        }
+        ny += dy;
+        nx += dx;
+      }
+    }
+    // 竜王 (Promoted) 斜め1マス
+    if (piece.isPromoted) {
+      const diagDirections = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+      for (const [dy, dx] of diagDirections) {
+        const ny = y + dy;
+        const nx = x + dx;
+        if (isWithinBounds(ny, nx)) {
+          const target = board[ny][nx];
+          if (!target || target.owner !== piece.owner) {
+            validMoves.push([ny, nx]);
+          }
+        }
+      }
+    }
+  }
+  // 3.6. 角 移動 (斜め無限スライド & 竜馬プロモーション)
+  else if (piece.isKaku) {
+    const directions = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+    for (const [dy, dx] of directions) {
+      let ny = y + dy;
+      let nx = x + dx;
+      while (isWithinBounds(ny, nx)) {
+        const target = board[ny][nx];
+        if (!target) {
+          validMoves.push([ny, nx]);
+        } else {
+          if (target.owner !== piece.owner) {
+            validMoves.push([ny, nx]);
+          }
+          break; // Blocked by any piece
+        }
+        ny += dy;
+        nx += dx;
+      }
+    }
+    // 竜馬 (Promoted) 縦横1マス
+    if (piece.isPromoted) {
+      const orthoDirections = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+      for (const [dy, dx] of orthoDirections) {
+        const ny = y + dy;
+        const nx = x + dx;
+        if (isWithinBounds(ny, nx)) {
+          const target = board[ny][nx];
+          if (!target || target.owner !== piece.owner) {
+            validMoves.push([ny, nx]);
+          }
         }
       }
     }
@@ -708,9 +896,10 @@ export function executeMove(
   }
 
   if (promote && nextBoard[ty][tx] === finalPiece) {
+    const promotedName = piece.isHisha ? '竜王' : (piece.isKaku ? '竜馬' : (piece.isPawn ? 'と金' : piece.promoted_effect?.effect_name || '覚醒駒'));
     logs.push({
       player,
-      message: `【覚醒】${piece.word} が覚醒（成）しました！`,
+      message: `【覚醒】${piece.word} が「${promotedName}」へ覚醒（成）しました！`,
       type: 'system',
     });
   }
