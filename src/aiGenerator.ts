@@ -5,25 +5,15 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 // キャッシュ用インメモリマップおよび localStorage との連携
 const memoryCache = new Map<string, PieceData>();
 
-// 古いバグデータのワンタイムクリーンアップ
+// バージョン管理されたワンタイムキャッシュクリーンアップ（v4にアップデートして古いキャッシュを全消去）
 try {
   if (typeof window !== 'undefined' && window.localStorage) {
-    const cachedData = localStorage.getItem('shogi_piece_cache');
-    if (cachedData) {
-      const cacheObj = JSON.parse(cachedData);
-      let updated = false;
-      const keysToRemove = ['メタモン', 'スパイ', '𰻞𰻞麺'];
-      for (const key of keysToRemove) {
-        const normalizedKey = key.trim().toLowerCase();
-        if (cacheObj[normalizedKey]) {
-          delete cacheObj[normalizedKey];
-          updated = true;
-        }
-      }
-      if (updated) {
-        localStorage.setItem('shogi_piece_cache', JSON.stringify(cacheObj));
-        console.info('Cleared outdated localStorage piece cache for Metamon, Spy, and BiangBiangMian.');
-      }
+    const CURRENT_VERSION = 'v4';
+    const activeVersion = localStorage.getItem('shogi_cache_version');
+    if (activeVersion !== CURRENT_VERSION) {
+      localStorage.removeItem('shogi_piece_cache');
+      localStorage.setItem('shogi_cache_version', CURRENT_VERSION);
+      console.info('Successfully cleared outdated localStorage piece cache to align with new system prompt safeguards.');
     }
   }
 } catch (e) {
