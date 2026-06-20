@@ -212,9 +212,15 @@ export const App: React.FC = () => {
     return false;
   };
 
-  const isAutonomous = (p: Piece | null): boolean => {
+  const isAutoNormalMover = (p: Piece | null): boolean => {
     if (!p) return false;
     return p.trigger === 'ALWAYS' && (getPieceLogicCode(p).includes('runaway') || p.description.includes('操作不能'));
+  };
+
+  const isAutonomous = (p: Piece | null): boolean => {
+    if (!p) return false;
+    const logicCode = getPieceLogicCode(p);
+    return logicCode === 'random_teleport' || isAutoNormalMover(p);
   };
 
   const executeMoveWithPromotion = (
@@ -1062,7 +1068,7 @@ export const App: React.FC = () => {
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
         const p = currentBoard[r][c];
-        if (p && p.owner === nextPlayer && isAutonomous(p) && p.coolDownTurnsRemaining === 0) {
+        if (p && p.owner === nextPlayer && isAutoNormalMover(p) && p.coolDownTurnsRemaining === 0) {
           autonomousCoords.push([r, c]);
         }
       }
@@ -1072,7 +1078,7 @@ export const App: React.FC = () => {
     for (const [sy, sx] of autonomousCoords) {
       if (gameOver) break;
       const piece = currentBoard[sy][sx];
-      if (!piece || piece.owner !== nextPlayer || !isAutonomous(piece)) continue;
+      if (!piece || piece.owner !== nextPlayer || !isAutoNormalMover(piece)) continue;
 
       const valid = getValidMoves(sy, sx, currentBoard);
       if (valid.length > 0) {
@@ -1401,7 +1407,7 @@ export const App: React.FC = () => {
       for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
           const p = currentBoard[r][c];
-          if (p && p.owner === activePlayer && isAutonomous(p) && p.coolDownTurnsRemaining === 0) {
+          if (p && p.owner === activePlayer && isAutoNormalMover(p) && p.coolDownTurnsRemaining === 0) {
             autonomousCoords.push([r, c]);
           }
         }
@@ -1410,7 +1416,7 @@ export const App: React.FC = () => {
       for (const [sy, sx] of autonomousCoords) {
         if (gameOver) break;
         const piece = currentBoard[sy][sx];
-        if (!piece || piece.owner !== activePlayer || !isAutonomous(piece)) continue;
+        if (!piece || piece.owner !== activePlayer || !isAutoNormalMover(piece)) continue;
 
         const valid = getValidMoves(sy, sx, currentBoard);
         if (valid.length > 0) {

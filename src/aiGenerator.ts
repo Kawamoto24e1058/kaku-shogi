@@ -50,15 +50,17 @@ function saveToCache(word: string, data: PieceData) {
 function getFromCache(word: string): PieceData | null {
   const key = getCacheKey(word);
   if (memoryCache.has(key)) {
-    return memoryCache.get(key) || null;
+    const raw = memoryCache.get(key);
+    return raw ? sanitizePieceData(raw, word) : null;
   }
   try {
     const cachedData = localStorage.getItem('shogi_piece_cache');
     if (cachedData) {
       const cacheObj = JSON.parse(cachedData);
       if (cacheObj[key]) {
-        memoryCache.set(key, cacheObj[key]);
-        return cacheObj[key];
+        const sanitized = sanitizePieceData(cacheObj[key], word);
+        memoryCache.set(key, sanitized);
+        return sanitized;
       }
     }
   } catch (e) {
@@ -77,9 +79,10 @@ async function getFromFirestore(word: string): Promise<PieceData | null> {
     const snap = await getDoc(ref);
     if (snap.exists()) {
       const data = snap.data() as PieceData;
+      const sanitized = sanitizePieceData(data, word);
       // ローカルキャッシュにも保存して次回以降を高速化
-      saveToCache(word, data);
-      return data;
+      saveToCache(word, sanitized);
+      return sanitized;
     }
   } catch (e) {
     console.warn('[Firestore] getDoc failed:', e);
@@ -469,8 +472,9 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     logic_code
   };
 
-  saveToCache(word, result);
-  return result;
+  const sanitized = sanitizePieceData(result, word);
+  saveToCache(word, sanitized);
+  return sanitized;
 }
 
 // Online Gemini API call
@@ -668,186 +672,7 @@ AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッ�
     }
 
     const parsed: any = JSON.parse(text.trim());
-
-    // Repair word
-    if (!parsed.word || typeof parsed.word !== 'string') {
-      parsed.word = word;
-    }
-
-    // Repair mechanics_type: map new 5-genre names to internal legacy names
-    const mechanicsTypeMap: Record<string, string> = {
-      'FORCE_CRUSH':     'MOVEMENT_HACK',
-      'HACK_AND_STEAL':  'DYNAMICS_HACK',
-      'STEALTH_GHOST':   'STEALTH_TRAP',
-      'SUPPORT_BUFF':    'RULE_BREAK',
-      'SPAWNER_BUILD':   'RULE_BREAK',
-      'TRAP_MINE':       'STEALTH_TRAP',
-      'AUTOMATIC_DRIVE': 'AUTOMATIC_DRIVE',
-      'VIRUS_INFECT':    'DYNAMICS_HACK',
-      'SPACE_WARP':      'DYNAMICS_HACK',
-      'NECROMANCY':      'DYNAMICS_HACK',
-      'UNKNOWN_HERESY':  'DYNAMICS_HACK'
-    };
-    if (parsed.mechanics_type && mechanicsTypeMap[parsed.mechanics_type]) {
-      parsed.mechanics_type = mechanicsTypeMap[parsed.mechanics_type];
-    }
-    if (!parsed.mechanics_type || !['MOVEMENT_HACK', 'STEALTH_TRAP', 'RULE_BREAK', 'DYNAMICS_HACK', 'AUTOMATIC_DRIVE'].includes(parsed.mechanics_type)) {
-      parsed.mechanics_type = 'MOVEMENT_HACK';
-    }
-
-    // Repair trigger
-    if (!parsed.trigger || !['ALWAYS', 'ON_MOVE', 'TURN_START', 'ON_TAKEN', 'ON_APPROACH'].includes(parsed.trigger)) {
-      parsed.trigger = 'ALWAYS';
-    }
-
-    // Repair ability_genre
-    if (!parsed.ability_genre || typeof parsed.ability_genre !== 'string') {
-      const genreMap: Record<string, string> = {
-        'MOVEMENT_HACK': '武力・突撃',
-        'STEALTH_TRAP': 'ステルス・隠密',
-        'RULE_BREAK': '支援・強化',
-        'DYNAMICS_HACK': '擬態・洗脳',
-        'AUTOMATIC_DRIVE': '自律暴走'
-      };
-      parsed.ability_genre = genreMap[parsed.mechanics_type] || '未知の能力';
-    }
-
-    // Repair is_once_per_game → convert to cool_down_turns=99 (永続歩兵化)
-    if (parsed.is_once_per_game === true) {
-      parsed.cool_down_turns = 99;
-    }
-
-    // Repair cool_down_turns
-    if (typeof parsed.cool_down_turns !== 'number') {
-      parsed.cool_down_turns = parseInt(parsed.cool_down_turns as any) || 0;
-    }
-    // Allow 99 for once-per-game, otherwise cap at 4
-    if (parsed.cool_down_turns !== 99) {
-      parsed.cool_down_turns = Math.max(0, Math.min(4, parsed.cool_down_turns));
-    }
-
-    // Repair spawn_config and spawn_piece_name
-    if (parsed.spawn_config && typeof parsed.spawn_config === 'object') {
-      const config = parsed.spawn_config;
-      let spName = config.spawn_piece_name;
-      if (spName === undefined || spName === null) {
-        spName = parsed.spawn_piece_name || null;
-      } else {
-        spName = String(spName);
-      }
-      
-      let maxLimit = parseInt(config.max_limit) ?? 2;
-      if (isNaN(maxLimit) || maxLimit > 2) maxLimit = 2;
-      if (maxLimit < 0) maxLimit = 0;
-
-      let geom = config.spawn_range_geometry;
-      if (geom === undefined) {
-        geom = null;
-      } else if (geom !== null) {
-        geom = String(geom).replace(/[^012]/g, '');
-        if (geom.length !== 25) {
-          geom = '0000001110012100111000000';
-        }
-      }
-
-      parsed.spawn_config = {
-        spawn_piece_name: spName,
-        max_limit: maxLimit,
-        spawn_range_geometry: geom
-      };
-      parsed.spawn_piece_name = spName;
-    } else {
-      let spName = parsed.spawn_piece_name;
-      if (spName === undefined) {
-        spName = null;
-      } else if (spName !== null) {
-        spName = String(spName);
-      }
-
-      if (spName) {
-        parsed.spawn_config = {
-          spawn_piece_name: spName,
-          max_limit: 2,
-          spawn_range_geometry: '0000001110012100111000000'
-        };
-        parsed.spawn_piece_name = spName;
-      } else {
-        parsed.spawn_config = {
-          spawn_piece_name: null,
-          max_limit: 0,
-          spawn_range_geometry: null
-        };
-        parsed.spawn_piece_name = null;
-      }
-    }
-
-    // Repair string fields
-    if (!parsed.effect_name || typeof parsed.effect_name !== 'string') {
-      parsed.effect_name = '神秘の力';
-    }
-    if (!parsed.description || typeof parsed.description !== 'string') {
-      parsed.description = '神秘の効果。';
-    }
-    if (!parsed.deep_search_analysis || typeof parsed.deep_search_analysis !== 'string') {
-      parsed.deep_search_analysis = '神秘の能力。';
-    }
-    // Repair logic_code
-    if (!parsed.logic_code || typeof parsed.logic_code !== 'string') {
-      if (parsed.mechanics_type === 'STEALTH_TRAP') {
-        parsed.logic_code = parsed.trigger === 'ON_TAKEN' ? 'self_destruct_trap' : 'stun_approach_trap';
-      } else if (parsed.mechanics_type === 'RULE_BREAK') {
-        parsed.logic_code = parsed.trigger === 'TURN_START' ? 'spawn_clone' : 'slowdown_aura';
-      } else {
-        parsed.logic_code = parsed.trigger === 'ON_MOVE' ? 'linear_charge' : 'leap_move';
-      }
-    }
-
-    // Repair promoted_effect
-    if (!parsed.promoted_effect || typeof parsed.promoted_effect !== 'object') {
-      parsed.promoted_effect = {
-        effect_name: parsed.effect_name + '・醒',
-        description: '覚醒によって効果が強化されます。'
-      };
-    } else {
-      if (!parsed.promoted_effect.effect_name || typeof parsed.promoted_effect.effect_name !== 'string') {
-        parsed.promoted_effect.effect_name = parsed.effect_name + '・醒';
-      }
-      if (!parsed.promoted_effect.description || typeof parsed.promoted_effect.description !== 'string') {
-        parsed.promoted_effect.description = '覚醒によって効果が強化されます。';
-      }
-    }
-
-    // Repair range_geometry
-    if (!parsed.range_geometry || typeof parsed.range_geometry !== 'object') {
-      parsed.range_geometry = {
-        normal_grid: '0000001110012100111000000',
-        charging_grid: '0000000100012100010000000'
-      };
-    } else {
-      let norm = parsed.range_geometry.normal_grid;
-      let charg = parsed.range_geometry.charging_grid;
-
-      if (typeof norm === 'string') {
-        norm = norm.replace(/[^012]/g, '');
-      }
-      if (typeof charg === 'string') {
-        charg = charg.replace(/[^012]/g, '');
-      }
-
-      if (typeof norm !== 'string' || norm.length !== 25) {
-        norm = '0000001110012100111000000';
-      }
-      if (typeof charg !== 'string' || charg.length !== 25) {
-        charg = '0000000100012100010000000';
-      }
-
-      parsed.range_geometry = {
-        normal_grid: norm,
-        charging_grid: charg
-      };
-    }
-
-    const resultPiece = parsed as PieceData;
+    const resultPiece = sanitizePieceData(parsed, word);
     // ローカル + Firestore 両方に保存（Firestore は fire-and-forget）
     saveToCache(word, resultPiece);
     saveToFirestore(word, resultPiece);
@@ -907,4 +732,235 @@ export function getRandomCachedPieces(count: number): PieceData[] {
   }
 
   return result;
+}
+
+export function sanitizePieceData(parsed: any, word: string): PieceData {
+  // Repair word
+  if (!parsed.word || typeof parsed.word !== 'string') {
+    parsed.word = word;
+  }
+
+  // Repair mechanics_type: map new 10-genre names to internal legacy names
+  const mechanicsTypeMap: Record<string, string> = {
+    'FORCE_CRUSH':     'MOVEMENT_HACK',
+    'HACK_AND_STEAL':  'DYNAMICS_HACK',
+    'STEALTH_GHOST':   'STEALTH_TRAP',
+    'SUPPORT_BUFF':    'RULE_BREAK',
+    'SPAWNER_BUILD':   'RULE_BREAK',
+    'TRAP_MINE':       'STEALTH_TRAP',
+    'AUTOMATIC_DRIVE': 'AUTOMATIC_DRIVE',
+    'VIRUS_INFECT':    'DYNAMICS_HACK',
+    'SPACE_WARP':      'DYNAMICS_HACK',
+    'NECROMANCY':      'DYNAMICS_HACK',
+    'UNKNOWN_HERESY':  'DYNAMICS_HACK'
+  };
+  if (parsed.mechanics_type && mechanicsTypeMap[parsed.mechanics_type]) {
+    parsed.mechanics_type = mechanicsTypeMap[parsed.mechanics_type];
+  }
+  if (!parsed.mechanics_type || !['MOVEMENT_HACK', 'STEALTH_TRAP', 'RULE_BREAK', 'DYNAMICS_HACK', 'AUTOMATIC_DRIVE'].includes(parsed.mechanics_type)) {
+    parsed.mechanics_type = 'MOVEMENT_HACK';
+  }
+
+  // Repair trigger
+  if (!parsed.trigger || !['ALWAYS', 'ON_MOVE', 'TURN_START', 'ON_TAKEN', 'ON_APPROACH'].includes(parsed.trigger)) {
+    parsed.trigger = 'ALWAYS';
+  }
+
+  // Repair string fields
+  if (!parsed.effect_name || typeof parsed.effect_name !== 'string') {
+    parsed.effect_name = '神秘の力';
+  }
+  if (!parsed.description || typeof parsed.description !== 'string') {
+    parsed.description = '神秘の効果。';
+  }
+  if (!parsed.deep_search_analysis || typeof parsed.deep_search_analysis !== 'string') {
+    parsed.deep_search_analysis = '神秘の能力。';
+  }
+
+  // --- Safeguard 1: Prevent unintended invisibility ---
+  // If a piece is categorized as STEALTH_TRAP but has no stealth/trap keywords in its description,
+  // downgrade its mechanics_type to DYNAMICS_HACK.
+  if (parsed.mechanics_type === 'STEALTH_TRAP') {
+    const desc = parsed.description || '';
+    const hasStealthKeywords = [
+      'ステルス', '隠密', '罠', '地雷', '落とし穴', '裏向き', '潜伏', 
+      '気配', '透明', '隠れる', '隠蔽', '身代わり'
+    ].some(kw => desc.includes(kw));
+    
+    if (!hasStealthKeywords) {
+      parsed.mechanics_type = 'DYNAMICS_HACK';
+    }
+  }
+
+  // --- Safeguard 2: Align logic_code and trigger for autonomous (AUTOMATIC_DRIVE) pieces ---
+  const logicLower = String(parsed.logic_code || '').toLowerCase();
+  const descText = parsed.description || '';
+  
+  // Runaway Drive (Forward Charge)
+  if (
+    parsed.mechanics_type === 'AUTOMATIC_DRIVE' && 
+    (logicLower.includes('runaway') || logicLower.includes('crash') || descText.includes('突進') || descText.includes('暴走') || descText.includes('猛進'))
+  ) {
+    parsed.logic_code = 'runaway_drive';
+    parsed.trigger = 'ON_MOVE';
+  } 
+  // Random Teleport (Warp at start of turn)
+  else if (
+    parsed.mechanics_type === 'AUTOMATIC_DRIVE' &&
+    (logicLower.includes('teleport') || logicLower.includes('random') || logicLower.includes('warp') || descText.includes('ワープ') || descText.includes('瞬間移動'))
+  ) {
+    parsed.logic_code = 'random_teleport';
+    parsed.trigger = 'TURN_START';
+  }
+
+  // Repair logic_code
+  if (!parsed.logic_code || typeof parsed.logic_code !== 'string') {
+    if (parsed.mechanics_type === 'STEALTH_TRAP') {
+      parsed.logic_code = parsed.trigger === 'ON_TAKEN' ? 'self_destruct_trap' : 'stun_approach_trap';
+    } else if (parsed.mechanics_type === 'RULE_BREAK') {
+      parsed.logic_code = parsed.trigger === 'TURN_START' ? 'spawn_clone' : 'slowdown_aura';
+    } else if (parsed.mechanics_type === 'AUTOMATIC_DRIVE') {
+      parsed.logic_code = 'runaway_drive';
+      parsed.trigger = 'ON_MOVE';
+    } else {
+      parsed.logic_code = parsed.trigger === 'ON_MOVE' ? 'linear_charge' : 'leap_move';
+    }
+  }
+
+  // Repair ability_genre
+  if (!parsed.ability_genre || typeof parsed.ability_genre !== 'string') {
+    const genreMap: Record<string, string> = {
+      'MOVEMENT_HACK': '武力・突撃',
+      'STEALTH_TRAP': 'ステルス・隠密',
+      'RULE_BREAK': '支援・強化',
+      'DYNAMICS_HACK': '擬態・洗脳',
+      'AUTOMATIC_DRIVE': '自律暴走'
+    };
+    parsed.ability_genre = genreMap[parsed.mechanics_type] || '未知の能力';
+  } else {
+    // If mechanics_type was downgraded to DYNAMICS_HACK, also update ability_genre
+    if (parsed.mechanics_type === 'DYNAMICS_HACK' && parsed.ability_genre === 'ステルス・隠密') {
+      parsed.ability_genre = '擬態・洗脳';
+    }
+  }
+
+  // Repair is_once_per_game → convert to cool_down_turns=99 (永続歩兵化)
+  if (parsed.is_once_per_game === true) {
+    parsed.cool_down_turns = 99;
+  }
+
+  // Repair cool_down_turns
+  if (typeof parsed.cool_down_turns !== 'number') {
+    parsed.cool_down_turns = parseInt(parsed.cool_down_turns as any) || 0;
+  }
+  // Allow 99 for once-per-game, otherwise cap at 4
+  if (parsed.cool_down_turns !== 99) {
+    parsed.cool_down_turns = Math.max(0, Math.min(4, parsed.cool_down_turns));
+  }
+
+  // Repair spawn_config and spawn_piece_name
+  if (parsed.spawn_config && typeof parsed.spawn_config === 'object') {
+    const config = parsed.spawn_config;
+    let spName = config.spawn_piece_name;
+    if (spName === undefined || spName === null) {
+      spName = parsed.spawn_piece_name || null;
+    } else {
+      spName = String(spName);
+    }
+    
+    let maxLimit = parseInt(config.max_limit) ?? 2;
+    if (isNaN(maxLimit) || maxLimit > 2) maxLimit = 2;
+    if (maxLimit < 0) maxLimit = 0;
+
+    let geom = config.spawn_range_geometry;
+    if (geom === undefined) {
+      geom = null;
+    } else if (geom !== null) {
+      geom = String(geom).replace(/[^012]/g, '');
+      if (geom.length !== 25) {
+        geom = '0000001110012100111000000';
+      }
+    }
+
+    parsed.spawn_config = {
+      spawn_piece_name: spName,
+      max_limit: maxLimit,
+      spawn_range_geometry: geom
+    };
+    parsed.spawn_piece_name = spName;
+  } else {
+    let spName = parsed.spawn_piece_name;
+    if (spName === undefined) {
+      spName = null;
+    } else if (spName !== null) {
+      spName = String(spName);
+    }
+
+    if (spName) {
+      parsed.spawn_config = {
+        spawn_piece_name: spName,
+        max_limit: 2,
+        spawn_range_geometry: '0000001110012100111000000'
+      };
+      parsed.spawn_piece_name = spName;
+    } else {
+      parsed.spawn_config = {
+        spawn_piece_name: null,
+        max_limit: 0,
+        spawn_range_geometry: null
+      };
+      parsed.spawn_piece_name = null;
+    }
+  }
+
+  // Repair promoted_effect
+  if (!parsed.promoted_effect || typeof parsed.promoted_effect !== 'object') {
+    parsed.promoted_effect = {
+      effect_name: parsed.effect_name + '・醒',
+      description: '覚醒によって効果が強化されます。'
+    };
+  } else {
+    if (!parsed.promoted_effect.effect_name || typeof parsed.promoted_effect.effect_name !== 'string') {
+      parsed.promoted_effect.effect_name = parsed.effect_name + '・醒';
+    }
+    if (!parsed.promoted_effect.description || typeof parsed.promoted_effect.description !== 'string') {
+      parsed.promoted_effect.description = '覚醒によって効果が強化されます。';
+    }
+  }
+
+  // Repair range_geometry
+  if (!parsed.range_geometry || typeof parsed.range_geometry !== 'object') {
+    parsed.range_geometry = {
+      normal_grid: '0000001110012100111000000',
+      charging_grid: '0000000100012100010000000'
+    };
+  } else {
+    let norm = parsed.range_geometry.normal_grid;
+    let chg = parsed.range_geometry.charging_grid;
+
+    if (norm === undefined || norm === null) {
+      norm = '0000001110012100111000000';
+    } else {
+      norm = String(norm).replace(/[^012]/g, '');
+      if (norm.length !== 25) {
+        norm = '0000001110012100111000000';
+      }
+    }
+
+    if (chg === undefined || chg === null) {
+      chg = '0000000100012100010000000';
+    } else {
+      chg = String(chg).replace(/[^012]/g, '');
+      if (chg.length !== 25) {
+        chg = '0000000100012100010000000';
+      }
+    }
+
+    parsed.range_geometry = {
+      normal_grid: norm,
+      charging_grid: chg
+    };
+  }
+
+  return parsed as PieceData;
 }

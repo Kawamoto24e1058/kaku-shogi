@@ -267,7 +267,9 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           border: borderStyle,
           boxShadow: boxShadowStyle,
           background: baseBg,
-          transform: piece.owner === 'sente' ? 'none' : 'rotate(180deg)',
+          transform: isMyPiece
+            ? (shouldRotate ? 'rotate(180deg)' : 'none')
+            : (shouldRotate ? 'none' : 'rotate(180deg)'),
           transition: 'all 0.2s ease',
           position: 'relative',
           overflow: 'hidden',
@@ -319,7 +321,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          transform: piece.owner === 'sente' ? 'none' : 'rotate(180deg)',
+          transform: 'none',
           position: 'relative',
           overflow: 'hidden',
           boxSizing: 'border-box',
