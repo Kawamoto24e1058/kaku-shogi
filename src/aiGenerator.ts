@@ -8,7 +8,7 @@ const memoryCache = new Map<string, PieceData>();
 // バージョン管理されたワンタイムキャッシュクリーンアップ（v4にアップデートして古いキャッシュを全消去）
 try {
   if (typeof window !== 'undefined' && window.localStorage) {
-    const CURRENT_VERSION = 'v4';
+    const CURRENT_VERSION = 'v5';
     const activeVersion = localStorage.getItem('shogi_cache_version');
     if (activeVersion !== CURRENT_VERSION) {
       localStorage.removeItem('shogi_piece_cache');
@@ -139,10 +139,10 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
       max_limit: 2,
       spawn_range_geometry: '0000001110012100111000000'
     };
-    description = '【能力効果】自ターン開始時に自動発動。周囲の空きマスに「複製社員」を1体生成する。発動後3手番の間は『充填中』となり、能力がフリーズし、前後左右に1マス動ける充填状態となる。';
+    description = '【発動条件】自ターン開始時（自動発動）。\n【効果内容】周囲の空きマスに「複製社員」を1体生成する。\n【制限・代償】発動後3手番の間は充填中となり、能力がフリーズし、移動範囲が前後左右の1マス十字移動に制限される。また、盤面への生成上限は最大2体。';
     promoted_effect = {
       effect_name: '定時退社 (ていじたいしゃ)',
-      description: '【覚醒効果】成ることでクールダウン（充填手番）が1手番短縮される。'
+      description: '【発動条件】成ることで自動適用。\n【効果内容】能力発動後の充填所要手番（クールダウン）が1手番短縮される。\n【制限・代償】なし。'
     };
     range_geometry = {
       normal_grid: '0010001110112110111000100',
@@ -156,10 +156,10 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     trigger = 'ALWAYS';
     cool_down_turns = 0;
     logic_code = 'runaway_buffet';
-    description = '【能力効果】自律暴走。この駒はプレイヤーの指示を受け付けず、手番開始時にAIが勝手に周囲の空きマスへ暴走移動する。';
+    description = '【発動条件】手番開始時（自動発動）。\n【効果内容】プレイヤーの指示を受け付けず、自身の周囲1マスの空きマスへ勝手に自動で暴走移動する。\n【制限・代償】プレイヤーが移動先を直接操作することができない。';
     promoted_effect = {
       effect_name: '狂気満腹 (きょうきまんぷく)',
-      description: '【覚醒効果】成ることで暴走移動の範囲が2マス先まで拡大する。'
+      description: '【発動条件】成ることで自動適用。\n【効果内容】暴走移動の範囲が周囲2マス先に拡大する。\n【制限・代償】プレイヤーによる操作不能は維持される。'
     };
     range_geometry = {
       normal_grid: '0111011111112111111101110',
@@ -173,10 +173,10 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     trigger = 'ON_TAKEN';
     cool_down_turns = 0;
     logic_code = 'self_destruct_trap';
-    description = '【能力効果】罠特性。裏向きで配置され、相手には正体が見えない。敵の駒に重なり取られた瞬間に開示され、敵駒を道連れに破壊して両者消滅する。';
+    description = '【発動条件】敵駒に重なって捕獲された瞬間（自動発動）。\n【効果内容】裏向き配置された状態から正体が開示され、自身を捕獲した敵駒を道連れに爆破して両者共に消滅する。\n【制限・代償】使い捨て（1回限りの効果）。';
     promoted_effect = {
       effect_name: '甘美魅了 (かんびみりょう)',
-      description: '【覚醒効果】成った瞬間、再び裏向き（隠蔽状態）に戻る。'
+      description: '【発動条件】敵陣に入り「成った」瞬間。\n【効果内容】再び裏向きの隠蔽状態（相手から見えない罠状態）に戻る。\n【制限・代償】なし。'
     };
     range_geometry = {
       normal_grid: '0000001110012100111000000',
@@ -190,10 +190,10 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     trigger = 'ALWAYS';
     cool_down_turns = 0;
     logic_code = 'reveal_stealth';
-    description = '【能力効果】環境結界。常時発動。周囲2マス以内に潜む敵の裏向きの罠駒の正体を強制開示（表向き）にする。';
+    description = '【発動条件】盤面に存在中、常時発動。\n【効果内容】自身の周囲2マス以内に潜む、裏向きの敵罠駒（ステルス等）の正体を強制開示（表向き）にする。\n【制限・代償】なし。';
     promoted_effect = {
       effect_name: '神獣威嚇 (しんじゅういかく)',
-      description: '【覚醒効果】成ることで索敵開示の結界範囲が周囲3マスに拡大する。'
+      description: '【発動条件】成ることで自動適用。\n【効果内容】索敵開示の結界範囲が周囲3マスに拡大する。\n【制限・代償】なし。'
     };
     range_geometry = {
       normal_grid: '0111011111112111111101110',
@@ -207,10 +207,10 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     trigger = 'ALWAYS';
     cool_down_turns = 0;
     logic_code = 'leap_move';
-    description = '【能力効果】跳躍移動。常時発動。途中に障害物（敵味方の駒）が存在しても、それを飛び越えて桂馬のように斜め前方へ跳躍移動できる。';
+    description = '【発動条件】移動時、常時発動。\n【効果内容】途中に敵味方の駒が存在しても、それを飛び越えて（桂馬のように）斜め前方の2マス先へ跳躍移動できる。\n【制限・代償】なし。';
     promoted_effect = {
       effect_name: '赤兎一閃 (せきといっせん)',
-      description: '【覚醒効果】成ることで、左右および後方へも跳躍移動が可能になる。'
+      description: '【発動条件】成ることで自動適用。\n【効果内容】左右および後方への跳躍移動が可能になる。\n【制限・代償】なし。'
     };
     range_geometry = {
       normal_grid: '0101001010002000000000000',
@@ -224,10 +224,10 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     trigger = 'ALWAYS';
     cool_down_turns = 0;
     logic_code = 'move_like_rook';
-    description = '【能力効果】飛車移動。常時発動。縦横 of 直線方向に何マスでもスライド移動できる（障害物に遮られる）。';
+    description = '【発動条件】移動時、常時発動。\n【効果内容】縦横の直線方向に何マスでもスライド移動できる。\n【制限・代償】途中に駒がある場合は遮られ、飛び越えることはできない。';
     promoted_effect = {
       effect_name: '龍王覚醒 (りゅうおうかくせい)',
-      description: '【覚醒効果】成ることで、斜め4方向の1マス移動が追加される。'
+      description: '【発動条件】成ることで自動適用。\n【効果内容】縦横の長距離移動に加え、斜め4方向の1マス移動が可能になる。\n【制限・代償】斜め方向は飛び越え不可。'
     };
     range_geometry = {
       normal_grid: '0010000100112110010000100',
@@ -241,10 +241,10 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     trigger = 'ALWAYS';
     cool_down_turns = 0;
     logic_code = 'move_like_bishop';
-    description = '【能力効果】角行移動。常時発動。斜め4マスの直線方向に何マスでもスライド移動できる（障害物に遮られる）。';
+    description = '【発動条件】移動時、常時発動。\n【効果内容】斜め4マスの直線方向に何マスでもスライド移動できる。\n【制限・代償】途中に駒がある場合は遮られ、飛び越えることはできない。';
     promoted_effect = {
       effect_name: '龍馬覚醒 (りゅうまかくせい)',
-      description: '【覚醒効果】成ることで、上下左右4方向の1マス移動が追加される。'
+      description: '【発動条件】成ることで自動適用。\n【効果内容】斜めの長距離移動に加え、上下左右4方向の1マス移動が可能になる。\n【制限・代償】上下左右方向は飛び越え不可。'
     };
     range_geometry = {
       normal_grid: '1000101010002000101010001',
@@ -258,10 +258,10 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     trigger = 'ALWAYS';
     cool_down_turns = 0;
     logic_code = 'move_like_lance';
-    description = '【能力効果】香車移動。常時発動。前方の直線方向に何マスでもスライド移動できる（障害物に遮られる）。';
+    description = '【発動条件】移動時、常時発動。\n【効果内容】前方の直線方向に何マスでもスライド移動できる。\n【制限・代償】後退不可。途中に駒がある場合は遮られ、飛び越え不可。';
     promoted_effect = {
       effect_name: '成香覚醒 (なりきょうかくせい)',
-      description: '【覚醒効果】成ることで金将と同じ動きが可能になる。'
+      description: '【発動条件】成ることで自動適用。\n【効果内容】金将と同様の移動範囲（前後左右および斜め前方の計6方向1マス）に変化する。\n【制限・代償】長距離スライド移動は失われる。'
     };
     range_geometry = {
       normal_grid: '0010000100002000000000000',
@@ -275,10 +275,10 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     trigger = 'ALWAYS';
     cool_down_turns = 0;
     logic_code = 'move_like_knight';
-    description = '【能力効果】桂馬移動。常時発動。前方の左右斜め2マスの位置へ飛び越えて移動できる。';
+    description = '【発動条件】移動時、常時発動。\n【効果内容】前方の左右斜め2マスの位置へ、途中の駒を飛び越えて移動できる。\n【制限・代償】前方以外の方向への移動、および他のマスへの移動は不可。';
     promoted_effect = {
       effect_name: '成桂覚醒 (なりけいかくせい)',
-      description: '【覚醒効果】成ることで金将と同じ動きが可能になる。'
+      description: '【発動条件】成ることで自動適用。\n【効果内容】金将と同様の移動範囲（前後左右および斜め前方の計6方向1マス）に変化する。\n【制限・代償】桂馬独自の跳躍移動は失われる。'
     };
     range_geometry = {
       normal_grid: '0101000000002000000000000',
@@ -292,10 +292,10 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     trigger = 'ON_MOVE';
     cool_down_turns = 1;
     logic_code = 'mimic';
-    description = '【能力効果】移動完了時自動発動。隣接する相手のカスタム駒の能力（名前、説明、移動範囲、効果コード）を完全にコピー（擬態化）する。';
+    description = '【発動条件】自身の移動完了時（自動発動）。\n【効果内容】隣接する相手のカスタム駒を1つ指定し、その能力（名称、説明文、移動範囲、効果コード）を自身のものとして完全に上書きコピーする。\n【制限・代償】発動後1手番は充填中となり、移動範囲が前後左右の1マス十字移動に制限される。';
     promoted_effect = {
       effect_name: '百面相 (ひゃくめんそう)',
-      description: '【覚醒効果】成ることで擬態時のクールダウンが完全に消失する。'
+      description: '【発動条件】成ることで自動適用。\n【効果内容】擬態化時のクールダウン（充填手番）が完全に消失し、毎手番連続で擬態可能になる。\n【制限・代償】なし。'
     };
     range_geometry = {
       normal_grid: '0000001110012100111000000',
@@ -309,10 +309,10 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     trigger = 'ON_MOVE';
     cool_down_turns = 3;
     logic_code = 'mind_control';
-    description = '【能力効果】移動完了時自動発動。隣接するすべての敵駒（王将を除く）の精神を支配し、自分の駒（所有権寝返り）にする。';
+    description = '【発動条件】自身の移動完了時（自動発動）。\n【効果内容】隣接するすべての敵の駒（王将を除く）を支配し、自分の駒（所有権寝返り）にする。\n【制限・代償】発動後3手番は充填中となり、その間は移動範囲が前後左右の1マス十字移動に制限される。';
     promoted_effect = {
       effect_name: '狂信支配 (きょうしんしはい)',
-      description: '【覚醒効果】成ることで支配範囲が周囲2マスへ拡大する。'
+      description: '【発動条件】成ることで自動適用。\n【効果内容】洗脳効果の対象範囲が、隣接1マスから周囲2マス（5x5範囲）以内へと拡大する。\n【制限・代償】クールダウン等は維持される。'
     };
     range_geometry = {
       normal_grid: '0000001110012100111000000',
@@ -326,10 +326,10 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     trigger = 'TURN_START';
     cool_down_turns = 3; // 3 turns until hatch
     logic_code = 'time_bomb';
-    description = '【能力効果】時限羽化。この駒は配置されてから3手番の間は移動できず（歩兵移動）、3手番目のターン開始時に「邪竜・ファヴニール」へと超進化を遂げる。';
+    description = '【発動条件】盤面に配置後、3手番経過した自ターン開始時（自動発動）。\n【効果内容】「邪竜・ファヴニール」へと超進化し、パラメータと強力な能力を獲得する。\n【制限・代償】進化するまでの3手番の間は一切移動できず、能力も発動しない。';
     promoted_effect = {
       effect_name: '進化促進 (しんかそくしん)',
-      description: '【覚醒効果】成った瞬間、即座に孵化・進化を完了する。'
+      description: '【発動条件】敵陣に入り「成った」瞬間。\n【効果内容】3手番の経過を待たず、即座に「邪竜・ファヴニール」への孵化・進化を完了する。\n【制限・代償】なし。'
     };
     range_geometry = {
       normal_grid: '0000000100012100010000000',
@@ -343,10 +343,10 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     trigger = 'ON_TAKEN';
     cool_down_turns = 0;
     logic_code = 'curse_retaliation';
-    description = '【能力効果】因果応報。この駒が捕獲された瞬間、自身を捕獲した敵の駒を呪いによって道連れにし、共に盤面から消滅（破壊）させる。';
+    description = '【発動条件】この駒が敵に捕獲された瞬間（自動発動）。\n【効果内容】自身を捕獲した敵の駒に強力な呪いをかけ、共に盤面から消滅（破壊）させる。\n【制限・代償】使い捨て（1回限りの効果）。'; // ※元のコードは '共に盤面から消滅（破壊）させる。' だった
     promoted_effect = {
       effect_name: '大呪界 (だいじゅかい)',
-      description: '【覚醒効果】成った時に捕獲されると、捕獲した駒の周囲1マスの敵もすべて道連れにする。'
+      description: '【発動条件】成った状態で敵に捕獲された瞬間。\n【効果内容】自身を捕獲した駒に加え、その駒の周囲1マス以内に存在する他の敵駒もすべて道連れにして消滅させる。\n【制限・代償】味方の駒を巻き込まないように注意が必要。'
     };
     range_geometry = {
       normal_grid: '0000000000002000000000000',
@@ -366,10 +366,10 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
       max_limit: 2,
       spawn_range_geometry: '0000001110012100111000000'
     };
-    description = '【能力効果】巣特性。この駒は移動能力を持たない（移動力ゼロ）が、毎ターン開始時に周囲の空きマスに「子蜘蛛」を1体自動量産する。';
+    description = '【発動条件】毎ターン開始時（自動発動）。\n【効果内容】自身の周囲の空きマスに「子蜘蛛」を1体自動で生み出す。\n【制限・代償】この駒自身は移動力ゼロで動けない。また、盤面上の生成上限は最大2体まで。';
     promoted_effect = {
       effect_name: '軍隊蜂起 (ぐんたいほうき)',
-      description: '【覚醒効果】成ることで、生成するミニオンが強力な「兵隊蜘蛛」に変化する。'
+      description: '【発動条件】成ることで自動適用。\n【効果内容】自動生成するトークンが「子蜘蛛」から、より強力な「兵隊蜘蛛」へと強化される。\n【制限・代償】上限2体および自身移動不可の制限は維持される。'
     };
     range_geometry = {
       normal_grid: '0000001110012100111000000',
@@ -387,10 +387,10 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
       trigger = 'ON_MOVE';
       cool_down_turns = 2;
       logic_code = 'linear_charge';
-      description = `【能力効果】移動完了時自動発動。目的地に着地した際、進行方向の直線上にいるすべての敵駒を押しつぶし、捕獲して手駒にする。発動後2手番は充填中となり、前後左右に1マス動ける充填状態となる。`;
+      description = `【発動条件】自身の移動完了時（自動発動）。\n【効果内容】目的地への着地時、移動前の位置から目的地までの直線上に存在するすべての敵駒を捕獲し、自身の持ち駒にする。\n【制限・代償】使用後2手番は充填中（クールタイム）となり、その間は移動範囲が前後左右1マスの十字移動に制限される。`;
       promoted_effect = {
         effect_name: '破山一撃 (はざんいちげき)',
-        description: '【覚醒効果】成ることで、突撃によりなぎ倒す距離が3マス先まで増加する。'
+        description: '【発動条件】成ることで自動適用。\n【効果内容】突撃によって敵を捕獲できる直線上の範囲が3マス先まで増加する。\n【制限・代償】クールダウン等の制限は維持される。'
       };
       range_geometry = {
         normal_grid: '0000001110002000000000000',
@@ -402,10 +402,10 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
       trigger = 'ON_APPROACH';
       cool_down_turns = 0;
       logic_code = 'stealth_decoy';
-      description = `【能力効果】罠特性。裏向きで配置され、敵の駒が周囲1マス以内に接近した瞬間に姿が開示される。`;
+      description = `【発動条件】敵の駒が周囲1マス以内に接近した瞬間（自動発動）。\n【効果内容】裏向き（相手から正体が見えない状態）で配置され、接近されると自動で正体を開示する。\n【制限・代償】接近されるまでは他の駒との区別がつかない。移動力は極小。`;
       promoted_effect = {
         effect_name: '影武者替身 (かげむしゃがわり)',
-        description: '【覚醒効果】成った瞬間、再び裏向き（隠蔽状態）に戻る。'
+        description: '【発動条件】敵陣に入り「成った」瞬間。\n【効果内容】再び裏向きの隠蔽状態（罠状態）に戻る。\n【制限・代償】なし。'
       };
       range_geometry = {
         normal_grid: '0000001110012100111000000',
@@ -417,10 +417,10 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
       trigger = 'ALWAYS';
       cool_down_turns = 0;
       logic_code = 'slowdown_aura';
-      description = `【能力効果】環境結界。常時発動。周囲2マス以内に侵入した敵の駒の移動力を最大1マスに制限する。`;
+      description = `【発動条件】盤面に存在中、常時発動。\n【効果内容】周囲2マス以内に侵入した敵のすべての駒の移動範囲を最大1マスに制限する。\n【制限・代償】自身は前後左右1マスしか動けない。`;
       promoted_effect = {
         effect_name: '天地震動 (てんちしんどう)',
-        description: '【覚醒効果】成ることで、移動力制限の結界範囲が周囲3マスに拡大する。'
+        description: '【発動条件】成ることで自動適用。\n【効果内容】移動力制限の結界範囲が周囲3マス（7x7範囲）に拡大する。\n【制限・代償】自身の移動力制限は維持される。'
       };
       range_geometry = {
         normal_grid: '0111011111112111111101110',
@@ -454,11 +454,11 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
     trigger,
     cool_down_turns,
     range_geometry,
-    description: `${warningPrefix} ${description}`,
+    description: `${warningPrefix}\n${description}`,
     spawn_piece_name,
     spawn_config,
     promoted_effect,
-    deep_search_analysis: 'オフライン環境でのゲームバランスに即した自動能力設計。',
+    deep_search_analysis: 'オフライン環境でのゲームバランスに即した自動能力設計。入力単語のキーワード（馬、飛車、洗脳など）から事前に定義された能力タイプを選択しました。',
     logic_code
   };
 
@@ -492,6 +492,34 @@ export async function generatePieceFromWord(word: string, apiKey?: string): Prom
 
 ユーザーが入力した単語から能力を【完全新規で創造】、または以下の【AI能力デザインの引き出し（参考例プール）】からロジックを自由に組み合わせて、対人戦が最もカオスに盛り上がるJSONオブジェクトを出力してください。
 ※体力や攻撃力、手動奥義ボタンは完全に廃止されています。一撃捕獲ルールです。
+
+### 🚨 最重要：言葉の意味・物理的特性の徹底調査とマッピングの義務
+AIは、生成対象のユーザー入力単語の「概念、物理的特性（質量、速度、攻撃性、耐久力、隠密性など）、社会的・歴史的イメージ」について、深く調査・分析を最初に行ってください。その上で、移動範囲（normal_grid）および能力効果（logic_code/trigger）を整合するように厳格に設計してください。
+
+【物性マッピングのガイドライン】
+1. 物理的に高速、あるいは俊敏に移動するもの（例：「雷」「新幹線」「犬」「飛鳥」「光」「風」「突風」など）
+   - 前方長距離スライド移動、桂馬のような長距離跳躍など、大きな機動力を normal_grid に持たせること。
+   - または、プレイヤーが操作できず勝手に走り回る自律暴走（AUTOMATIC_DRIVE: logic_code: 'runaway_drive' や 'random_teleport'）を積極的に設定すること。通常の素直な移動にまとめないこと。
+2. 物理的に重く、あるいは強固なもの（例：「盾」「壁」「岩」「城」「守護者」「山」など）
+   - normal_grid の移動範囲は極小（0〜1マス、あるいは全く動けない完全固定の置物）に設定すること。
+   - その代わり、周囲への強力な防御（身代わりや聖盾）、あるいは周囲の敵を遅くする「鈍化結界」（移動力を最大1マスに制限する環境効果）などを設定すること。
+3. 物理的に破壊力が高く、あるいは凶暴なもの（例：「大砲」「爆弾」「剣」「龍」「猛獣」など）
+   - 直線貫通（経路上をすべて捕獲して突き抜けるCRUSH）や、着地時の周囲衝撃波（SHOCKWAVE）、または自身が捕獲されたときの自爆爆破（MINE）などの強力な一撃破壊効果を設定すること。
+4. 概念的に隠密、あるいは奇襲するもの（例：「忍者」「ステルス」「影」「霧」「幽霊」など）
+   - 相手画面から姿を隠すステルス（STEALTH_TRAP: 隣接接近されるまで非表示）や、裏向きに配置される罠（TRAP_MINE）を設定すること。
+
+### 🚨 最重要：能力説明文の厳格な構造化フォーマット
+能力説明文（description および promoted_effect.description）は、初心者がルールを直感的に理解できるよう、余計な修飾語を省き、主語・述語を明確にして、以下の【改行文字 \n を含んだ3部構成のフォーマット】を【完全厳守】して出力してください。
+
+【説明文フォーマット】
+【発動条件】<いつ、どういう条件で自動発動するのか。例：自身の移動完了時（自動発動）など>
+【効果内容】<具体的にどういう効果が、どの範囲（周囲1マスなど）に起こるのか。ゲーム上の挙動を簡潔明瞭に記述>
+【制限・代償】<1ゲーム1回限定の有無、クールダウンに必要な自手番数、能力使用後に移動範囲が前後左右1マスの十字移動に極小化されるペナルティ、生成数の上限などの不利益や制約を記述。制約がない場合は「なし」と記述>
+
+※「【能力効果】」「【覚醒効果】」などの古いタグは一切使用しないでください。
+※カタカナゲーム用語（バフ、デバフ、HP、MP、クールダウン、アクティブ、パッシブ、バリア、スタン等）は完全に排除し、漢語・和語（例：能力強化、弱体化、体力、魔力、充填手番、自動発動、聖盾、行動封印など）のみを使用してください。
+
+---
 
 ### 🚨 最重要：ゲームバランスを壊さないための『4大・安全ブレーキルール』
 
@@ -587,18 +615,6 @@ AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッ�
 
 ---
 
-### 🚨 必須ルール
-1. 【カタカナ語完全禁止】「ショット」「ノヴァ」「レーザー」「バリア」「スタン」「バフ」「デバフ」「HP」「MP」「クールダウン」「パッシブ」「アクティブ」を能力名・説明文に使うな。漢語・和語で表現すること。
-2. 【スタン・拘束の原則禁止と呪い（ON_TAKEN）でのみ例外許可】敵駒を「行動不能・移動不能・拘束」にする通常効果は禁止。ただし、駒が取られた時（ON_TAKEN）に発動する「行動封印・呪縛（curse_stun: 3ターンの間行動封印・呪縛）」「能力封印（curse_silence: 永続的にただの歩兵化）」「死の宣告（curse_death: 3ターン後に消滅）」の呪い効果に限り、例外として許可する。
-3. 【手動ボタン消費系（ACTIVE_USE）は完全禁止】すべて全自動発動（ALWAYS, ON_MOVE, TURN_START, ON_TAKEN, ON_APPROACH）に統一すること。
-4. 【1ゲームに1回（使い捨て）の場合】is_once_per_game: true とし、cool_down_turns: 0 を設定すること。発動後はゲーム終了まで移動力・移動範囲を一律で「前後左右に1マス動ける十字移動（charging_grid）」の充填状態となるペナルティを課すこと。効果説明内にも必ず「前後左右に1マス動ける充填状態となる」という統一した表現で明記すること。
-5. 【何度も使える効果の場合】is_once_per_game: false とし、cool_down_turns: 2〜4 を設定すること。クールタイム中の数ターンは移動範囲が前後左右に1マス動ける十字移動に極小化するペナルティ（充填状態）を課すこと。効果説明内にも必ず「前後左右に1マス動ける充填状態となる」という統一した表現で明記すること。
-6. 【増殖系（SPAWNER）の絶対制限】盤面に生み出すトークンの上限は最大2体（max_limit: 2）とすること。
-7. 【永続パッシブの制限】永続パッシブ能力（ALWAYS）を持つ強力な駒は、本体の移動範囲（normal_grid）を「0マス（1マスも動けない完全固定）」または「前進1マス」に設定すること。
-8. 【自律暴走・自動移動（AUTOMATIC_DRIVE）の積極的採用】「自律暴走・自動移動（AUTOMATIC_DRIVE）」はこのゲームで最も混沌として盛り上がるジャンルです。プレイヤーの入力した単語が、動物、乗り物、兵器、弾丸、風、嵐、激しい感情、機械、あるいは制御不能・高速移動・自律的なイメージを持つ時（例：「機関銃」「犬」「新幹線」「突風」「怒り」「盗賊」など）は、積極的にこのジャンル（logic_code: 'runaway_drive' または 'random_teleport'）を割り当ててください。普通の通常移動（MOVEMENT_HACK等）にまとめようとせず、プレイヤーが指示できず勝手に動き回る、あるいは通常移動後に暴走して直進する特性を大胆に設計してください。
-
----
-
 ### 💻 出力JSONフォーマット（純粋なJSONのみ。Markdownのバッククォートや解説文は一切禁止）
 {
   "word": "プレイヤーが入力した単語",
@@ -612,7 +628,7 @@ AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッ�
     "normal_grid": "通常時5x5範囲（周囲2マスの場合は外周の計算ミス厳禁）",
     "charging_grid": "0000000100012100010000000" // 十字移動に完全固定
   },
-  "description": "【能力効果】（日本語。いつどういう条件で【自動発動】するのか、1ゲーム1回限定の有無、能力使用後の十字移動への弱体化などを明記。カタカナ語排除）",
+  "description": "【発動条件】自身の移動完了時（自動発動）。\n【効果内容】目的地への着地時、移動前の位置から目的地までの直線上に存在するすべての敵駒を捕獲し、自身の持ち駒にする。\n【制限・代償】使用後2手番は充填中（クールタイム）となり、その間は移動範囲が前後左右1マスの十字移動に制限される。",
   "spawn_config": {
     "spawn_piece_name": "生み出す駒名（不要ならnull）",
     "max_limit": 2,
@@ -620,14 +636,14 @@ AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッ�
   },
   "promoted_effect": {
     "effect_name": "成った時の能力名",
-    "description": "【覚醒効果】敵陣に入って成った時の進化効果説明（カタカナ語排除）"
+    "description": "【発動条件】成ることで自動適用。\n【効果内容】突撃によって敵を捕獲できる直線上の範囲が3マス先まで増加する。\n【制限・代償】クールダウン等の制限は維持される。"
   },
   "logic_code": "移動パターンまたは特殊ロジック（スライド移動は 'move_like_rook'/'move_like_bishop'/'move_like_lance'/'move_like_knight'。それ以外は一意の英語識別子）",
-  "deep_search_analysis": "ゲームバランス的解説"
+  "deep_search_analysis": "「XXX」という単語の本質・物理的特徴（質量、速度、攻撃性など）を調べ、それをどのように移動範囲や効果にマッピングしたのかの論理的理由（日本語200文字程度）"
 }
 
 ### 生成対象のユーザー入力単語:
-"${word}"
+\"${word}\"
 
 上記の単語の持つ意味・イメージ・性質を徹底分析し、10大ジャンルと24の参考例プールを参照しながら、それを超越した完全オリジナルの対人戦最高カオス駒オブジェクトをJSONで生成してください。
 `;
