@@ -26,7 +26,7 @@ export interface SpawnConfig {
 export interface PieceData {
   word: string;
   effect_name: string;
-  mechanics_type: 'MOVEMENT_HACK' | 'STEALTH_TRAP' | 'RULE_BREAK' | 'DYNAMICS_HACK';
+  mechanics_type: 'MOVEMENT_HACK' | 'STEALTH_TRAP' | 'RULE_BREAK' | 'DYNAMICS_HACK' | 'AUTOMATIC_DRIVE';
   ability_genre: string; // Display-only Japanese genre name
   trigger: 'ALWAYS' | 'ON_MOVE' | 'TURN_START' | 'ON_TAKEN' | 'ON_APPROACH';
   cool_down_turns: number; // Cooldown (charging) turns required. 99 = once-per-game (永続歩兵化)
@@ -53,6 +53,8 @@ export interface Piece extends PieceData {
   // Dynamic runtime states for new gimmicks
   coolDownTurnsRemaining: number; // If > 0, the piece is in the "charging" state
   isRevealed: boolean;            // Reveal state for STEALTH_TRAP pieces (starts as false for opponent)
+  stunTurnsRemaining?: number;    // Action-lock/immobility curse (0 = active, > 0 = stunned)
+  deathCountdown?: number;        // Death countdown curse (decrements every turn, 0 = vaporized)
 }
 
 export type Board = (Piece | null)[][]; // 9x9 grid

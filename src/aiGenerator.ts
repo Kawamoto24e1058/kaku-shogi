@@ -112,7 +112,7 @@ export function generateOfflinePiece(word: string, isApiError?: boolean): PieceD
 
   const lowerWord = word.toLowerCase();
   let effect_name = '';
-  let mechanics_type: 'MOVEMENT_HACK' | 'STEALTH_TRAP' | 'RULE_BREAK' | 'DYNAMICS_HACK' = 'MOVEMENT_HACK';
+  let mechanics_type: 'MOVEMENT_HACK' | 'STEALTH_TRAP' | 'RULE_BREAK' | 'DYNAMICS_HACK' | 'AUTOMATIC_DRIVE' = 'MOVEMENT_HACK';
   let trigger: 'ALWAYS' | 'ON_MOVE' | 'TURN_START' | 'ON_TAKEN' | 'ON_APPROACH' = 'ALWAYS';
   let cool_down_turns = 0;
   let logic_code = 'normal';
@@ -574,27 +574,28 @@ AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッ�
 - No.17: [時限進化（TIMER）] - 盤面に打たれてから3ターンの間は動けないが、4ターン目の開始時に最強の駒へ強制進化する。
 
 #### 【ジャンル7：自律暴走・自動移動系（AUTOMATIC_DRIVE）】
-- No.18: [完全ランダム暴走] - 毎ターン開始時、プレイヤーの指示を無視して、盤面全体のランダムな空きマスへ勝手にワープする（例: 台風、酔っ払い）。
-- No.19: [猪突猛進] - 自分の手番の終わりに、自動的に前方に障害物にぶつかるまで真っ直ぐ進む移動を強制実行する。
+- No.18: [完全ランダム暴走（RANDOM_TELEPORT）] - 毎ターン開始時（TURN_START）、プレイヤーの指示を無視して、盤面全体のランダムな空きマスへ勝手にワープする（logic_code: 'random_teleport'）。
+- No.19: [猪突猛進（RUNAWAY_DRIVE）] - 自分の手番の終わり（ON_MOVE）に、自動的に前方の障害物（駒または壁）にぶつかるまで真っ直ぐ進む移動を強制実行する（logic_code: 'runaway_drive'）。
 
 #### 【ジャンル8：感染・デバフ系（VIRUS_INFECT）】
-- No.20: [ウイルスパンデミック] - 着地した隣接1マスの敵を感染状態にする。感染した駒は移動範囲が前進1マスに固定され、ターン開始時にその周囲1マスの別の敵駒へもウイルスが二次感染していく。
-- No.21: [腐食の呪い] - 隣接した敵駒を毒状態にし、3ターン経過後にその場で自動消滅させる。
+- No.20: [行動封印・呪縛（curse_stun）] - 取られた時（ON_TAKEN）に発動。自身を取った敵駒を3ターンの間、行動封印（完全に移動不可能）状態にする。
+- No.21: [能力封印（curse_silence）] - 取られた時（ON_TAKEN）に発動。自身を取った敵駒のすべての特殊能力と移動範囲を永久に奪い、前進1マスのみ動ける「普通の歩兵」に弱体化させる。
+- No.22: [死の宣告（curse_death）] - 取られた時（ON_TAKEN）に発動。自身を取った敵駒に3ターンの死のカウントダウンを付与し、3ターン経過後にその敵駒を自動消滅させる。
 
 #### 【ジャンル9：位置入れ替え系（SPACE_WARP）】
-- No.22: [位置スワップ（SWAP）] - 移動完了時、盤面にある「自分の通常歩兵1枚」を指定し、この駒と位置を一瞬で入れ替える（クールタイム3ターン）。
+- No.23: [位置スワップ（SWAP）] - 移動完了時、盤面にある「自分の通常歩兵1枚」を指定し、この駒と位置を一瞬で入れ替える（クールタイム3ターン）。
 
 #### 【ジャンル10：墓地利用・リサイクル系（NECROMANCY）】
-- No.23: [死者蘇生（RECYCLE）] - 1ゲーム1回限定。移動完了時、これまでに完全に破壊されて消滅したカスタム駒を1つ指定し、自分の「持ち駒（ストック）」として手札に復活させる。
+- No.24: [死者蘇生（RECYCLE）] - 1ゲーム1回限定。移動完了時、これまでに完全に破壊されて消滅したカスタム駒を1つ指定し、自分の「持ち駒（ストック）」として手札に復活させる。
 
 #### 【ジャンル11：能力無効化・結界系（NULLIFY）】
-- No.24: [呪文無効・結界（NULLIFY）] - 永続パッシブ（ALWAYS）または使い捨て。この駒が盤面に存在する限り、周囲2マス以内で発動した敵の自動能力（直線貫通や洗脳、変身など）の対象になった際、その効果を【1度だけ完全に無効化（フリーズ）】して防ぐ聖域ロジック。
+- No.25: [呪文無効・結界（NULLIFY）] - 永続パッシブ（ALWAYS）または使い捨て。この駒が盤面に存在する限り、周囲2マス以内で発動した敵の自動能力（直線貫通や洗脳、変身など）の対象になった際、その効果を【1度だけ完全に無効化（フリーズ）】して防ぐ聖域ロジック。
 
 ---
 
 ### 🚨 必須ルール
 1. 【カタカナ語完全禁止】「ショット」「ノヴァ」「レーザー」「バリア」「スタン」「バフ」「デバフ」「HP」「MP」「クールダウン」「パッシブ」「アクティブ」を能力名・説明文に使うな。漢語・和語で表現すること。
-2. 【スタン・拘束禁止】敵駒を「行動不能・移動不能・拘束」にする効果は禁止。爆破・引き寄せ・変身・洗脳・盗取などで代替すること。
+2. 【スタン・拘束の原則禁止と呪い（ON_TAKEN）でのみ例外許可】敵駒を「行動不能・移動不能・拘束」にする通常効果は禁止。ただし、駒が取られた時（ON_TAKEN）に発動する「行動封印・呪縛（curse_stun: 3ターンの間行動封印・呪縛）」「能力封印（curse_silence: 永続的にただの歩兵化）」「死の宣告（curse_death: 3ターン後に消滅）」の呪い効果に限り、例外として許可する。
 3. 【手動ボタン消費系（ACTIVE_USE）は完全禁止】すべて全自動発動（ALWAYS, ON_MOVE, TURN_START, ON_TAKEN, ON_APPROACH）に統一すること。
 4. 【1ゲームに1回（使い捨て）の場合】is_once_per_game: true とし、cool_down_turns: 0 を設定すること。発動後はゲーム終了まで移動力・移動範囲を一律で「前後左右に1マス動ける十字移動（charging_grid）」の充填状態となるペナルティを課すこと。効果説明内にも必ず「前後左右に1マス動ける充填状態となる」という統一した表現で明記すること。
 5. 【何度も使える効果の場合】is_once_per_game: false とし、cool_down_turns: 2〜4 を設定すること。クールタイム中の数ターンは移動範囲が前後左右に1マス動ける十字移動に極小化するペナルティ（充填状態）を課すこと。効果説明内にも必ず「前後左右に1マス動ける充填状態となる」という統一した表現で明記すること。
@@ -607,7 +608,7 @@ AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッ�
 {
   "word": "プレイヤーが入力した単語",
   "effect_name": "漢字の能力名",
-  "mechanics_type": "内部属性コード（'FORCE_CRUSH' / 'HACK_AND_STEAL' / 'STEALTH_GHOST' / 'SUPPORT_BUFF' / 'SPAWNER_BUILD' / 'TRAP_MINE' / 'UNKNOWN_HERESY' 等）",
+  "mechanics_type": "内部属性コード（'FORCE_CRUSH' / 'HACK_AND_STEAL' / 'STEALTH_GHOST' / 'SUPPORT_BUFF' / 'SPAWNER_BUILD' / 'TRAP_MINE' / 'AUTOMATIC_DRIVE' / 'UNKNOWN_HERESY' 等）",
   "ability_genre": "画面の属性欄に表示する日本語のジャンル名（例: '武力・突撃', '擬態・洗脳', 'ステルス・隠密', '能力無効化・結界', '支援・強化' など単語から適切に選択）",
   "trigger": "発動形式（'ALWAYS' / 'ON_MOVE' / 'TURN_START' / 'ON_TAKEN' / 'ON_APPROACH'）",
   "is_once_per_game": true,
@@ -681,7 +682,7 @@ AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッ�
       'SUPPORT_BUFF':    'RULE_BREAK',
       'SPAWNER_BUILD':   'RULE_BREAK',
       'TRAP_MINE':       'STEALTH_TRAP',
-      'AUTOMATIC_DRIVE': 'MOVEMENT_HACK',
+      'AUTOMATIC_DRIVE': 'AUTOMATIC_DRIVE',
       'VIRUS_INFECT':    'DYNAMICS_HACK',
       'SPACE_WARP':      'DYNAMICS_HACK',
       'NECROMANCY':      'DYNAMICS_HACK',
@@ -690,7 +691,7 @@ AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッ�
     if (parsed.mechanics_type && mechanicsTypeMap[parsed.mechanics_type]) {
       parsed.mechanics_type = mechanicsTypeMap[parsed.mechanics_type];
     }
-    if (!parsed.mechanics_type || !['MOVEMENT_HACK', 'STEALTH_TRAP', 'RULE_BREAK', 'DYNAMICS_HACK'].includes(parsed.mechanics_type)) {
+    if (!parsed.mechanics_type || !['MOVEMENT_HACK', 'STEALTH_TRAP', 'RULE_BREAK', 'DYNAMICS_HACK', 'AUTOMATIC_DRIVE'].includes(parsed.mechanics_type)) {
       parsed.mechanics_type = 'MOVEMENT_HACK';
     }
 
@@ -705,7 +706,8 @@ AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッ�
         'MOVEMENT_HACK': '武力・突撃',
         'STEALTH_TRAP': 'ステルス・隠密',
         'RULE_BREAK': '支援・強化',
-        'DYNAMICS_HACK': '擬態・洗脳'
+        'DYNAMICS_HACK': '擬態・洗脳',
+        'AUTOMATIC_DRIVE': '自律暴走'
       };
       parsed.ability_genre = genreMap[parsed.mechanics_type] || '未知の能力';
     }

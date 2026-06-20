@@ -9,6 +9,9 @@ interface StartScreenProps {
   onCreateRoom: () => void;
   onJoinRoom: (code: string) => void;
   isWaitingForOpponent: boolean;
+  isSearchingMatch: boolean;
+  onRandomMatch: () => void;
+  onCancelMatchmaking: () => void;
   matchmakingError: string;
   playerNames: { sente: string; gote: string };
   onSetPlayerNames: (names: { sente: string; gote: string }) => void;
@@ -24,6 +27,9 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   onCreateRoom,
   onJoinRoom,
   isWaitingForOpponent,
+  isSearchingMatch,
+  onRandomMatch,
+  onCancelMatchmaking,
   matchmakingError,
   playerNames,
   onSetPlayerNames,
@@ -157,7 +163,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
         {/* Mode Selector */}
         <div>
           <h3 style={{ fontSize: '16px', color: 'var(--shogi-wood)', marginBottom: '12px' }}>
-            ■ 対局モード選択
+            ■ 对局モード選択
           </h3>
           <div className="start-screen-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
             {/* VS AI Mode */}
@@ -255,7 +261,34 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               ■ オンライン対局室の選択
             </h4>
             
-            {isWaitingForOpponent ? (
+            {isSearchingMatch ? (
+              <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                <div style={{
+                  fontSize: '20px',
+                  fontWeight: 'bold',
+                  color: 'var(--neon-green)',
+                  margin: '12px 0',
+                  textShadow: '0 0 10px rgba(124, 168, 86, 0.5)',
+                  animation: 'pulse 1.5s infinite'
+                }}>
+                  🔍 対戦相手を探しています…
+                </div>
+                <button
+                  type="button"
+                  onClick={onCancelMatchmaking}
+                  className="cyber-btn"
+                  style={{
+                    padding: '8px 20px',
+                    borderColor: 'var(--neon-pink)',
+                    color: 'var(--neon-pink)',
+                    background: 'rgba(244,63,94,0.1)',
+                    marginTop: '15px'
+                  }}
+                >
+                  キャンセル
+                </button>
+              </div>
+            ) : isWaitingForOpponent ? (
               <div style={{ textAlign: 'center', padding: '10px 0' }}>
                 <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
                   対戦相手へこのコードを伝えてください
@@ -271,16 +304,45 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 }}>
                   {roomCode}
                 </div>
-                <div style={{ fontSize: '13px', color: 'var(--neon-yellow)' }}>
+                <div style={{ fontSize: '13px', color: 'var(--neon-yellow)', marginBottom: '15px' }}>
                   ⏳ 接続を待機中… (対戦相手が参加すると自動で対局室に入ります)
                 </div>
+                <button
+                  type="button"
+                  onClick={onCancelMatchmaking}
+                  className="cyber-btn"
+                  style={{
+                    padding: '8px 20px',
+                    borderColor: 'var(--neon-pink)',
+                    color: 'var(--neon-pink)',
+                    background: 'rgba(244,63,94,0.1)'
+                  }}
+                >
+                  待機をキャンセル
+                </button>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {/* Option 0: Random Matchmaking */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '3px', borderLeft: '3px solid var(--neon-yellow)' }}>
+                  <div style={{ textAlign: 'left', flex: 1, marginRight: '20px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>誰でもランダム対戦</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>待機中の他のプレイヤーと自動的にマッチングして対戦します。</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onRandomMatch}
+                    className="cyber-btn"
+                    style={{ padding: '8px 20px', borderColor: 'var(--neon-yellow)', color: 'var(--neon-yellow)', background: 'rgba(219,188,98,0.1)' }}
+                  >
+                    対戦相手を探す
+                  </button>
+                </div>
+
                 {/* Option 1: Create Room */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '3px', borderLeft: '3px solid var(--neon-green)' }}>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>新規に対局室を作成する</div>
+                  <div style={{ textAlign: 'left', flex: 1, marginRight: '20px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>合言葉対局室を作成する (プライベート)</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>新しい対局部屋を作成し、発行される6桁のコードを対戦相手に教えます。</div>
                   </div>
                   <button
@@ -296,7 +358,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 {/* Option 2: Join Room */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '3px', borderLeft: '3px solid var(--neon-cyan)' }}>
                   <div style={{ flex: 1, marginRight: '20px', textAlign: 'left' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>作成済みの対局室に入る</div>
+                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>合言葉対局室に入る (プライベート)</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>対戦相手が作成した6桁の部屋コードを入力して接続します。</div>
                   </div>
                   <div style={{ display: 'flex', gap: '10px' }}>

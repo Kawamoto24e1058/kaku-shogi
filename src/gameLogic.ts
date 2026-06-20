@@ -28,6 +28,7 @@ export function initializeBoard(): Board {
     word: '玉将',
     effect_name: '王権 of 守護',
     mechanics_type: 'MOVEMENT_HACK',
+    ability_genre: '通常・王',
     trigger: 'ALWAYS',
     cool_down_turns: 0,
     range_geometry: {
@@ -56,6 +57,7 @@ export function initializeBoard(): Board {
     word: '玉将',
     effect_name: '王権 of 守護',
     mechanics_type: 'MOVEMENT_HACK',
+    ability_genre: '通常・王',
     trigger: 'ALWAYS',
     cool_down_turns: 0,
     range_geometry: {
@@ -85,6 +87,7 @@ export function initializeBoard(): Board {
       word: '歩兵',
       effect_name: '一歩の兵勢',
       mechanics_type: 'MOVEMENT_HACK',
+      ability_genre: '通常・歩',
       trigger: 'ALWAYS',
       cool_down_turns: 0,
       range_geometry: {
@@ -116,6 +119,7 @@ export function initializeBoard(): Board {
       word: '歩兵',
       effect_name: '一歩の兵勢',
       mechanics_type: 'MOVEMENT_HACK',
+      ability_genre: '通常・歩',
       trigger: 'ALWAYS',
       cool_down_turns: 0,
       range_geometry: {
@@ -146,6 +150,7 @@ export function initializeBoard(): Board {
     word: '飛車',
     effect_name: '飛翔無限',
     mechanics_type: 'MOVEMENT_HACK',
+    ability_genre: '通常・大駒',
     trigger: 'ALWAYS',
     cool_down_turns: 0,
     range_geometry: {
@@ -175,6 +180,7 @@ export function initializeBoard(): Board {
     word: '角',
     effect_name: '角行無限',
     mechanics_type: 'MOVEMENT_HACK',
+    ability_genre: '通常・大駒',
     trigger: 'ALWAYS',
     cool_down_turns: 0,
     range_geometry: {
@@ -205,6 +211,7 @@ export function initializeBoard(): Board {
     word: '飛車',
     effect_name: '飛翔無限',
     mechanics_type: 'MOVEMENT_HACK',
+    ability_genre: '通常・大駒',
     trigger: 'ALWAYS',
     cool_down_turns: 0,
     range_geometry: {
@@ -234,6 +241,7 @@ export function initializeBoard(): Board {
     word: '角',
     effect_name: '角行無限',
     mechanics_type: 'MOVEMENT_HACK',
+    ability_genre: '通常・大駒',
     trigger: 'ALWAYS',
     cool_down_turns: 0,
     range_geometry: {
@@ -272,9 +280,45 @@ export function isWithinBounds(y: number, x: number): boolean {
   return y >= 0 && y < BOARD_SIZE && x >= 0 && x < BOARD_SIZE;
 }
 
+export function degradeToNormalPawn(piece: Piece): Piece {
+  piece.word = '封印歩兵';
+  piece.effect_name = '封印された能力';
+  piece.mechanics_type = 'MOVEMENT_HACK';
+  piece.ability_genre = '通常・歩';
+  piece.trigger = 'ALWAYS';
+  piece.cool_down_turns = 0;
+  piece.coolDownTurnsRemaining = 0;
+  piece.is_once_per_game = false;
+  piece.range_geometry = {
+    normal_grid: '0000000100012100010000000',
+    charging_grid: '0000000100012100010000000',
+    promoted_grid: '0000001110012100010000000'
+  };
+  piece.description = '能力封印の呪いにより、すべての特殊能力を失い、前進1マスの歩兵に弱体化している。';
+  piece.spawn_piece_name = null;
+  piece.spawn_config = undefined;
+  piece.promoted_effect = {
+    effect_name: 'と金',
+    description: '成ることで金将と同じ動きができる。'
+  };
+  piece.logic_code = undefined;
+  piece.isPawn = true;
+  piece.isKing = false;
+  piece.isHisha = false;
+  piece.isKaku = false;
+  piece.isRevealed = true;
+  piece.stunTurnsRemaining = undefined;
+  piece.deathCountdown = undefined;
+  return piece;
+}
+
 export function getValidMoves(y: number, x: number, board: Board): [number, number][] {
   const piece = board[y][x];
   if (!piece) return [];
+
+  if (piece.stunTurnsRemaining && piece.stunTurnsRemaining > 0) {
+    return [];
+  }
 
   const validMoves: [number, number][] = [];
 
@@ -714,38 +758,88 @@ export function executeMove(
       if (pathPiece) {
         if (pathPiece.owner !== player) {
           // 敵の駒：一撃で破壊・捕獲
-          // 罠 (ON_TAKEN) のチェック
-          const isTrapOrCurse = pathPiece.trigger === 'ON_TAKEN' && (
-            pathPiece.mechanics_type === 'STEALTH_TRAP' ||
-            pathPiece.mechanics_type === 'DYNAMICS_HACK' ||
-            getPieceLogicCode(pathPiece) === 'curse_retaliation' ||
-            pathPiece.description.includes('呪い') ||
-            pathPiece.description.includes('道連れ')
-          );
-          if (isTrapOrCurse) {
-            const logMsg = pathPiece.mechanics_type === 'STEALTH_TRAP'
-              ? `【罠衝突】突撃中の ${piece.word} が罠「${pathPiece.effect_name}」に激突！両者爆破・消滅しました！`
-              : `【呪詛衝突】突撃中の ${piece.word} が呪いの駒 ${pathPiece.word} に激突！呪い「${pathPiece.effect_name}」により、両者爆破・消滅しました！`;
+          const code = pathPiece.logic_code || '';
+          const desc = pathPiece.description || '';
+          const isCurseStun = code === 'curse_stun' || desc.includes('呪縛') || desc.includes('行動封印');
+          const isCurseSilence = code === 'curse_silence' || desc.includes('能力封印');
+          const isCurseDeath = code === 'curse_death' || desc.includes('死の宣告');
+
+          if (pathPiece.trigger === 'ON_TAKEN' && (isCurseStun || isCurseSilence || isCurseDeath)) {
+            if (isCurseStun) {
+              finalPiece.stunTurnsRemaining = 3;
+              logs.push({
+                player,
+                message: `【呪縛発動】${pathPiece.word} を捕獲した呪いにより、${finalPiece.word} は3手番の間、行動封印（移動不可）になりました！`,
+                type: 'ability'
+              });
+            } else if (isCurseSilence) {
+              degradeToNormalPawn(finalPiece);
+              logs.push({
+                player,
+                message: `【能力封印】${pathPiece.word} を捕獲した呪いにより、${finalPiece.word} はすべての特殊能力を奪われ、普通の歩兵に弱体化しました！`,
+                type: 'ability'
+              });
+            } else if (isCurseDeath) {
+              finalPiece.deathCountdown = 3;
+              logs.push({
+                player,
+                message: `【死の宣告】${pathPiece.word} を捕獲した呪いにより、${finalPiece.word} に3手番の死の宣告（カウントダウン）が付与されました！`,
+                type: 'ability'
+              });
+            }
+
             logs.push({
               player,
-              message: logMsg,
-              type: 'ability'
+              message: `【突撃撃破】呪いの駒 ${pathPiece.word} (${getCellLabel(cy, cx)}) が突撃によりなぎ倒されました！`,
+              type: 'capture'
             });
-            nextBoard[cy][cx] = null;
-            nextBoard[fy][fx] = null;
-            bombTriggered = true;
-            // 突撃した本人が消滅したため、突撃処理を中断
-            return {
-              board: nextBoard,
-              capturedPiece: null,
-              capturedPieces: capturedPiecesList,
-              logs,
-              shieldTriggered,
-              bombTriggered,
-              gameOver: pathPiece.isKing, // 玉将ならゲーム終了
-              winner: pathPiece.isKing ? player : null
+
+            const cap = {
+              ...pathPiece,
+              owner: player,
+              isPromoted: false,
+              isRevealed: true,
+              coolDownTurnsRemaining: 0
             };
+            capturedPiecesList.push(cap);
+            nextBoard[cy][cx] = null;
+            if (pathPiece.isKing) {
+              gameOver = true;
+              winner = player;
+            }
           } else {
+            // 罠 (ON_TAKEN) のチェック
+            const isTrapOrCurse = pathPiece.trigger === 'ON_TAKEN' && (
+              pathPiece.mechanics_type === 'STEALTH_TRAP' ||
+              pathPiece.mechanics_type === 'DYNAMICS_HACK' ||
+              getPieceLogicCode(pathPiece) === 'curse_retaliation' ||
+              pathPiece.description.includes('呪い') ||
+              pathPiece.description.includes('道連れ')
+            );
+            if (isTrapOrCurse) {
+              const logMsg = pathPiece.mechanics_type === 'STEALTH_TRAP'
+                ? `【罠衝突】突撃中の ${piece.word} が罠「${pathPiece.effect_name}」に激突！両者爆破・消滅しました！`
+                : `【呪詛衝突】突撃中の ${piece.word} が呪いの駒 ${pathPiece.word} に激突！呪い「${pathPiece.effect_name}」により、両者爆破・消滅しました！`;
+              logs.push({
+                player,
+                message: logMsg,
+                type: 'ability'
+              });
+              nextBoard[cy][cx] = null;
+              nextBoard[fy][fx] = null;
+              bombTriggered = true;
+              // 突撃した本人が消滅したため、突撃処理を中断
+              return {
+                board: nextBoard,
+                capturedPiece: null,
+                capturedPieces: capturedPiecesList,
+                logs,
+                shieldTriggered,
+                bombTriggered,
+                gameOver: pathPiece.isKing, // 玉将ならゲーム終了
+                winner: pathPiece.isKing ? player : null
+              };
+            } else {
             logs.push({
               player,
               message: `【突撃撃破】${pathPiece.word} (${getCellLabel(cy, cx)}) が突撃によりなぎ倒されました！`,
@@ -765,10 +859,11 @@ export function executeMove(
               winner = player;
             }
           }
-        } else {
-          // 味方の駒：押し出し
-          nextBoard = pushPiece(nextBoard, cy, cx, dy, dx, player, logs, capturedPiecesList);
         }
+      } else {
+        // 味方の駒：押し出し
+        nextBoard = pushPiece(nextBoard, cy, cx, dy, dx, player, logs, capturedPiecesList);
+      }
       }
 
       if (cy === ty && cx === tx) break;
@@ -785,13 +880,70 @@ export function executeMove(
   } else {
     // 通常移動・捕獲
     if (targetCell) {
-      const isTrapOrCurse = targetCell.trigger === 'ON_TAKEN' && (
-        targetCell.mechanics_type === 'STEALTH_TRAP' ||
-        targetCell.mechanics_type === 'DYNAMICS_HACK' ||
-        getPieceLogicCode(targetCell) === 'curse_retaliation' ||
-        targetCell.description.includes('呪い') ||
-        targetCell.description.includes('道連れ')
-      );
+      const code = targetCell.logic_code || '';
+      const desc = targetCell.description || '';
+      const isCurseStun = code === 'curse_stun' || desc.includes('呪縛') || desc.includes('行動封印');
+      const isCurseSilence = code === 'curse_silence' || desc.includes('能力封印');
+      const isCurseDeath = code === 'curse_death' || desc.includes('死の宣告');
+
+      if (targetCell.trigger === 'ON_TAKEN' && (isCurseStun || isCurseSilence || isCurseDeath)) {
+        logs.push({
+          player,
+          message: `【捕獲】${piece.word} が呪いの駒 ${targetCell.word} (${getCellLabel(ty, tx)}) を捕獲しました。`,
+          type: 'capture'
+        });
+
+        capturedPiece = {
+          ...targetCell,
+          owner: player,
+          isPromoted: false,
+          isRevealed: true,
+          coolDownTurnsRemaining: 0
+        };
+
+        if (isCurseStun) {
+          finalPiece.stunTurnsRemaining = 3;
+          logs.push({
+            player,
+            message: `【呪縛発動】${targetCell.word} を捕獲した呪いにより、${finalPiece.word} は3手番の間、行動封印（移動不可）になりました！`,
+            type: 'ability'
+          });
+        } else if (isCurseSilence) {
+          degradeToNormalPawn(finalPiece);
+          logs.push({
+            player,
+            message: `【能力封印】${targetCell.word} を捕獲した呪いにより、${finalPiece.word} はすべての特殊能力を奪われ、普通の歩兵に弱体化しました！`,
+            type: 'ability'
+          });
+        } else if (isCurseDeath) {
+          finalPiece.deathCountdown = 3;
+          logs.push({
+            player,
+            message: `【死の宣告】${targetCell.word} を捕獲した呪いにより、${finalPiece.word} に3手番の死の宣告（カウントダウン）が付与されました！`,
+            type: 'ability'
+          });
+        }
+
+        nextBoard[ty][tx] = finalPiece;
+        nextBoard[fy][fx] = null;
+
+        if (targetCell.isKing) {
+          gameOver = true;
+          winner = player;
+          logs.push({
+            player,
+            message: `敵の玉将が討ち取られました！${player === 'sente' ? '先手' : '後手'}の勝利！`,
+            type: 'system',
+          });
+        }
+      } else {
+        const isTrapOrCurse = targetCell.trigger === 'ON_TAKEN' && (
+          targetCell.mechanics_type === 'STEALTH_TRAP' ||
+          targetCell.mechanics_type === 'DYNAMICS_HACK' ||
+          getPieceLogicCode(targetCell) === 'curse_retaliation' ||
+          targetCell.description.includes('呪い') ||
+          targetCell.description.includes('道連れ')
+        );
 
       if (isTrapOrCurse) {
         const logMsg = targetCell.mechanics_type === 'STEALTH_TRAP'
@@ -839,11 +991,12 @@ export function executeMove(
           });
         }
       }
-    } else {
-      // 空きマスへの移動
-      nextBoard[ty][tx] = finalPiece;
-      nextBoard[fy][fx] = null;
     }
+  } else {
+    // 空きマスへの移動
+    nextBoard[ty][tx] = finalPiece;
+    nextBoard[fy][fx] = null;
+  }
   }
 
   // 接近警報 (ON_APPROACH 罠の判定)
@@ -1013,7 +1166,7 @@ export function getValidDropCells(board: Board, piece: Piece, player: Player): [
 
 export function checkAndApplyNullification(
   board: Board,
-  attackerPosition: [number, number],
+  _attackerPosition: [number, number],
   attackerPiece: Piece,
   effectName: string,
   affectedPositions: [number, number][],
@@ -1143,6 +1296,7 @@ export function applyAutomatedEffect(
           word: spawnPieceName,
           effect_name: piece.effect_name,
           mechanics_type: piece.mechanics_type,
+          ability_genre: piece.ability_genre || '武力・突撃',
           trigger: 'ALWAYS',
           cool_down_turns: 0,
           range_geometry: {
@@ -1283,7 +1437,7 @@ export function applyAutomatedEffect(
   }
 
   // 4. Teleport (checks logic_code or description)
-  else if (desc.includes('瞬間移動') || desc.includes('ワープ') || logic === 'random_move' || logic === 'teleport_anywhere') {
+  else if (desc.includes('瞬間移動') || desc.includes('ワープ') || logic === 'random_move' || logic === 'teleport_anywhere' || logic === 'random_teleport') {
     const emptyCells: [number, number][] = [];
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
@@ -1306,6 +1460,138 @@ export function applyAutomatedEffect(
         message: `【自動発動】${piece.word} の効果「${effectName}」により、${getCellLabel(ny, nx)} へ瞬間移動しました！`,
         type: 'ability'
       });
+    }
+  }
+  // 4.5. Runaway Drive (ON_MOVE / 自律暴走)
+  else if (logic === 'runaway_drive' || logic === 'runaway_buffet' || desc.includes('猪突猛進') || desc.includes('暴走列車')) {
+    const stepY = player === 'sente' ? -1 : 1;
+    let currentY = y;
+    const currentX = x;
+    let stopY = y;
+    let hitEnemy = false;
+    let hitEnemyPiece: Piece | null = null;
+
+    while (true) {
+      const ny = currentY + stepY;
+      if (!isWithinBounds(ny, currentX)) {
+        break; // Out of bounds, stop at currentY
+      }
+      const obs = nextBoard[ny][currentX];
+      if (obs) {
+        if (obs.owner === player) {
+          // Friendly piece. Stop adjacent (i.e. at currentY).
+          break;
+        } else {
+          // Enemy piece. Capture it and stop at ny.
+          hitEnemy = true;
+          hitEnemyPiece = obs;
+          stopY = ny;
+          break;
+        }
+      }
+      currentY = ny;
+      stopY = ny;
+    }
+
+    if (stopY !== y) {
+      triggered = true;
+      const finalPieceAtStop = { ...piece };
+      
+      logs.push({
+        player,
+        message: `【自律暴走】${piece.word} が猪突猛進！ ${getCellLabel(y, x)} から ${getCellLabel(stopY, currentX)} へ突進しました！`,
+        type: 'ability'
+      });
+
+      if (hitEnemy && hitEnemyPiece) {
+        const victim = hitEnemyPiece;
+        const code = victim.logic_code || '';
+        const vdesc = victim.description || '';
+        const isCurseStun = code === 'curse_stun' || vdesc.includes('呪縛') || vdesc.includes('行動封印');
+        const isCurseSilence = code === 'curse_silence' || vdesc.includes('能力封印');
+        const isCurseDeath = code === 'curse_death' || vdesc.includes('死の宣告');
+
+        if (victim.trigger === 'ON_TAKEN' && (isCurseStun || isCurseSilence || isCurseDeath)) {
+          logs.push({
+            player,
+            message: `【突撃撃破】${piece.word} が呪いの駒 ${victim.word} (${getCellLabel(stopY, currentX)}) を捕獲しました。`,
+            type: 'capture'
+          });
+          nextCaptured.push({
+            ...victim,
+            owner: player,
+            isPromoted: false,
+            isRevealed: true,
+            coolDownTurnsRemaining: 0
+          });
+
+          if (isCurseStun) {
+            finalPieceAtStop.stunTurnsRemaining = 3;
+            logs.push({
+              player,
+              message: `【呪縛発動】${victim.word} を捕獲した呪いにより、${piece.word} は3手番の間、行動封印（移動不可）になりました！`,
+              type: 'ability'
+            });
+          } else if (isCurseSilence) {
+            degradeToNormalPawn(finalPieceAtStop);
+            logs.push({
+              player,
+              message: `【能力封印】${victim.word} を捕獲した呪いにより、${piece.word} はすべての特殊能力を奪われ、普通の歩兵に弱体化しました！`,
+              type: 'ability'
+            });
+          } else if (isCurseDeath) {
+            finalPieceAtStop.deathCountdown = 3;
+            logs.push({
+              player,
+              message: `【死の宣告】${victim.word} を捕獲した呪いにより、${piece.word} に3手番の死の宣告（カウントダウン）が付与されました！`,
+              type: 'ability'
+            });
+          }
+
+          nextBoard[stopY][currentX] = finalPieceAtStop;
+          nextBoard[y][x] = null;
+        } else {
+          // Legacy trap or regular piece
+          const isTrapOrCurse = victim.trigger === 'ON_TAKEN' && (
+            victim.mechanics_type === 'STEALTH_TRAP' ||
+            victim.mechanics_type === 'DYNAMICS_HACK' ||
+            getPieceLogicCode(victim) === 'curse_retaliation' ||
+            victim.description.includes('呪い') ||
+            victim.description.includes('道連れ')
+          );
+
+          if (isTrapOrCurse) {
+            const logMsg = victim.mechanics_type === 'STEALTH_TRAP'
+              ? `【罠衝突】突進中の ${piece.word} が罠「${victim.effect_name}」に激突！両者爆破・消滅しました！`
+              : `【呪詛衝突】突進中の ${piece.word} が呪いの駒 ${victim.word} に激突！呪い「${victim.effect_name}」により、両者爆破・消滅しました！`;
+            logs.push({
+              player,
+              message: logMsg,
+              type: 'ability'
+            });
+            nextBoard[stopY][currentX] = null;
+            nextBoard[y][x] = null;
+          } else {
+            logs.push({
+              player,
+              message: `【突撃撃破】${piece.word} が ${victim.word} (${getCellLabel(stopY, currentX)}) をなぎ倒し、捕獲しました！`,
+              type: 'capture'
+            });
+            nextCaptured.push({
+              ...victim,
+              owner: player,
+              isPromoted: false,
+              isRevealed: true,
+              coolDownTurnsRemaining: 0
+            });
+            nextBoard[stopY][currentX] = finalPieceAtStop;
+            nextBoard[y][x] = null;
+          }
+        }
+      } else {
+        nextBoard[stopY][currentX] = finalPieceAtStop;
+        nextBoard[y][x] = null;
+      }
     }
   }
   // 5. Pierce / Crush (ON_MOVE trigger)
@@ -1605,10 +1891,20 @@ export function applyAutomatedEffect(
   }
 
   if (triggered) {
-    const updatedPiece = nextBoard[y][x] || nextBoard[position[0]][position[1]];
-    if (updatedPiece && updatedPiece.id === piece.id) {
-      if (updatedPiece.cool_down_turns > 0) {
-        updatedPiece.coolDownTurnsRemaining = updatedPiece.cool_down_turns;
+    let foundPiece: Piece | null = null;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const p = nextBoard[r][c];
+        if (p && p.id === piece.id) {
+          foundPiece = p;
+          break;
+        }
+      }
+      if (foundPiece) break;
+    }
+    if (foundPiece) {
+      if (foundPiece.cool_down_turns > 0) {
+        foundPiece.coolDownTurnsRemaining = foundPiece.cool_down_turns;
       }
     }
   }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { GameState, Piece, Player, Board, GameLog, HistoryState } from './types';
 import {
   initializeBoard,
@@ -21,7 +21,7 @@ import { ControlPanel } from './components/ControlPanel';
 import { getRandomCachedPieces } from './aiGenerator';
 import { StartScreen } from './components/StartScreen';
 import { db } from './firebase';
-import { doc, getDoc, setDoc, updateDoc, onSnapshot, arrayUnion } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, onSnapshot, arrayUnion, collection, query, where, orderBy, limit, getDocs, deleteDoc } from 'firebase/firestore';
 
 const getOrCreateDeviceId = (): string => {
   if (typeof window === 'undefined' || !window.localStorage) {
@@ -99,6 +99,7 @@ export const App: React.FC = () => {
   const [roomCode, setRoomCode] = useState<string>('');
   const [myRole, setMyRole] = useState<'sente' | 'gote' | null>(null);
   const [isWaitingForOpponent, setIsWaitingForOpponent] = useState<boolean>(false);
+  const [isSearchingMatch, setIsSearchingMatch] = useState<boolean>(false);
   const [matchmakingError, setMatchmakingError] = useState<string>('');
   const [matchDoc, setMatchDoc] = useState<any>(null);
 
@@ -373,6 +374,15 @@ export const App: React.FC = () => {
           winner: finalWinner,
         }));
         saveHistorySnapshot(finalBoard, nextCaptured, state.turn, finalLogs);
+        syncOnlineState(
+          finalBoard,
+          state.turn,
+          'finished',
+          finalWinner,
+          nextCaptured,
+          state.sharedPieces,
+          finalLogs
+        );
       }, 1200);
     } else {
       finalizeTurn(
@@ -513,7 +523,237 @@ export const App: React.FC = () => {
     }
   };
 
-  // 3. リアルタイムFirestoreリスナー
+  // 2.5. ランダムマッチング処理
+  const handleRandomMatchmaking = async () => {
+    setMatchmakingError('');
+    setIsSearchingMatch(true);
+    try {
+      const queueRef = collection(db, 'matchmaking_queue');
+      const q = query(queueRef, where('status', '==', 'waiting'), orderBy('createdAt', 'asc'), limit(1));
+      const querySnapshot = await getDocs(q);
+      
+      const clientDeviceId = getOrCreateDeviceId();
+      
+      if (!querySnapshot.empty) {
+        const opponentDoc = querySnapshot.docs[0];
+        const opponentData = opponentDoc.data();
+        const code = opponentData.roomCode;
+        
+        if (opponentData.deviceId === clientDeviceId) {
+          await deleteDoc(doc(db, 'matchmaking_queue', opponentDoc.id));
+          setIsSearchingMatch(false);
+          handleRandomMatchmaking();
+          return;
+        }
+
+        await deleteDoc(doc(db, 'matchmaking_queue', opponentDoc.id));
+        
+        const docRef = doc(db, 'matches', code);
+        const goteName = playerNames.gote || '後手プレイヤー';
+        
+        await updateDoc(docRef, {
+          status: 'setup',
+          goteDeviceId: clientDeviceId,
+          goteName: goteName,
+          logs: arrayUnion({ player: 'system', message: '後手(対戦相手)が入室しました。能力駒の構築を開始します。', type: 'system' }),
+          lastUpdated: Date.now()
+        });
+        
+        setRoomCode(code);
+        setMyRole('gote');
+        setVsAiMode(false);
+        setOnlineMode(true);
+        setIsSearchingMatch(false);
+      } else {
+        let code = '';
+        let isUnique = false;
+        let attempts = 0;
+        while (!isUnique && attempts < 10) {
+          code = Math.floor(100000 + Math.random() * 900000).toString();
+          const docRef = doc(db, 'matches', code);
+          const snap = await getDoc(docRef);
+          if (!snap.exists()) {
+            isUnique = true;
+          }
+          attempts++;
+        }
+
+        if (!isUnique) {
+          throw new Error('部屋コードの生成に失敗しました。もう一度お試しください。');
+        }
+
+        const initialB = initializeBoard();
+        const senteName = playerNames.sente || '先手プレイヤー';
+
+        const matchRef = doc(db, 'matches', code);
+        await setDoc(matchRef, {
+          id: code,
+          status: 'waiting',
+          senteDeviceId: clientDeviceId,
+          goteDeviceId: null,
+          senteName: senteName,
+          goteName: '',
+          senteWords: [],
+          goteWords: [],
+          sentePiecesReady: false,
+          gotePiecesReady: false,
+          sentePieces: null,
+          gotePieces: null,
+          board: JSON.stringify(initialB),
+          turn: 'sente',
+          winner: null,
+          logsJson: JSON.stringify([]),
+          capturedPieces: JSON.stringify({ sente: [], gote: [] }),
+          sharedPieces: JSON.stringify([]),
+          logs: [
+            { player: 'system', message: `対局室 (部屋コード: ${code}) が作成されました。`, type: 'system' },
+            { player: 'system', message: 'ランダムな対戦相手の入室を待っています…', type: 'system' }
+          ],
+          lastUpdated: Date.now()
+        });
+
+        const myQueueRef = doc(db, 'matchmaking_queue', clientDeviceId);
+        await setDoc(myQueueRef, {
+          deviceId: clientDeviceId,
+          roomCode: code,
+          status: 'waiting',
+          createdAt: Date.now()
+        });
+
+        setRoomCode(code);
+        setMyRole('sente');
+        setIsWaitingForOpponent(true);
+        setVsAiMode(false);
+        setOnlineMode(true);
+        setIsSearchingMatch(false);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setMatchmakingError(err.message || 'マッチング中にエラーが発生しました。');
+      setIsSearchingMatch(false);
+    }
+  };
+
+  const handleCancelMatchmaking = async () => {
+    setMatchmakingError('');
+    setIsSearchingMatch(false);
+    setIsWaitingForOpponent(false);
+    
+    const clientDeviceId = getOrCreateDeviceId();
+    
+    try {
+      await deleteDoc(doc(db, 'matchmaking_queue', clientDeviceId));
+      
+      if (roomCode && myRole === 'sente') {
+        const matchRef = doc(db, 'matches', roomCode);
+        const snap = await getDoc(matchRef);
+        if (snap.exists() && snap.data().status === 'waiting') {
+          await deleteDoc(matchRef);
+        }
+      }
+    } catch (err) {
+      console.warn('Error cleaning up matchmaking/match documents on cancel:', err);
+    }
+    
+    setRoomCode('');
+    setMyRole(null);
+    setOnlineMode(false);
+  };
+
+  // 3. リアルタイムFirestoreリスナーおよび再同期ロジック
+  const updateLocalStateFromMatchData = useCallback((data: any) => {
+    setMatchDoc(data);
+
+    // 相手のユーザー名を反映
+    setPlayerNames(prev => {
+      const newNames = { ...prev };
+      if (myRole === 'sente' && data.goteName) newNames.gote = data.goteName;
+      if (myRole === 'gote' && data.senteName) newNames.sente = data.senteName;
+      return newNames;
+    });
+
+    if (data.status === 'setup') {
+      setState(prev => {
+        if (prev.phase !== 'setup') {
+          return {
+            ...prev,
+            phase: 'setup',
+            turn: myRole || prev.turn
+          };
+        }
+        return prev;
+      });
+      setIsWaitingForOpponent(false);
+    } else if (data.status === 'playing') {
+      setState(prev => {
+        const newTurn = data.turn as Player;
+        const newBoard = JSON.parse(data.board) as Board;
+        // 自手番になった時に王手チェック
+        if (newTurn !== prev.turn && newTurn === myRole) {
+          const isChecked = isKingInCheck(newBoard, myRole);
+          if (isChecked) {
+            setShowCheckOverlay(true);
+          }
+        }
+        return {
+          ...prev,
+          board: newBoard,
+          turn: newTurn,
+          phase: 'playing',
+          customPieces: data.customPieces,
+          capturedPieces: JSON.parse(data.capturedPieces),
+          sharedPieces: JSON.parse(data.sharedPieces),
+          logs: data.logs || [],
+          winner: data.winner,
+        };
+      });
+    } else if (data.status === 'finished') {
+      setState(prev => ({
+        ...prev,
+        board: JSON.parse(data.board),
+        turn: data.turn,
+        phase: 'finished',
+        customPieces: data.customPieces,
+        capturedPieces: JSON.parse(data.capturedPieces),
+        sharedPieces: JSON.parse(data.sharedPieces),
+        logs: data.logs || [],
+        winner: data.winner,
+      }));
+    }
+  }, [myRole]);
+
+  const forceResyncGame = useCallback(async () => {
+    if (!onlineMode || !roomCode) return;
+    try {
+      const docRef = doc(db, 'matches', roomCode);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        updateLocalStateFromMatchData(data);
+        console.log('--- [📱スマホ復帰検知] データベースから最新の盤面を強制再同期します ---');
+      }
+    } catch (err) {
+      console.error('Error force-resyncing game on visibility change:', err);
+    }
+  }, [onlineMode, roomCode, updateLocalStateFromMatchData]);
+
+  // visibilitychange検知によるスマホ復帰対策
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        await forceResyncGame();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [forceResyncGame]);
+
+  // リアルタイムFirestoreリスナー
   useEffect(() => {
     if (!onlineMode || !roomCode) return;
 
@@ -521,69 +761,13 @@ export const App: React.FC = () => {
     const unsubscribe = onSnapshot(docRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
-        setMatchDoc(data);
-
-        // 相手のユーザー名を反映
-        setPlayerNames(prev => {
-          const newNames = { ...prev };
-          if (myRole === 'sente' && data.goteName) newNames.gote = data.goteName;
-          if (myRole === 'gote' && data.senteName) newNames.sente = data.senteName;
-          return newNames;
-        });
-
-        if (data.status === 'setup') {
-          setState(prev => {
-            if (prev.phase !== 'setup') {
-              return {
-                ...prev,
-                phase: 'setup',
-                turn: myRole || prev.turn
-              };
-            }
-            return prev;
-          });
-          setIsWaitingForOpponent(false);
-        } else if (data.status === 'playing') {
-          setState(prev => {
-            const newTurn = data.turn as Player;
-            const newBoard = JSON.parse(data.board) as Board;
-            // 自手番になった時に王手チェック
-            if (newTurn !== prev.turn && newTurn === myRole) {
-              const isChecked = isKingInCheck(newBoard, myRole);
-              if (isChecked) {
-                setShowCheckOverlay(true);
-              }
-            }
-            return {
-              ...prev,
-              board: newBoard,
-              turn: newTurn,
-              phase: 'playing',
-              customPieces: data.customPieces,
-              capturedPieces: JSON.parse(data.capturedPieces),
-              sharedPieces: JSON.parse(data.sharedPieces),
-              logs: data.logs || [],
-              winner: data.winner,
-            };
-          });
-        } else if (data.status === 'finished') {
-          setState(prev => ({
-            ...prev,
-            board: JSON.parse(data.board),
-            turn: data.turn,
-            phase: 'finished',
-            customPieces: data.customPieces,
-            capturedPieces: JSON.parse(data.capturedPieces),
-            sharedPieces: JSON.parse(data.sharedPieces),
-            logs: data.logs || [],
-            winner: data.winner,
-          }));
-        }
+        updateLocalStateFromMatchData(data);
       }
     });
 
     return () => unsubscribe();
-  }, [onlineMode, roomCode, myRole]);
+  }, [onlineMode, roomCode, updateLocalStateFromMatchData]);
+
 
   // 4. 先手側：両者の概念構築完了検知と自動配置
   useEffect(() => {
@@ -658,51 +842,30 @@ export const App: React.FC = () => {
     }
   }, [onlineMode, roomCode, myRole, matchDoc]);
 
-  // 5. 指し手決定時のFirestoreへの状態同期（送信ガード付き）
-  useEffect(() => {
-    if (!onlineMode || !roomCode || !myRole || !matchDoc) return;
-    if (state.phase === 'start' || state.phase === 'setup') return;
-
-    // 現在データベース上で自分のターンである場合のみ更新権限を持つ
-    if (matchDoc.turn !== myRole) return;
-
-    const dbBoard = matchDoc.board;
-    const dbTurn = matchDoc.turn;
-    const dbPhase = matchDoc.status;
-    const dbWinner = matchDoc.winner;
-    const dbCaptured = matchDoc.capturedPieces;
-    const dbShared = matchDoc.sharedPieces;
-    const dbLogsJson = matchDoc.logsJson;
-
-    const localBoardStr = JSON.stringify(state.board);
-    const localCapturedStr = JSON.stringify(state.capturedPieces);
-    const localSharedStr = JSON.stringify(state.sharedPieces);
-    const localLogsStr = JSON.stringify(state.logs);
-
-    const hasChanged = 
-      dbBoard !== localBoardStr ||
-      dbTurn !== state.turn ||
-      dbPhase !== state.phase ||
-      dbWinner !== state.winner ||
-      dbCaptured !== localCapturedStr ||
-      dbShared !== localSharedStr ||
-      dbLogsJson !== localLogsStr;
-
-    if (hasChanged) {
-      const docRef = doc(db, 'matches', roomCode);
-      updateDoc(docRef, {
-        board: localBoardStr,
-        turn: state.turn,
-        status: state.phase,
-        winner: state.winner,
-        capturedPieces: localCapturedStr,
-        sharedPieces: localSharedStr,
-        logsJson: localLogsStr,
-        logs: state.logs,
-        lastUpdated: Date.now()
-      }).catch(err => console.error("Error syncing online state:", err));
-    }
-  }, [state.board, state.turn, state.phase, state.winner, state.capturedPieces, state.sharedPieces, state.logs, onlineMode, roomCode, myRole, matchDoc]);
+  // 5. アトミックなオンライン状態同期関数
+  const syncOnlineState = useCallback((
+    board: Board,
+    turn: Player,
+    phase: GameState['phase'],
+    winner: Player | null,
+    capturedPieces: GameState['capturedPieces'],
+    sharedPieces: Piece[],
+    logs: GameLog[]
+  ) => {
+    if (!onlineMode || !roomCode) return;
+    const docRef = doc(db, 'matches', roomCode);
+    updateDoc(docRef, {
+      board: JSON.stringify(board),
+      turn: turn,
+      status: phase,
+      winner: winner,
+      capturedPieces: JSON.stringify(capturedPieces),
+      sharedPieces: JSON.stringify(sharedPieces),
+      logsJson: JSON.stringify(logs),
+      logs: logs,
+      lastUpdated: Date.now()
+    }).catch(err => console.error("Error syncing online state:", err));
+  }, [onlineMode, roomCode]);
 
   // Helpers to push logs
   const addLog = (message: string, type: GameLog['type'], player: Player) => {
@@ -759,18 +922,61 @@ export const App: React.FC = () => {
 
 
 
-    // Decrement cooldowns for nextPlayer's pieces on the board
-    const finalBoard = nextBoard.map(row =>
-      row.map(piece => {
-        if (piece && piece.owner === nextPlayer && piece.coolDownTurnsRemaining > 0) {
-          return {
-            ...piece,
-            coolDownTurnsRemaining: piece.coolDownTurnsRemaining - 1,
-          };
+    // Decrement cooldowns and curses for nextPlayer's pieces on the board
+    const updatedLogsList: GameLog[] = [];
+    const finalBoard = nextBoard.map((row, r) =>
+      row.map((piece, c) => {
+        if (!piece) return null;
+        if (piece.owner === nextPlayer) {
+          const updated = { ...piece };
+          let died = false;
+          
+          if (updated.coolDownTurnsRemaining > 0) {
+            updated.coolDownTurnsRemaining -= 1;
+          }
+          
+          if (updated.stunTurnsRemaining && updated.stunTurnsRemaining > 0) {
+            updated.stunTurnsRemaining -= 1;
+            if (updated.stunTurnsRemaining === 0) {
+              updatedLogsList.push({
+                id: generateId(),
+                timestamp: new Date().toLocaleTimeString(),
+                player: nextPlayer,
+                message: `【呪縛解除】${piece.word} (${getCellLabel(r, c)}) の呪縛（行動封印）が解けました！`,
+                type: 'system'
+              });
+            }
+          }
+          
+          if (updated.deathCountdown && updated.deathCountdown > 0) {
+            updated.deathCountdown -= 1;
+            if (updated.deathCountdown === 0) {
+              died = true;
+              updatedLogsList.push({
+                id: generateId(),
+                timestamp: new Date().toLocaleTimeString(),
+                player: nextPlayer,
+                message: `【死の宣告】${piece.word} (${getCellLabel(r, c)}) は死の宣告の刻限を迎え、塵となって消滅しました…`,
+                type: 'system'
+              });
+            } else {
+              updatedLogsList.push({
+                id: generateId(),
+                timestamp: new Date().toLocaleTimeString(),
+                player: nextPlayer,
+                message: `【死の宣告】${piece.word} (${getCellLabel(r, c)}) の消滅まであと ${updated.deathCountdown} 手番。`,
+                type: 'system'
+              });
+            }
+          }
+          
+          return died ? null : updated;
         }
         return piece;
       })
     );
+
+    nextLogs.push(...updatedLogsList);
 
     let currentBoard = finalBoard;
     const currentCaptured = {
@@ -964,6 +1170,15 @@ export const App: React.FC = () => {
           winner: winner,
         }));
         saveHistorySnapshot(currentBoard, currentCaptured, nextPlayer, currentLogs);
+        syncOnlineState(
+          currentBoard,
+          nextPlayer,
+          'finished',
+          winner,
+          currentCaptured,
+          nextShared,
+          currentLogs
+        );
       }, 1200);
 
       setValidMoves([]);
@@ -972,7 +1187,6 @@ export const App: React.FC = () => {
 
     const isChecked = isKingInCheck(currentBoard, nextPlayer);
     if (isChecked) {
-      setShowCheckOverlay(true);
       currentLogs.push({
         id: generateId(),
         timestamp: new Date().toLocaleTimeString(),
@@ -980,6 +1194,7 @@ export const App: React.FC = () => {
         message: `🚨 王手！${nextPlayer === 'sente' ? '先手' : '後手'}の玉将が狙われています！`,
         type: 'system'
       });
+      setShowCheckOverlay(true);
     }
 
     setState(prev => {
@@ -1001,6 +1216,16 @@ export const App: React.FC = () => {
     });
 
     setValidMoves([]);
+
+    syncOnlineState(
+      currentBoard,
+      nextPlayer,
+      'playing',
+      null,
+      currentCaptured,
+      nextShared,
+      currentLogs
+    );
   };
 
   const resumeAbilitySelection = (ty: number, tx: number) => {
@@ -1076,6 +1301,15 @@ export const App: React.FC = () => {
             winner: finalWinner,
           }));
           saveHistorySnapshot(finalBoard, nextCaptured, activePlayer, finalLogs);
+          syncOnlineState(
+            finalBoard,
+            activePlayer,
+            'finished',
+            finalWinner,
+            nextCaptured,
+            state.sharedPieces,
+            finalLogs
+          );
         }, 1200);
       } else {
         finalizeTurn(
@@ -1243,6 +1477,15 @@ export const App: React.FC = () => {
             winner: winner,
           }));
           saveHistorySnapshot(currentBoard, currentCaptured, activePlayer, currentLogs);
+          syncOnlineState(
+            currentBoard,
+            activePlayer,
+            'finished',
+            winner,
+            currentCaptured,
+            state.sharedPieces,
+            currentLogs
+          );
         }, 1200);
 
         setValidMoves([]);
@@ -1251,7 +1494,6 @@ export const App: React.FC = () => {
 
       const isChecked = isKingInCheck(currentBoard, activePlayer);
       if (isChecked) {
-        setShowCheckOverlay(true);
         currentLogs.push({
           id: generateId(),
           timestamp: new Date().toLocaleTimeString(),
@@ -1259,6 +1501,7 @@ export const App: React.FC = () => {
           message: `🚨 王手！${activePlayer === 'sente' ? '先手' : '後手'}の玉将が狙われています！`,
           type: 'system'
         });
+        setShowCheckOverlay(true);
       }
 
       setState(prev => {
@@ -1278,6 +1521,16 @@ export const App: React.FC = () => {
       });
 
       setValidMoves([]);
+
+      syncOnlineState(
+        currentBoard,
+        activePlayer,
+        'playing',
+        null,
+        currentCaptured,
+        state.sharedPieces,
+        currentLogs
+      );
     }
   };
 
@@ -1633,20 +1886,42 @@ export const App: React.FC = () => {
   const handlePassTurn = () => {
     if (onlineMode && state.turn !== myRole) return;
     if (state.winner) return;
-    addLog('手番をパスしました。', 'system', state.turn);
+
+    const nextPlayer = (state.turn === 'sente' ? 'gote' : 'sente') as Player;
+    const newLog: GameLog = {
+      id: generateId(),
+      timestamp: new Date().toLocaleTimeString(),
+      player: state.turn,
+      message: '手番をパスしました。',
+      type: 'system'
+    };
+    const nextLogs = [...state.logs, newLog];
+
     setState(prev => {
       const nextState = {
         ...prev,
-        turn: (prev.turn === 'sente' ? 'gote' : 'sente') as Player,
+        turn: nextPlayer,
         selectedCell: null,
         activeAbilityMode: false,
         activeAbilitySource: null,
         activeAbilityTargets: [],
+        logs: nextLogs,
       };
-      saveHistorySnapshot(prev.board, prev.capturedPieces, nextState.turn, prev.logs);
+      saveHistorySnapshot(prev.board, prev.capturedPieces, nextState.turn, nextLogs);
       return nextState;
     });
+
     setValidMoves([]);
+
+    syncOnlineState(
+      state.board,
+      nextPlayer,
+      'playing',
+      null,
+      state.capturedPieces,
+      state.sharedPieces,
+      nextLogs
+    );
   };
 
 
@@ -2015,6 +2290,9 @@ export const App: React.FC = () => {
             onCreateRoom={handleCreateRoom}
             onJoinRoom={handleJoinRoom}
             isWaitingForOpponent={isWaitingForOpponent}
+            isSearchingMatch={isSearchingMatch}
+            onRandomMatch={handleRandomMatchmaking}
+            onCancelMatchmaking={handleCancelMatchmaking}
             matchmakingError={matchmakingError}
             playerNames={playerNames}
             onSetPlayerNames={(names) => {

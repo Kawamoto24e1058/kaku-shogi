@@ -250,6 +250,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             glowColor = 'rgba(59, 130, 246, 0.45)';  // 環境：青
           } else if (piece.mechanics_type === 'DYNAMICS_HACK') {
             glowColor = 'rgba(236, 72, 153, 0.45)';  // 奇策：ピンク
+          } else if (piece.mechanics_type === 'AUTOMATIC_DRIVE') {
+            glowColor = 'rgba(249, 115, 22, 0.55)';   // 暴走：オレンジ
           }
           boxShadowStyle = `${insetShadow}, 0 0 8px ${glowColor}, 0 0 0 1px rgba(230, 208, 175, 0.25)`;
         }
