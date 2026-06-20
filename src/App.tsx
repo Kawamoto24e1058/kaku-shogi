@@ -100,6 +100,7 @@ export const App: React.FC = () => {
   const [myRole, setMyRole] = useState<'sente' | 'gote' | null>(null);
   const [isWaitingForOpponent, setIsWaitingForOpponent] = useState<boolean>(false);
   const [isSearchingMatch, setIsSearchingMatch] = useState<boolean>(false);
+  const [isRandomMatch, setIsRandomMatch] = useState<boolean>(false);
   const [matchmakingError, setMatchmakingError] = useState<string>('');
   const [matchDoc, setMatchDoc] = useState<any>(null);
 
@@ -474,6 +475,7 @@ export const App: React.FC = () => {
       setRoomCode(code);
       setMyRole('sente');
       setIsWaitingForOpponent(true);
+      setIsRandomMatch(false);
       setVsAiMode(false);
       setOnlineMode(true);
     } catch (err: any) {
@@ -515,6 +517,7 @@ export const App: React.FC = () => {
 
       setRoomCode(code);
       setMyRole('gote');
+      setIsRandomMatch(false);
       setVsAiMode(false);
       setOnlineMode(true);
     } catch (err: any) {
@@ -561,6 +564,7 @@ export const App: React.FC = () => {
         
         setRoomCode(code);
         setMyRole('gote');
+        setIsRandomMatch(false);
         setVsAiMode(false);
         setOnlineMode(true);
         setIsSearchingMatch(false);
@@ -623,6 +627,7 @@ export const App: React.FC = () => {
         setRoomCode(code);
         setMyRole('sente');
         setIsWaitingForOpponent(true);
+        setIsRandomMatch(true);
         setVsAiMode(false);
         setOnlineMode(true);
         setIsSearchingMatch(false);
@@ -638,6 +643,7 @@ export const App: React.FC = () => {
     setMatchmakingError('');
     setIsSearchingMatch(false);
     setIsWaitingForOpponent(false);
+    setIsRandomMatch(false);
     
     const clientDeviceId = getOrCreateDeviceId();
     
@@ -2291,6 +2297,7 @@ export const App: React.FC = () => {
             onJoinRoom={handleJoinRoom}
             isWaitingForOpponent={isWaitingForOpponent}
             isSearchingMatch={isSearchingMatch}
+            isRandomMatch={isRandomMatch}
             onRandomMatch={handleRandomMatchmaking}
             onCancelMatchmaking={handleCancelMatchmaking}
             matchmakingError={matchmakingError}

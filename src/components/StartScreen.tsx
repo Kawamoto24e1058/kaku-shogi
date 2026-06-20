@@ -10,6 +10,7 @@ interface StartScreenProps {
   onJoinRoom: (code: string) => void;
   isWaitingForOpponent: boolean;
   isSearchingMatch: boolean;
+  isRandomMatch?: boolean;
   onRandomMatch: () => void;
   onCancelMatchmaking: () => void;
   matchmakingError: string;
@@ -28,6 +29,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   onJoinRoom,
   isWaitingForOpponent,
   isSearchingMatch,
+  isRandomMatch = false,
   onRandomMatch,
   onCancelMatchmaking,
   matchmakingError,
@@ -290,22 +292,51 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               </div>
             ) : isWaitingForOpponent ? (
               <div style={{ textAlign: 'center', padding: '10px 0' }}>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                  対戦相手へこのコードを伝えてください
-                </div>
-                <div style={{
-                  fontSize: '36px',
-                  fontWeight: 'bold',
-                  color: 'var(--neon-green)',
-                  letterSpacing: '0.2em',
-                  margin: '12px 0',
-                  textShadow: '0 0 10px rgba(124, 168, 86, 0.5)',
-                  animation: 'pulse 1.5s infinite'
-                }}>
-                  {roomCode}
-                </div>
+                {isRandomMatch ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ fontSize: '15px', color: 'var(--neon-green)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+                      🌐 対戦相手を探しています… (自動マッチング)
+                    </div>
+                    {/* Dots pulse animation */}
+                    <div style={{
+                      display: 'flex',
+                      gap: '6px',
+                      justifyContent: 'center',
+                      margin: '15px 0'
+                    }}>
+                      <span className="dot-pulse-1" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--neon-green)', animation: 'pulse 1s infinite alternate' }}></span>
+                      <span className="dot-pulse-2" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--neon-green)', animation: 'pulse 1s infinite alternate 0.2s' }}></span>
+                      <span className="dot-pulse-3" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--neon-green)', animation: 'pulse 1s infinite alternate 0.4s' }}></span>
+                    </div>
+                    {roomCode && (
+                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                        (管理コード: {roomCode})
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                      対戦相手へこのコードを伝えてください
+                    </div>
+                    <div style={{
+                      fontSize: '36px',
+                      fontWeight: 'bold',
+                      color: 'var(--neon-green)',
+                      letterSpacing: '0.2em',
+                      margin: '12px 0',
+                      textShadow: '0 0 10px rgba(124, 168, 86, 0.5)',
+                      animation: 'pulse 1.5s infinite'
+                    }}>
+                      {roomCode}
+                    </div>
+                  </>
+                )}
                 <div style={{ fontSize: '13px', color: 'var(--neon-yellow)', marginBottom: '15px' }}>
-                  ⏳ 接続を待機中… (対戦相手が参加すると自動で対局室に入ります)
+                  {isRandomMatch 
+                    ? '⏳ 他のプレイヤーが「誰でもランダム対戦」を開始すると自動で対局が開始されます。'
+                    : '⏳ 接続を待機中… (対戦相手が参加すると自動で対局室に入ります)'
+                  }
                 </div>
                 <button
                   type="button"
@@ -318,7 +349,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                     background: 'rgba(244,63,94,0.1)'
                   }}
                 >
-                  待機をキャンセル
+                  {isRandomMatch ? 'マッチングをキャンセル' : '待機をキャンセル'}
                 </button>
               </div>
             ) : (
