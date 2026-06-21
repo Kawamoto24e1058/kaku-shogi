@@ -339,8 +339,8 @@ body {
 }
 
 .board-wrapper {
-  flex: 1 1 520px;
-  max-width: 520px;
+  flex: 1 1 620px;
+  max-width: 620px;
   width: 100%;
   position: relative;
   box-sizing: border-box;
@@ -375,7 +375,7 @@ body {
   }
 
   .board-wrapper {
-    flex: 0 0 520px;
+    flex: 0 0 620px;
     height: 100%;
     display: flex;
     align-items: center;
@@ -400,10 +400,10 @@ body {
   }
   .board-wrapper {
     max-width: 100%;
-    width: min(100%, 520px);
+    width: min(100%, 620px);
   }
   .control-wrapper {
-    max-width: min(100%, 520px);
+    max-width: min(100%, 620px);
     width: 100%;
   }
 }

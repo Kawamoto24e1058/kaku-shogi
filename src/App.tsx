@@ -2352,68 +2352,6 @@ export const App: React.FC = () => {
               
               {/* Left Side: Game Board (9x9) */}
               <div className="board-wrapper">
-                {/* Turn Indicator Banner */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  background: 'rgba(5, 2, 18, 0.85)',
-                  border: `1px solid ${state.turn === 'sente' ? 'var(--neon-cyan)' : 'var(--neon-purple)'}`,
-                  boxShadow: `0 0 10px ${state.turn === 'sente' ? 'rgba(0,243,255,0.2)' : 'rgba(189,0,255,0.2)'}`,
-                  borderRadius: '4px',
-                  padding: '10px 16px',
-                  marginBottom: '12px',
-                  fontFamily: 'var(--font-cyber)',
-                  transition: 'all 0.3s ease',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{
-                      width: '8px',
-                      height: '8px',
-                      borderRadius: '50%',
-                      background: state.turn === 'sente' ? 'var(--neon-cyan)' : 'var(--neon-purple)',
-                      boxShadow: `0 0 8px ${state.turn === 'sente' ? 'var(--neon-cyan)' : 'var(--neon-purple)'}`,
-                      animation: 'pulseGlow 1.5s infinite alternate',
-                    }} />
-                    <span style={{
-                      fontSize: '11px',
-                      color: 'var(--text-secondary)',
-                      letterSpacing: '0.05em',
-                    }}>
-                      手番ステータス
-                    </span>
-                  </div>
-                  
-                  <div style={{
-                    fontSize: '15px',
-                    fontWeight: 'bold',
-                    color: state.turn === 'sente' ? 'var(--neon-cyan)' : 'var(--neon-purple)',
-                    textShadow: `0 0 8px ${state.turn === 'sente' ? 'rgba(0,243,255,0.3)' : 'rgba(189,0,255,0.3)'}`,
-                    letterSpacing: '0.04em',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}>
-                    {(() => {
-                      if (onlineMode) {
-                        const isMyTurn = state.turn === myRole;
-                        const name = state.turn === 'sente' ? (playerNames.sente || 'プレイヤー1') : (playerNames.gote || 'プレイヤー2');
-                        return isMyTurn 
-                          ? `⚡ あなたの手番 (${name})`
-                          : `⏳ 相手の手番 (${name})`;
-                      } else if (vsAiMode) {
-                        return state.turn === 'sente'
-                          ? `⚡ あなたの手番 (${playerNames.sente || 'プレイヤー1'})`
-                          : `🤖 AIの手番 (思考中...)`;
-                      } else {
-                        return state.turn === 'sente'
-                          ? `▲ ${playerNames.sente || 'プレイヤー1'} の手番`
-                          : `▽ ${playerNames.gote || 'プレイヤー2'} の手番`;
-                      }
-                    })()}
-                  </div>
-                </div>
-
                 {state.activeAbilityMode && suspendedAbility && (
                   <div style={{
                     background: 'rgba(0, 243, 255, 0.15)',

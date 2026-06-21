@@ -524,7 +524,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       {/* Gote Captured Hand */}
       <div className="cyber-panel" style={{
         width: '100%',
-        maxWidth: '520px',
+        maxWidth: '620px',
         padding: '6px 10px',
         display: 'flex',
         alignItems: 'center',
@@ -572,7 +572,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       {/* Shared cooperative pool (Coexistence tray) */}
       <div className="cyber-panel pink-glow" style={{
         width: '100%',
-        maxWidth: '520px',
+        maxWidth: '620px',
         padding: '6px 10px',
         display: 'flex',
         alignItems: 'center',
@@ -618,7 +618,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       </div>
 
       {/* Main Shogi Grid (9x9) */}
-      <div className="shogi-board-outer" style={{ width: '100%', maxWidth: '520px', position: 'relative', padding: '15px 15px 15px 5px' }}>
+      <div className="shogi-board-outer" style={{ width: '100%', maxWidth: '620px', position: 'relative', padding: '15px 15px 15px 5px' }}>
         <div style={{
           display: 'grid',
           gridTemplateColumns: `repeat(${BOARD_SIZE}, 1fr)`,
@@ -642,7 +642,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       {/* Sente Captured Hand */}
       <div className="cyber-panel" style={{
         width: '100%',
-        maxWidth: '520px',
+        maxWidth: '620px',
         padding: '6px 10px',
         display: 'flex',
         alignItems: 'center',
