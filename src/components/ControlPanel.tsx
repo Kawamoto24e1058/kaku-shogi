@@ -192,11 +192,19 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             <div key={log.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', paddingBottom: '3px' }}>
               <span style={{ color: 'var(--text-muted)', marginRight: '4px' }}>[{log.timestamp}]</span>
               <span style={{
-                color: log.player === 'sente' ? 'var(--neon-cyan)' : 'var(--neon-purple)',
+                color: log.type === 'system'
+                  ? 'var(--neon-yellow)'
+                  : (log.player === 'sente' ? 'var(--neon-cyan)' : 'var(--neon-purple)'),
                 fontWeight: 'bold',
                 marginRight: '4px'
               }}>
-                {log.player === 'sente' ? '先手' : '後手'}
+                {log.type === 'system'
+                  ? '📢 システム'
+                  : (log.player === 'sente'
+                      ? (playerNames.sente || 'プレイヤー1')
+                      : (playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2'))
+                    )
+                }
               </span>
               <span style={{ color: getLogColor(log.type) }}>{log.message}</span>
             </div>

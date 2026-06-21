@@ -91,8 +91,8 @@ export function initializeBoard(): Board {
       trigger: 'ALWAYS',
       cool_down_turns: 0,
       range_geometry: {
-        normal_grid: '0000000100012100010000000',
-        charging_grid: '0000000100012100010000000',
+        normal_grid: '0000000100002000000000000',
+        charging_grid: '0000000100002000000000000',
         promoted_grid: '0000001110012100010000000'
       },
       description: '前方に1マス進むことができる基本の歩兵。',
@@ -123,8 +123,8 @@ export function initializeBoard(): Board {
       trigger: 'ALWAYS',
       cool_down_turns: 0,
       range_geometry: {
-        normal_grid: '0000000100012100010000000',
-        charging_grid: '0000000100012100010000000',
+        normal_grid: '0000000100002000000000000',
+        charging_grid: '0000000100002000000000000',
         promoted_grid: '0000001110012100010000000'
       },
       description: '前方に1マス進むことができる基本の歩兵。',
@@ -290,8 +290,8 @@ export function degradeToNormalPawn(piece: Piece): Piece {
   piece.coolDownTurnsRemaining = 0;
   piece.is_once_per_game = false;
   piece.range_geometry = {
-    normal_grid: '0000000100012100010000000',
-    charging_grid: '0000000100012100010000000',
+    normal_grid: '0000000100002000000000000',
+    charging_grid: '0000000100002000000000000',
     promoted_grid: '0000001110012100010000000'
   };
   piece.description = '能力封印の呪いにより、すべての特殊能力を失い、前進1マスの歩兵に弱体化している。';
@@ -703,8 +703,19 @@ export function executeMove(
   from: [number, number],
   to: [number, number],
   player: Player,
-  promote: boolean = false
+  promote: boolean = false,
+  playerNames?: { sente: string; gote: string },
+  vsAiMode?: boolean
 ): MoveResult {
+  const getPlayerName = (p: Player) => {
+    if (playerNames) {
+      return p === 'sente'
+        ? (playerNames.sente || 'プレイヤー1')
+        : (playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2'));
+    }
+    return p === 'sente' ? '先手' : '後手';
+  };
+
   const [fy, fx] = from;
   const [ty, tx] = to;
   const piece = board[fy][fx];
@@ -932,7 +943,7 @@ export function executeMove(
           winner = player;
           logs.push({
             player,
-            message: `敵の玉将が討ち取られました！${player === 'sente' ? '先手' : '後手'}の勝利！`,
+            message: `敵の玉将が討ち取られました！${getPlayerName(player)}の勝利！`,
             type: 'system',
           });
         }
@@ -986,7 +997,7 @@ export function executeMove(
           winner = player;
           logs.push({
             player,
-            message: `敵の玉将が討ち取られました！${player === 'sente' ? '先手' : '後手'}の勝利！`,
+            message: `敵の玉将が討ち取られました！${getPlayerName(player)}の勝利！`,
             type: 'system',
           });
         }

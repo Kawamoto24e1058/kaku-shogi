@@ -14,6 +14,7 @@ interface PieceCreatorProps {
   myRole?: 'sente' | 'gote' | null;
   onlineOpponentReady?: boolean;
   onlineSelfReady?: boolean;
+  playerNames: { sente: string; gote: string };
 }
 
 export const PieceCreator: React.FC<PieceCreatorProps> = ({
@@ -26,6 +27,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
   myRole = null,
   onlineOpponentReady = false,
   onlineSelfReady = false,
+  playerNames,
 }) => {
   const [word, setWord] = useState('');
   const [loading, setLoading] = useState(false);
@@ -33,9 +35,20 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
   const [scanStatus, setScanStatus] = useState('');
 
   const maxPieces = 3; // 3 custom pieces for a standard 9x9 match
-  const playerName = onlineMode 
-    ? (myRole === 'sente' ? '▲ 先手 (あなた)' : '▽ 後手 (あなた)')
-    : (player === 'sente' ? '先手 (Player 1)' : '後手 (Player 2 / AI)');
+  const leftRole = onlineMode ? (myRole || 'sente') : player;
+  const rightRole = leftRole === 'sente' ? 'gote' : 'sente';
+
+  const leftLabel = onlineMode
+    ? `${leftRole === 'sente' ? '▲' : '▽'} ${playerNames[leftRole] || (leftRole === 'sente' ? 'プレイヤー1' : 'プレイヤー2')} (あなた)`
+    : `${leftRole === 'sente' ? '▲' : '▽'} ${playerNames[leftRole] || 'プレイヤー1'}${vsAiMode ? '' : (leftRole === 'sente' ? ' (Player 1)' : ' (Player 2)')}`;
+
+  const rightLabel = onlineMode
+    ? `${rightRole === 'sente' ? '▲' : '▽'} ${playerNames[rightRole] || (rightRole === 'sente' ? 'プレイヤー1' : 'プレイヤー2')} (対戦相手)`
+    : vsAiMode
+      ? '🤖 Gemini AI (封印済み)'
+      : `${rightRole === 'sente' ? '▲' : '▽'} ${playerNames[rightRole] || 'プレイヤー2'}${rightRole === 'sente' ? ' (Player 1)' : ' (Player 2)'}`;
+
+  const playerName = leftLabel;
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -135,10 +148,10 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
 
         <div className="piece-creator-status-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
           {/* Left: Your Status */}
-          <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 15px', borderRadius: '3px', borderLeft: `3px solid ${player === 'sente' ? 'var(--shogi-sente)' : 'var(--shogi-gote)'}` }}>
+          <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 15px', borderRadius: '3px', borderLeft: `3px solid ${leftRole === 'sente' ? 'var(--shogi-sente)' : 'var(--shogi-gote)'}` }}>
             <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>あなたの構築ステータス</div>
             <div style={{ fontSize: '15px', fontWeight: 'bold', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>{onlineMode ? (myRole === 'sente' ? '▲ 先手 (あなた)' : '▽ 後手 (あなた)') : (player === 'sente' ? '▲ 先手 (Player 1)' : '▽ 後手 (Player 2)')}</span>
+              <span>{leftLabel}</span>
               <span style={{ color: (onlineMode ? onlineSelfReady : createdPieces.length === maxPieces) ? 'var(--neon-green)' : 'var(--neon-yellow)' }}>
                 {(onlineMode ? onlineSelfReady : createdPieces.length === maxPieces) ? '🟢 準備完了' : `構築中 (${createdPieces.length}/${maxPieces})`}
               </span>
@@ -146,10 +159,10 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
           </div>
 
           {/* Right: Opponent Status */}
-          <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 15px', borderRadius: '3px', borderLeft: `3px solid ${player === 'sente' ? 'var(--shogi-gote)' : 'var(--shogi-sente)'}` }}>
+          <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 15px', borderRadius: '3px', borderLeft: `3px solid ${rightRole === 'sente' ? 'var(--shogi-sente)' : 'var(--shogi-gote)'}` }}>
             <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>対戦相手の準備状況</div>
             <div style={{ fontSize: '15px', fontWeight: 'bold', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>{onlineMode ? (myRole === 'sente' ? '▽ 後手 (対戦相手)' : '▲ 先手 (対戦相手)') : (player === 'sente' ? (vsAiMode ? '🤖 後手 (AI)' : '▽ 後手 (Player 2)') : '▲ 先手 (Player 1)')}</span>
+              <span>{rightLabel}</span>
               <span style={{ 
                 color: onlineMode ? (onlineOpponentReady ? 'var(--neon-green)' : 'var(--neon-yellow)') : (vsAiMode ? 'var(--neon-cyan)' : (setupSubPhase === 'sente_create' ? 'var(--neon-yellow)' : 'var(--neon-green)'))
               }}>
@@ -200,11 +213,11 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
             gap: '8px'
           }}>
             <span>💡</span>
-            <span>
+            <div style={{ fontSize: '12px', color: 'var(--neon-cyan)', border: '1px solid rgba(0,243,255,0.15)', padding: '10px 14px', borderRadius: '4px', background: 'rgba(0,243,255,0.02)' }}>
               {setupSubPhase === 'sente_create' 
-                ? '先手(Player 1)が3枚のカスタム駒を作り終えると、後手(Player 2)の構築フェーズに切り替わります。' 
-                : '先手(Player 1)は準備完了しています！ 後手(Player 2)は残り駒を構築して「盤面へ」進んでください。'}
-            </span>
+                ? `${playerNames.sente || 'プレイヤー1'} が3枚のカスタム駒を作り終えると、${playerNames.gote || 'プレイヤー2'} の構築フェーズに切り替わります。` 
+                : `${playerNames.sente || 'プレイヤー1'} は準備完了しています！ ${playerNames.gote || 'プレイヤー2'} は残り駒を構築して「盤面へ」進んでください。`}
+            </div>
           </div>
         )}
       </div>

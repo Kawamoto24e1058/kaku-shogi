@@ -87,14 +87,21 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 minWidth: '110px',
                 flexShrink: 0,
               }}>
-                ▲ 先手名
+                {onlineMode ? 'プレイヤー名' : (vsAiMode ? 'プレイヤー名' : 'プレイヤー1名')}
               </label>
               <input
                 type="text"
-                placeholder="先手プレイヤーの名前"
+                placeholder={onlineMode ? 'あなたの名前を入力' : (vsAiMode ? 'プレイヤーの名前を入力' : 'プレイヤー1の名前を入力')}
                 maxLength={16}
                 value={playerNames.sente}
-                onChange={e => onSetPlayerNames({ ...playerNames, sente: e.target.value })}
+                onChange={e => {
+                  const val = e.target.value;
+                  if (onlineMode) {
+                    onSetPlayerNames({ sente: val, gote: val });
+                  } else {
+                    onSetPlayerNames({ ...playerNames, sente: val });
+                  }
+                }}
                 style={{
                   flex: 1,
                   minWidth: '160px',
@@ -122,7 +129,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                   minWidth: '110px',
                   flexShrink: 0,
                 }}>
-                  ▽ {vsAiMode ? 'AI' : '後手'}名
+                  {vsAiMode ? 'AI名' : 'プレイヤー2名'}
                 </label>
                 {vsAiMode ? (
                   <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontFamily: 'var(--font-ui)', padding: '8px 14px' }}>
@@ -131,7 +138,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 ) : (
                   <input
                     type="text"
-                    placeholder="後手プレイヤーの名前"
+                    placeholder="プレイヤー2の名前を入力"
                     maxLength={16}
                     value={playerNames.gote}
                     onChange={e => onSetPlayerNames({ ...playerNames, gote: e.target.value })}
@@ -458,7 +465,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               borderRadius: '3px'
             }}
           >
-            <div><strong>1. 概念創造:</strong> 対局前に任意の単語を入力します。AIがその意味を分析し、オリジナルの移動力・HP・攻撃力・秘奥義を持つ「カスタム駒」をゼロから構築します（2人対戦時は先手が作り終えた後、デバイスを後手に渡して後手が駒を作成します）。</div>
+            <div><strong>1. 概念創造:</strong> 対局前に任意の単語を入力します。AIがその意味を分析し、オリジナルの移動力・HP・攻撃力・秘奥義を持つ「カスタム駒」をゼロから構築します（2人対戦時はプレイヤー1が作り終えた後、デバイスをプレイヤー2に渡してプレイヤー2が駒を作成します）。</div>
             <div><strong>2. 盤面配置:</strong> 作成された3枚 of カスタム駒は、自陣に自動的に配置されます（歩兵と王将も最初から配置済み）。</div>
             <div><strong>3. 戦術オプション:</strong> 対局中、駒の持つ「一度限りの秘奥義」（タイムリープ、洗脳、コピー等）を使用できます。発動には手番開始時に蓄積される「気力（MP）」を消費します。</div>
             <div><strong>4. ダメージと撃破:</strong> 各駒にはHPが設定されており、攻撃されるとHPが減少します。HPが0になると撃破され、相手の持ち駒となります。</div>

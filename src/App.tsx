@@ -52,6 +52,12 @@ export const App: React.FC = () => {
     gote: savedGoteName,
   });
 
+  const getPlayerName = (owner: 'sente' | 'gote') => {
+    return owner === 'sente'
+      ? (playerNames.sente || 'プレイヤー1')
+      : (playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2'));
+  };
+
   const [state, setState] = useState<GameState>({
     board: initializeBoard(),
     turn: 'sente',
@@ -164,7 +170,7 @@ export const App: React.FC = () => {
               id: generateId(),
               timestamp: new Date().toLocaleTimeString(),
               player: piece.owner,
-              message: `👁️ 【気配感知】${piece.owner === 'sente' ? '先手' : '後手'}の『${piece.word}』の周囲1マス以内に敵が侵入したため、ステルスが解除され姿が露見しました！`,
+              message: `👁️ 【気配感知】${getPlayerName(piece.owner)}の『${piece.word}』の周囲1マス以内に敵が侵入したため、ステルスが解除され姿が露見しました！`,
               type: 'ability'
             });
             return { ...piece, isRevealed: true };
@@ -175,7 +181,7 @@ export const App: React.FC = () => {
               id: generateId(),
               timestamp: new Date().toLocaleTimeString(),
               player: piece.owner,
-              message: `🌫️ 【再隠蔽】${piece.owner === 'sente' ? '先手' : '後手'}の『${piece.word}』の周囲から敵が立ち去ったため、再びステルス状態（透明）に戻りました。`,
+              message: `🌫️ 【再隠蔽】${getPlayerName(piece.owner)}の『${piece.word}』の周囲から敵が立ち去ったため、再びステルス状態（透明）に戻りました。`,
               type: 'ability'
             });
             return { ...piece, isRevealed: false };
@@ -230,7 +236,7 @@ export const App: React.FC = () => {
     x: number,
     promote: boolean
   ) => {
-    const res = executeMove(state.board, [sy, sx], [y, x], state.turn, promote);
+    const res = executeMove(state.board, [sy, sx], [y, x], state.turn, promote, playerNames, vsAiMode);
 
     if (res.bombTriggered) {
       setExplosionEffects(prev => [...prev, [y, x]]);
@@ -449,7 +455,7 @@ export const App: React.FC = () => {
 
       const clientDeviceId = getOrCreateDeviceId();
       const initialB = initializeBoard();
-      const senteName = playerNames.sente || '先手プレイヤー';
+      const senteName = playerNames.sente || 'プレイヤー1';
 
       const docRef = doc(db, 'matches', code);
       await setDoc(docRef, {
@@ -512,12 +518,12 @@ export const App: React.FC = () => {
       }
 
       const clientDeviceId = getOrCreateDeviceId();
-      const goteName = playerNames.gote || '後手プレイヤー';
+      const goteName = playerNames.gote || 'プレイヤー2';
       await updateDoc(docRef, {
         status: 'setup',
         goteDeviceId: clientDeviceId,
         goteName: goteName,
-        logs: arrayUnion({ player: 'system', message: '後手(対戦相手)が入室しました。能力駒の構築を開始します。', type: 'system' }),
+        logs: arrayUnion({ player: 'system', message: `${goteName} が入室しました。能力駒の構築を開始します。`, type: 'system' }),
         lastUpdated: Date.now()
       });
 
@@ -558,13 +564,13 @@ export const App: React.FC = () => {
         await deleteDoc(doc(db, 'matchmaking_queue', opponentDoc.id));
         
         const docRef = doc(db, 'matches', code);
-        const goteName = playerNames.gote || '後手プレイヤー';
+        const goteName = playerNames.gote || 'プレイヤー2';
         
         await updateDoc(docRef, {
           status: 'setup',
           goteDeviceId: clientDeviceId,
           goteName: goteName,
-          logs: arrayUnion({ player: 'system', message: '後手(対戦相手)が入室しました。能力駒の構築を開始します。', type: 'system' }),
+          logs: arrayUnion({ player: 'system', message: `${goteName} が入室しました。能力駒の構築を開始します。`, type: 'system' }),
           lastUpdated: Date.now()
         });
         
@@ -834,8 +840,8 @@ export const App: React.FC = () => {
 
       const nextLogs = [
         ...matchDoc.logs,
-        { player: 'system', message: '先手の能力駒を自動配置しました。', type: 'system' },
-        { player: 'system', message: '後手の能力駒を自動配置しました。', type: 'system' },
+        { player: 'system', message: `${matchDoc.senteName || 'プレイヤー1'} の能力駒を自動配置しました。`, type: 'system' },
+        { player: 'system', message: `${matchDoc.goteName || 'プレイヤー2'} の能力駒を自動配置しました。`, type: 'system' },
         { player: 'system', message: '対局を開始します！', type: 'system' }
       ];
 
@@ -1085,7 +1091,7 @@ export const App: React.FC = () => {
         const [ty, tx] = valid[Math.floor(Math.random() * valid.length)];
         const promote = isPromotionEligible(piece, sy, ty, nextPlayer);
         
-        const moveRes = executeMove(currentBoard, [sy, sx], [ty, tx], nextPlayer, promote);
+        const moveRes = executeMove(currentBoard, [sy, sx], [ty, tx], nextPlayer, promote, playerNames, vsAiMode);
         
         currentBoard = moveRes.board;
         if (moveRes.gameOver) {
@@ -1203,7 +1209,7 @@ export const App: React.FC = () => {
         id: generateId(),
         timestamp: new Date().toLocaleTimeString(),
         player: nextPlayer,
-        message: `🚨 王手！${nextPlayer === 'sente' ? '先手' : '後手'}の玉将が狙われています！`,
+        message: `🚨 王手！${getPlayerName(nextPlayer)}の玉将が狙われています！`,
         type: 'system'
       });
       setShowCheckOverlay(true);
@@ -1422,7 +1428,7 @@ export const App: React.FC = () => {
         if (valid.length > 0) {
           const [ty, tx] = valid[Math.floor(Math.random() * valid.length)];
           const promote = isPromotionEligible(piece, sy, ty, activePlayer);
-          const moveRes = executeMove(currentBoard, [sy, sx], [ty, tx], activePlayer, promote);
+          const moveRes = executeMove(currentBoard, [sy, sx], [ty, tx], activePlayer, promote, playerNames, vsAiMode);
           
           currentBoard = moveRes.board;
           if (moveRes.gameOver) {
@@ -1510,7 +1516,7 @@ export const App: React.FC = () => {
           id: generateId(),
           timestamp: new Date().toLocaleTimeString(),
           player: activePlayer,
-          message: `🚨 王手！${activePlayer === 'sente' ? '先手' : '後手'}の玉将が狙われています！`,
+          message: `🚨 王手！${getPlayerName(activePlayer)}の玉将が狙われています！`,
           type: 'system'
         });
         setShowCheckOverlay(true);
@@ -1610,8 +1616,8 @@ export const App: React.FC = () => {
 
     setPiecesToPlace({ sente: [], gote: [] });
 
-    addLog('先手の能力駒を自動配置しました。', 'system', 'sente');
-    addLog('後手の能力駒を自動配置しました。', 'system', 'gote');
+    addLog(`${playerNames.sente || 'プレイヤー1'} の能力駒を自動配置しました。`, 'system', 'sente');
+    addLog(`${playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')} の能力駒を自動配置しました。`, 'system', 'gote');
     addLog('対局を開始します！', 'system', 'sente');
   };
 
@@ -1623,13 +1629,13 @@ export const App: React.FC = () => {
         await updateDoc(docRef, {
           sentePieces: pieces,
           sentePiecesReady: true,
-          logs: arrayUnion({ player: 'system', message: '▲ 先手(あなた)が能力駒の構築を完了しました！', type: 'system' })
+          logs: arrayUnion({ player: 'system', message: `▲ ${playerNames.sente || 'プレイヤー1'} が能力駒の構築を完了しました！`, type: 'system' })
         });
       } else {
         await updateDoc(docRef, {
           gotePieces: pieces,
           gotePiecesReady: true,
-          logs: arrayUnion({ player: 'system', message: '▽ 後手(対戦相手)が能力駒の構築を完了しました！', type: 'system' })
+          logs: arrayUnion({ player: 'system', message: `▽ ${playerNames.gote || 'プレイヤー2'} が能力駒の構築を完了しました！`, type: 'system' })
         });
       }
       return;
@@ -1637,10 +1643,10 @@ export const App: React.FC = () => {
 
     if (setupSubPhase === 'sente_create') {
       setPiecesToPlace(prev => ({ ...prev, sente: pieces }));
-      addLog('先手の能力駒スキャンが完了しました。', 'system', 'sente');
+      addLog(`${playerNames.sente || 'プレイヤー1'} の能力駒スキャンが完了しました。`, 'system', 'sente');
 
       if (vsAiMode) {
-        addLog('後手(AI)の能力駒をキャッシュから高速ロード中...', 'system', 'gote');
+        addLog('🤖 Gemini AI の能力駒をキャッシュから高速ロード中...', 'system', 'gote');
 
         // キャッシュ済み駒をランダムに4枚取得（なければオフライン生成）
         const gotePiecesData = getRandomCachedPieces(AI_PIECE_WORDS.length);
@@ -1657,7 +1663,7 @@ export const App: React.FC = () => {
         }));
 
         setPiecesToPlace(prev => ({ ...prev, gote: gotePieces }));
-        addLog(`後手(AI)の能力駒ロード完了（${gotePieces.map(p => p.mechanics_type === 'STEALTH_TRAP' ? '？' : p.word).join('・')}）`, 'system', 'gote');
+        addLog(`🤖 Gemini AI の能力駒ロード完了（${gotePieces.map(p => p.mechanics_type === 'STEALTH_TRAP' ? '？' : p.word).join('・')}）`, 'system', 'gote');
         autoPlacePieces(pieces, gotePieces);
       } else {
         setSetupSubPhase('gote_create');
@@ -1665,7 +1671,7 @@ export const App: React.FC = () => {
       }
     } else {
       setPiecesToPlace(prev => ({ ...prev, gote: pieces }));
-      addLog('後手の能力駒スキャンが完了しました。', 'system', 'gote');
+      addLog(`${playerNames.gote || 'プレイヤー2'} の能力駒スキャンが完了しました。`, 'system', 'gote');
       autoPlacePieces(piecesToPlace.sente, pieces);
     }
   };
@@ -1721,7 +1727,7 @@ export const App: React.FC = () => {
 
   // AI placement logic (9x9)
   const triggerAiPlacement = (currentBoard: Board, aiPieces: Piece[]) => {
-    addLog('後手(AI)が駒を初期配置中...', 'system', 'gote');
+    addLog('🤖 Gemini AI が駒を初期配置中...', 'system', 'gote');
     let nextBoard = currentBoard.map(row => [...row]);
     
     // Rows 0, 1, 2
@@ -1743,7 +1749,7 @@ export const App: React.FC = () => {
     });
 
     setPiecesToPlace(prev => ({ ...prev, gote: [] }));
-    addLog('後手(AI)の配置完了。対局を開始します！', 'system', 'gote');
+    addLog('🤖 Gemini AI の配置完了。対局を開始します！', 'system', 'gote');
     
     setState(prev => ({
       ...prev,
@@ -2063,7 +2069,7 @@ export const App: React.FC = () => {
         const movingPiece = board[chosenMove.from[0]][chosenMove.from[1]]!;
         const promote = isPromotionEligible(movingPiece, chosenMove.from[0], chosenMove.to[0], 'gote');
 
-        const res = executeMove(board, chosenMove.from, chosenMove.to, 'gote', promote);
+        const res = executeMove(board, chosenMove.from, chosenMove.to, 'gote', promote, playerNames, vsAiMode);
         const nextCaptured = { ...state.capturedPieces };
         const capturedList: Piece[] = [];
         if (res.capturedPieces && res.capturedPieces.length > 0) {
@@ -2271,8 +2277,8 @@ export const App: React.FC = () => {
             <div className="turn-change-subtitle">SYSTEM STATUS UPDATE</div>
             <div className="turn-change-title">
               {turnChangeAlert === 'sente'
-                ? `▲ ${playerNames.sente || '先手'} の手番`
-                : `▽ ${playerNames.gote || (vsAiMode ? 'AI' : '後手')} の手番`}
+                ? `▲ ${playerNames.sente || 'プレイヤー1'} の手番`
+                : `▽ ${playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')} の手番`}
             </div>
             <div className="turn-change-bar" />
           </div>
@@ -2337,6 +2343,7 @@ export const App: React.FC = () => {
                 ? (myRole === 'sente' ? matchDoc?.sentePiecesReady : matchDoc?.gotePiecesReady)
                 : false
             }
+            playerNames={playerNames}
           />
         ) : (
           <div className="game-board-container">
@@ -2385,6 +2392,7 @@ export const App: React.FC = () => {
                   isGoteChecked={isKingInCheck(state.board, 'gote')}
                   onlineMode={onlineMode}
                   myRole={myRole}
+                  playerNames={playerNames}
                 />
 
                 {/* Tactical Laser Beam */}
@@ -2494,11 +2502,11 @@ export const App: React.FC = () => {
       {/* Cyberpunk Victory/Defeat Fullscreen Overlay */}
       {state.winner && (() => {
         const winnerName = state.winner === 'sente'
-          ? (playerNames.sente || '先手')
-          : (playerNames.gote || (vsAiMode ? 'AI' : '後手'));
+          ? (playerNames.sente || 'プレイヤー1')
+          : (playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2'));
         const loserName = state.winner === 'sente'
-          ? (playerNames.gote || (vsAiMode ? 'AI' : '後手'))
-          : (playerNames.sente || '先手');
+          ? (playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2'))
+          : (playerNames.sente || 'プレイヤー1');
         return (
           <div className={`game-over-overlay ${state.winner === 'sente' ? 'victory-theme' : 'defeat-theme'}`}>
             <div className="game-over-panel">

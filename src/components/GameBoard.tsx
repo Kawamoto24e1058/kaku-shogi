@@ -27,6 +27,7 @@ interface GameBoardProps {
   isGoteChecked?: boolean;
   onlineMode?: boolean;
   myRole?: 'sente' | 'gote' | null;
+  playerNames: { sente: string; gote: string };
 }
 
 export const GameBoard: React.FC<GameBoardProps> = ({
@@ -51,6 +52,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   isGoteChecked = false,
   onlineMode = false,
   myRole = null,
+  playerNames,
 }) => {
   const shouldRotate = onlineMode
     ? (myRole === 'gote')
@@ -536,7 +538,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         transition: 'transform 0.6s ease-in-out',
       }}>
         <div style={{ fontSize: '10px', color: 'var(--neon-purple)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-          後手 持ち駒
+          {playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')} 持ち駒
         </div>
         <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', flex: 1 }}>
           {capturedPieces.gote.map((piece, idx) => {
@@ -603,7 +605,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                   fontSize: '10px',
                   color: '#fff',
                 }}
-                title={`もとの所有者: ${piece.owner === 'sente' ? '先手' : '後手'}`}
+                title={`もとの所有者: ${piece.owner === 'sente' ? (playerNames.sente || 'プレイヤー1') : (playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2'))}`}
               >
                 {piece.word}
               </div>
@@ -654,7 +656,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         transition: 'transform 0.6s ease-in-out',
       }}>
         <div style={{ fontSize: '10px', color: 'var(--neon-cyan)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-          先手 持ち駒
+          {playerNames.sente || 'プレイヤー1'} 持ち駒
         </div>
         <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', flex: 1 }}>
           {capturedPieces.sente.map((piece, idx) => {
