@@ -563,7 +563,7 @@ AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッ�
 
 ---
 
-### 📚 AI能力デザインの引き出し（10大ジャンルと24の参考例プール）
+### 📚 AI能力デザインの引き出し（12大ジャンルと28の参考例プール）
 
 #### 【ジャンル1：武力・突撃系（FORCE_CRUSH）】
 - No.1: [直線貫通（CRUSH）] - 移動軌道上の全マスを走査し、経路上にいた敵駒をすべて捕獲して突き抜ける（1ゲーム1回限定）。
@@ -596,8 +596,9 @@ AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッ�
 - No.17: [時限進化（TIMER）] - 盤面に打たれてから3ターンの間は動けないが、4ターン目の開始時に最強の駒へ強制進化する。
 
 #### 【ジャンル7：自律暴走・自動移動系（AUTOMATIC_DRIVE）】
-- No.18: [完全ランダム暴走（RANDOM_TELEPORT）] - 毎ターン開始時（TURN_START）、プレイヤーの指示を無視して、盤面全体のランダムな空きマスへ勝手にワープする（logic_code: 'random_teleport'）。
+- No.18: [完全ランダム暴走（RANDOM_TELEPORT）] - 毎ターン開始時（TURN_START）、プレイヤーの指示を無視して、自身の移動可能範囲（通常グリッド、成グリッド）内のランダムな空きマスへ勝手にワープする（logic_code: 'random_teleport'）。
 - No.19: [猪突猛進（RUNAWAY_DRIVE）] - 自分の手番の終わり（ON_MOVE）に、自動的に前方の障害物（駒または壁）にぶつかるまで真っ直ぐ進む移動を強制実行する（logic_code: 'runaway_drive'）。
+- ※自律移動・自動移動（AUTOMATIC_DRIVE）の駒には、他のあらゆる種類の特殊効果（衝撃波、バフ、聖盾、洗脳、変身、地雷など）を【絶対に組み合わせて持たせない】でください。「勝手に動く」という単一の効果のみに完全に集中させてください。また、自律行動する駒のクールタイム（cool_down_turns）は必ず「0」に設定し、使い捨て（is_once_per_game）は必ず「false」に設定してください。
 
 #### 【ジャンル8：感染・デバフ系（VIRUS_INFECT）】
 - No.20: [行動封印・呪縛（curse_stun）] - 取られた時（ON_TAKEN）に発動。自身を取った敵駒を3ターンの間、行動封印（完全に移動不可能）状態にする。
@@ -607,11 +608,28 @@ AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッ�
 #### 【ジャンル9：位置入れ替え系（SPACE_WARP）】
 - No.23: [位置スワップ（SWAP）] - 移動完了時、盤面にある「自分の通常歩兵1枚」を指定し、この駒と位置を一瞬で入れ替える（クールタイム3ターン）。
 
-#### 【ジャンル10：墓地利用・リサイクル系（NECROMANCY）】
-- No.24: [死者蘇生（RECYCLE）] - 1ゲーム1回限定。移動完了時、これまでに完全に破壊されて消滅したカスタム駒を1つ指定し、自分の「持ち駒（ストック）」として手札に復活させる。
+#### 【ジャンル10：時間・射撃・環境効果系（TIME_ATTACK）】
+- No.24: [遠隔狙撃（remote_snipe）] - 移動完了時（ON_MOVE）、直線または斜め方向にちょうど3マス先にある敵の駒（王将を除く）を遠隔狙撃してその場から捕獲する（logic_code: 'remote_snipe'、クールタイム3ターン）。
+- No.25: [昏睡毒霧（stun_mist）] - 移動完了時（ON_MOVE）、周囲1マスのすべての敵駒を2手番の間、行動封印（スタン）状態にする（logic_code: 'stun_mist'、クールタイム3ターン）。
 
-#### 【ジャンル11：能力無効化・結界系（NULLIFY）】
-- No.25: [呪文無効・結界（NULLIFY）] - 永続パッシブ（ALWAYS）または使い捨て。この駒が盤面に存在する限り、周囲2マス以内で発動した敵の自動能力（直線貫通や洗脳、変身など）の対象になった際、その効果を【1度だけ完全に無効化（フリーズ）】して防ぐ聖域ロジック。
+#### 【ジャンル11：蘇生・ゾンビ化系（NECROMANCY）】
+- No.26: [死者蘇生（recycle_dead）] - 移動完了時（ON_MOVE）、これまでに破壊されて除外された「敵のカスタム駒、または飛車・角」（＝自分が捕獲した敵の持ち駒リスト）からランダムに1枚を、自分の配下の「ゾンビ・[元の駒名]」として周囲の空きマスに自動寝返り召喚する。盤面に同時に存在できるゾンビ兵は最大2体まで（logic_code: 'recycle_dead'、クールタイム3ターン）。自分の持ち駒は消費（pop）されません。
+
+#### 【ジャンル12：能力無効化・結界系（NULLIFY）】
+- No.27: [呪文無効・結界（NULLIFY）] - 永続パッシブ（ALWAYS）または使い捨て。この駒が盤面に存在する限り、周囲2マス以内で発動した敵の自動能力（直線貫通や洗脳、変身など）の対象になった際、その効果を【1度だけ完全に無効化（フリーズ）】して防ぐ聖域ロジック。
+
+---
+
+### 🚨 最重要：移動範囲（logic_code）の安全制限ルール
+
+AIは、駒の移動パターンとして強力な『八方無限スライド（クイーン移動：logic_codeを "queen" または "move_like_queen" とする移動）』を割り当てる場合は、以下のいずれかの重い安全ブレーキ制限を【必ず】設定してください。
+1. **【1ゲーム1回限定（使い捨て）化】**: 'is_once_per_game: true' を設定し、着地時に能力を使い切り、以降は「十字1マス（charging_grid）」に永続弱体化する。
+2. **【成る（覚醒）限定化】**: 通常時の 'normal_grid' にクイーン移動を割り当てるのは禁止し、成った時（'promoted_effect' 内の 'logic_code'）にのみ 'queen' を設定する。
+3. **【距離制限版（最大3マススライド）】**: logic_code に 'queen_limit_3' または 'move_like_queen_limit_3' を設定し、8方向へのスライド可能距離を最大3マスに制限する。
+
+また、以下の新規移動パターンも選択可能です：
+- 'teleport_move': 盤面全体の任意の空きマスへ手動でワープ移動できる（超強力なためクールタイム3ターン以上推奨）。
+- 'cannon': シャンチーの「砲」移動（通常時は直線スライド、捕獲時は任意の1枚を飛び越えて捕獲）。
 
 ---
 
@@ -626,7 +644,8 @@ AIは「2マスの範囲」と記述したにもかかわらず、5x5グリッ�
   "cool_down_turns": 0,
   "range_geometry": {
     "normal_grid": "通常時5x5範囲（周囲2マスの場合は外周の計算ミス厳禁）",
-    "charging_grid": "0000000100012100010000000" // 十字移動に完全固定
+    "charging_grid": "0000000100012100010000000", // 十字移動に完全固定
+    "promoted_grid": "成った（プロモーション）時の5x5範囲（通常時よりも移動範囲が拡張されたバフグリッドであること。例えば8方向すべての隣接マスに移動可能な '0000001110012100111000000' や、それ以上に拡張された範囲）"
   },
   "description": "【発動条件】自身の移動完了時（自動発動）。\n【効果内容】目的地への着地時、移動前の位置から目的地までの直線上に存在するすべての敵駒を捕獲し、自身の持ち駒にする。\n【制限・代償】使用後2手番は充填中（クールタイム）となり、その間は移動範囲が前後左右1マスの十字移動に制限される。",
   "spawn_config": {
@@ -834,6 +853,22 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
     }
   }
 
+  // --- Safeguard 2.5: Align triggers for specific automated abilities ---
+  const specificLogic = parsed.logic_code;
+  if (specificLogic === 'recycle_dead' || specificLogic === 'recycle' || specificLogic === 'remote_snipe' || specificLogic === 'sniper' || specificLogic === 'stun_mist' || specificLogic === 'poison_mist') {
+    parsed.trigger = 'ON_MOVE';
+  } else if (specificLogic === 'spawn_clone' || specificLogic === 'time_bomb' || specificLogic === 'timer' || specificLogic === 'egg' || specificLogic === 'hatch') {
+    parsed.trigger = 'TURN_START';
+  }
+
+  // --- Safeguard 3: Apply safety brakes to Queen movement pattern ---
+  if (parsed.logic_code === 'queen' || parsed.logic_code === 'move_like_queen') {
+    if (!parsed.is_once_per_game) {
+      // If it is not a once-per-game ability, limit it to maximum 3 steps to balance the game
+      parsed.logic_code = 'queen_limit_3';
+    }
+  }
+
   // Repair ability_genre
   if (!parsed.ability_genre || typeof parsed.ability_genre !== 'string') {
     const genreMap: Record<string, string> = {
@@ -849,6 +884,12 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
     if (parsed.mechanics_type === 'DYNAMICS_HACK' && parsed.ability_genre === 'ステルス・隠密') {
       parsed.ability_genre = '擬態・洗脳';
     }
+  }
+
+  // For AUTOMATIC_DRIVE pieces, ensure cool_down_turns is 0 and is_once_per_game is false
+  if (parsed.mechanics_type === 'AUTOMATIC_DRIVE') {
+    parsed.is_once_per_game = false;
+    parsed.cool_down_turns = 0;
   }
 
   // Repair is_once_per_game → convert to cool_down_turns=99 (永続歩兵化)
@@ -939,11 +980,13 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
   if (!parsed.range_geometry || typeof parsed.range_geometry !== 'object') {
     parsed.range_geometry = {
       normal_grid: '0000001110012100111000000',
-      charging_grid: '0000000100012100010000000'
+      charging_grid: '0000000100012100010000000',
+      promoted_grid: '0000001110012100111000000'
     };
   } else {
     let norm = parsed.range_geometry.normal_grid;
     let chg = parsed.range_geometry.charging_grid;
+    let prom = parsed.range_geometry.promoted_grid;
 
     if (norm === undefined || norm === null) {
       norm = '0000001110012100111000000';
@@ -963,11 +1006,35 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
       }
     }
 
+    if (prom === undefined || prom === null) {
+      prom = mergeGrids(norm, '0000001110012100111000000');
+    } else {
+      prom = String(prom).replace(/[^012]/g, '');
+      if (prom.length !== 25) {
+        prom = mergeGrids(norm, '0000001110012100111000000');
+      }
+    }
+
     parsed.range_geometry = {
       normal_grid: norm,
-      charging_grid: chg
+      charging_grid: chg,
+      promoted_grid: prom
     };
   }
 
   return parsed as PieceData;
+}
+
+function mergeGrids(gridA: string, gridB: string): string {
+  let result = '';
+  for (let i = 0; i < 25; i++) {
+    if (i === 12) {
+      result += '2';
+    } else if (gridA[i] === '1' || gridB[i] === '1') {
+      result += '1';
+    } else {
+      result += '0';
+    }
+  }
+  return result;
 }

@@ -55,6 +55,7 @@ export interface Piece extends PieceData {
   isRevealed: boolean;            // Reveal state for STEALTH_TRAP pieces (starts as false for opponent)
   stunTurnsRemaining?: number;    // Action-lock/immobility curse (0 = active, > 0 = stunned)
   deathCountdown?: number;        // Death countdown curse (decrements every turn, 0 = vaporized)
+  hasMovedManually?: boolean;     // Flag to mute automatic abilities until first manual move
 }
 
 export type Board = (Piece | null)[][]; // 9x9 grid
@@ -73,6 +74,8 @@ export interface HistoryState {
   turnNumber: number;
   boardJson: string;           // JSON snapshot of the board
   capturedPiecesJson: string;  // JSON snapshot of capturedPieces
+  customDecksJson: string;     // JSON snapshot of customDecks
+  destroyedPiecesJson: string; // JSON snapshot of destroyedPieces
   turn: Player;
   logsJson: string;            // JSON snapshot of logs
 }
@@ -85,6 +88,11 @@ export interface GameState {
     sente: Piece[];
     gote: Piece[];
   };
+  customDecks: {
+    sente: Piece[];
+    gote: Piece[];
+  };
+  destroyedPieces: Piece[];
   capturedPieces: {
     sente: Piece[];
     gote: Piece[];

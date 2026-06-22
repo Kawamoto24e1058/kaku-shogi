@@ -10,6 +10,7 @@ import {
   getCellLabel,
   getPieceLogicCode,
   getPieceTrigger,
+  isTriggerMatching,
   generateId,
   getValidDropCells,
   isKingInCheck,
@@ -63,6 +64,8 @@ export const App: React.FC = () => {
     turn: 'sente',
     phase: 'start',
     customPieces: { sente: [], gote: [] },
+    customDecks: { sente: [], gote: [] },
+    destroyedPieces: [],
     capturedPieces: { sente: [], gote: [] },
     sharedPieces: [],
     selectedCell: null,
@@ -98,6 +101,7 @@ export const App: React.FC = () => {
   
   const [selectedCapturedPiece, setSelectedCapturedPiece] = useState<{ piece: Piece; index: number } | null>(null);
   const [selectedSharedPiece, setSelectedSharedPiece] = useState<{ piece: Piece; index: number } | null>(null);
+  const [selectedCustomDeckPiece, setSelectedCustomDeckPiece] = useState<{ piece: Piece; index: number } | null>(null);
   const [hoveredPiece, setHoveredPiece] = useState<Piece | null>(null);
   const [validMoves, setValidMoves] = useState<[number, number][]>([]);
   const [vsAiMode, setVsAiMode] = useState<boolean>(true);
@@ -143,7 +147,7 @@ export const App: React.FC = () => {
       row.map((piece, x) => {
         if (
           piece &&
-          piece.mechanics_type === 'STEALTH_TRAP' &&
+          isStealthPiece(piece) &&
           piece.owner !== undefined &&
           (piece.owner === 'sente' || piece.owner === 'gote')
         ) {
@@ -229,6 +233,23 @@ export const App: React.FC = () => {
     return logicCode === 'random_teleport' || isAutoNormalMover(p);
   };
 
+  const isStealthPiece = (p: any): boolean => {
+    if (!p) return false;
+    const logic = (p.logic_code || (p.promoted_effect?.logic_code) || '').toLowerCase();
+    const desc = p.description || '';
+    const word = p.word || '';
+    return p.mechanics_type === 'STEALTH_TRAP' || 
+           logic.includes('stealth') || 
+           desc.includes('透明') || 
+           desc.includes('ステルス') || 
+           desc.includes('潜伏') || 
+           desc.includes('隠密') ||
+           word.includes('透明') ||
+           word.includes('ステルス') ||
+           word.includes('潜伏') ||
+           word.includes('隠密');
+  };
+
   const executeMoveWithPromotion = (
     sy: number,
     sx: number,
@@ -236,7 +257,7 @@ export const App: React.FC = () => {
     x: number,
     promote: boolean
   ) => {
-    const res = executeMove(state.board, [sy, sx], [y, x], state.turn, promote, playerNames, vsAiMode);
+    const res = executeMove(state.board, [sy, sx], [y, x], state.turn, promote, playerNames, vsAiMode, true);
 
     if (res.bombTriggered) {
       setExplosionEffects(prev => [...prev, [y, x]]);
@@ -273,12 +294,13 @@ export const App: React.FC = () => {
       }
     }
 
+    const nextDestroyedPieces = [...state.destroyedPieces, ...(res.destroyedPieces || [])];
     let finalBoard = res.board;
     const finalLogs = [...state.logs, ...res.logs.map(l => ({ ...l, id: generateId(), timestamp: new Date().toLocaleTimeString() }))];
 
     // Check for ON_MOVE automatic trigger
     const landingPiece = finalBoard[y][x];
-    if (landingPiece && landingPiece.owner === state.turn && getPieceTrigger(landingPiece) === 'ON_MOVE' && landingPiece.coolDownTurnsRemaining === 0) {
+    if (landingPiece && landingPiece.owner === state.turn && isTriggerMatching(landingPiece, 'ON_MOVE') && landingPiece.coolDownTurnsRemaining === 0) {
       const targetsInfo = getAbilityTargets(finalBoard, [y, x], state.turn);
       if (targetsInfo && isPieceOwnerHuman(state.turn)) {
         // Suspend!
@@ -290,13 +312,17 @@ export const App: React.FC = () => {
           fromPosition: [sy, sx],
           board: finalBoard,
           capturedPieces: nextCaptured,
-          logs: finalLogs
+          logs: finalLogs,
+          customStateUpdates: {
+            destroyedPieces: nextDestroyedPieces
+          }
         });
         
         setState(prev => ({
           ...prev,
           board: finalBoard,
           capturedPieces: nextCaptured,
+          destroyedPieces: nextDestroyedPieces,
           selectedCell: null,
           activeAbilityMode: true,
           activeAbilitySource: [y, x],
@@ -304,7 +330,20 @@ export const App: React.FC = () => {
         }));
         return; // Return early, do NOT finalize turn yet!
       } else {
-        const effectRes = applyAutomatedEffect(finalBoard, [y, x], 'ON_MOVE', state.turn, nextCaptured[state.turn], [sy, sx]);
+        const graveyardCandidates = [
+          ...nextCaptured[state.turn],
+          ...nextDestroyedPieces.filter(piece => piece.owner !== state.turn)
+        ];
+        const effectRes = applyAutomatedEffect(
+          finalBoard,
+          [y, x],
+          'ON_MOVE',
+          state.turn,
+          nextCaptured[state.turn],
+          [sy, sx],
+          undefined,
+          graveyardCandidates
+        );
         if (effectRes.triggered || effectRes.logs.length > 0) {
           if (effectRes.triggered) {
             finalBoard = effectRes.board;
@@ -377,6 +416,7 @@ export const App: React.FC = () => {
         ...prev,
         board: finalBoard,
         capturedPieces: nextCaptured,
+        destroyedPieces: nextDestroyedPieces,
         selectedCell: null,
         promotionPending: null,
       }));
@@ -386,7 +426,7 @@ export const App: React.FC = () => {
           ...prev,
           winner: finalWinner,
         }));
-        saveHistorySnapshot(finalBoard, nextCaptured, state.turn, finalLogs);
+        saveHistorySnapshot(finalBoard, nextCaptured, state.turn, finalLogs, state.customDecks, nextDestroyedPieces);
         syncOnlineState(
           finalBoard,
           state.turn,
@@ -394,6 +434,8 @@ export const App: React.FC = () => {
           finalWinner,
           nextCaptured,
           state.sharedPieces,
+          state.customDecks,
+          nextDestroyedPieces,
           finalLogs
         );
       }, 1200);
@@ -403,7 +445,9 @@ export const App: React.FC = () => {
         nextCaptured,
         state.sharedPieces,
         finalLogs,
-        { promotionPending: null }
+        { promotionPending: null },
+        state.customDecks,
+        nextDestroyedPieces
       );
     }
   };
@@ -798,50 +842,23 @@ export const App: React.FC = () => {
       
       let nextBoard = initializeBoard();
       
-      // 先手能力駒の自動配置
-      const senteAvailable: [number, number][] = [];
-      for (let y = 6; y <= 8; y++) {
-        for (let x = 0; x < BOARD_SIZE; x++) {
-          if (nextBoard[y][x] === null) senteAvailable.push([y, x]);
-        }
-      }
-      senteAvailable.sort(() => Math.random() - 0.5);
-      sentePieces.forEach((piece, index) => {
-        if (index < senteAvailable.length) {
-          const [cy, cx] = senteAvailable[index];
-          nextBoard[cy][cx] = {
-            ...piece,
-            originalPosition: [cy, cx],
-            coolDownTurnsRemaining: 0,
-            isRevealed: piece.mechanics_type === 'STEALTH_TRAP' ? false : true,
-          };
-        }
-      });
-
-      // 後手能力駒の自動配置
-      const goteAvailable: [number, number][] = [];
-      for (let y = 0; y <= 2; y++) {
-        for (let x = 0; x < BOARD_SIZE; x++) {
-          if (nextBoard[y][x] === null) goteAvailable.push([y, x]);
-        }
-      }
-      goteAvailable.sort(() => Math.random() - 0.5);
-      gotePieces.forEach((piece, index) => {
-        if (index < goteAvailable.length) {
-          const [cy, cx] = goteAvailable[index];
-          nextBoard[cy][cx] = {
-            ...piece,
-            originalPosition: [cy, cx],
-            coolDownTurnsRemaining: 0,
-            isRevealed: piece.mechanics_type === 'STEALTH_TRAP' ? false : true,
-          };
-        }
-      });
+      const initializedSente = sentePieces.map(piece => ({
+        ...piece,
+        originalPosition: null,
+        coolDownTurnsRemaining: 0,
+        isRevealed: isStealthPiece(piece) ? false : true,
+      }));
+      const initializedGote = gotePieces.map(piece => ({
+        ...piece,
+        originalPosition: null,
+        coolDownTurnsRemaining: 0,
+        isRevealed: isStealthPiece(piece) ? false : true,
+      }));
 
       const nextLogs = [
         ...matchDoc.logs,
-        { player: 'system', message: `${matchDoc.senteName || 'プレイヤー1'} の能力駒を自動配置しました。`, type: 'system' },
-        { player: 'system', message: `${matchDoc.goteName || 'プレイヤー2'} の能力駒を自動配置しました。`, type: 'system' },
+        { player: 'system', message: `${matchDoc.senteName || 'プレイヤー1'} の能力駒をデッキにロードしました。`, type: 'system' },
+        { player: 'system', message: `${matchDoc.goteName || 'プレイヤー2'} の能力駒をデッキにロードしました。`, type: 'system' },
         { player: 'system', message: '対局を開始します！', type: 'system' }
       ];
 
@@ -849,7 +866,9 @@ export const App: React.FC = () => {
       updateDoc(docRef, {
         status: 'playing',
         board: JSON.stringify(nextBoard),
-        customPieces: { sente: sentePieces, gote: gotePieces },
+        customPieces: { sente: initializedSente, gote: initializedGote },
+        customDecksJson: JSON.stringify({ sente: initializedSente, gote: initializedGote }),
+        destroyedPiecesJson: JSON.stringify([]),
         capturedPieces: JSON.stringify({ sente: [], gote: [] }),
         sharedPieces: JSON.stringify([]),
         turn: 'sente',
@@ -868,7 +887,9 @@ export const App: React.FC = () => {
     winner: Player | null,
     capturedPieces: GameState['capturedPieces'],
     sharedPieces: Piece[],
-    logs: GameLog[]
+    customDecks: GameState['customDecks'] = state.customDecks,
+    destroyedPieces: Piece[] = state.destroyedPieces,
+    logs: GameLog[] = state.logs
   ) => {
     if (!onlineMode || !roomCode) return;
     const docRef = doc(db, 'matches', roomCode);
@@ -879,11 +900,13 @@ export const App: React.FC = () => {
       winner: winner,
       capturedPieces: JSON.stringify(capturedPieces),
       sharedPieces: JSON.stringify(sharedPieces),
+      customDecksJson: JSON.stringify(customDecks),
+      destroyedPiecesJson: JSON.stringify(destroyedPieces),
       logsJson: JSON.stringify(logs),
       logs: logs,
       lastUpdated: Date.now()
     }).catch(err => console.error("Error syncing online state:", err));
-  }, [onlineMode, roomCode]);
+  }, [onlineMode, roomCode, state.customDecks, state.destroyedPieces, state.logs]);
 
   // Helpers to push logs
   const addLog = (message: string, type: GameLog['type'], player: Player) => {
@@ -898,14 +921,21 @@ export const App: React.FC = () => {
     setState(prev => ({ ...prev, logs: [...prev.logs, newLog] }));
   };
 
-
-
   // Timeline History Snapshots
-  const saveHistorySnapshot = (board: Board, captured: typeof state.capturedPieces, turn: Player, logs: GameLog[]) => {
+  const saveHistorySnapshot = (
+    board: Board,
+    captured: typeof state.capturedPieces,
+    turn: Player,
+    logs: GameLog[],
+    customDecks: typeof state.customDecks = state.customDecks,
+    destroyedPieces: Piece[] = state.destroyedPieces
+  ) => {
     const snapshot: HistoryState = {
       turnNumber: state.historyStates.length + 1,
       boardJson: JSON.stringify(board),
       capturedPiecesJson: JSON.stringify(captured),
+      customDecksJson: JSON.stringify(customDecks),
+      destroyedPiecesJson: JSON.stringify(destroyedPieces),
       turn,
       logsJson: JSON.stringify(logs),
     };
@@ -921,16 +951,29 @@ export const App: React.FC = () => {
     nextCaptured: typeof state.capturedPieces,
     nextShared: Piece[],
     nextLogs: GameLog[],
-    customStateUpdates?: Partial<GameState>
+    customStateUpdates?: Partial<GameState>,
+    nextCustomDecks: typeof state.customDecks = state.customDecks,
+    nextDestroyedPieces: Piece[] = state.destroyedPieces
   ) => {
     const nextPlayer = (state.turn === 'sente' ? 'gote' : 'sente') as Player;
+    const activePlayer = state.turn;
+
+    let currentBoard = nextBoard;
+    const currentCaptured = {
+      sente: [...nextCaptured.sente],
+      gote: [...nextCaptured.gote],
+    };
+    const currentLogs = [...nextLogs];
+    let gameOver = false;
+    let winner: Player | null = null;
+    let currentDestroyedPieces = [...nextDestroyedPieces];
 
     // Scan original king positions in nextBoard
     let prevSenteKingPos: [number, number] | null = null;
     let prevGoteKingPos: [number, number] | null = null;
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
-        const p = nextBoard[r][c];
+        const p = currentBoard[r][c];
         if (p?.isKing) {
           if (p.owner === 'sente') prevSenteKingPos = [r, c];
           else prevGoteKingPos = [r, c];
@@ -938,19 +981,158 @@ export const App: React.FC = () => {
       }
     }
 
+    // 1. Scan and execute autonomous moves for activePlayer (who just played) IMMEDIATELY
+    const autonomousCoords: [number, number][] = [];
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const p = currentBoard[r][c];
+        if (p && p.owner === activePlayer && isAutoNormalMover(p)) {
+          autonomousCoords.push([r, c]);
+        }
+      }
+    }
 
+    for (const [sy, sx] of autonomousCoords) {
+      if (gameOver) break;
+      const piece = currentBoard[sy][sx];
+      if (!piece || piece.owner !== activePlayer || !isAutoNormalMover(piece)) continue;
 
-    // Decrement cooldowns and curses for nextPlayer's pieces on the board
+      const valid = getValidMoves(sy, sx, currentBoard);
+      if (valid.length > 0) {
+        const [ty, tx] = valid[Math.floor(Math.random() * valid.length)];
+        const promote = isPromotionEligible(piece, sy, ty, activePlayer);
+        
+        const moveRes = executeMove(currentBoard, [sy, sx], [ty, tx], activePlayer, promote, playerNames, vsAiMode);
+        
+        currentBoard = moveRes.board;
+        if (moveRes.gameOver) {
+          gameOver = true;
+          winner = moveRes.winner;
+        }
+
+        if (moveRes.destroyedPieces && moveRes.destroyedPieces.length > 0) {
+          currentDestroyedPieces.push(...moveRes.destroyedPieces);
+        }
+
+        currentLogs.push({
+          id: generateId(),
+          timestamp: new Date().toLocaleTimeString(),
+          player: activePlayer,
+          message: `【自律行動】操作不能の『${piece.word}』が勝手に${getCellLabel(ty, tx)}へ移動しました！`,
+          type: 'ability'
+        });
+
+        currentLogs.push(...moveRes.logs.map(l => ({
+          ...l,
+          id: generateId(),
+          timestamp: new Date().toLocaleTimeString()
+        })));
+
+        const capturedList: Piece[] = [];
+        if (moveRes.capturedPieces && moveRes.capturedPieces.length > 0) {
+          capturedList.push(...moveRes.capturedPieces);
+        } else if (moveRes.capturedPiece) {
+          capturedList.push(moveRes.capturedPiece);
+        }
+
+        for (const cap of capturedList) {
+          if (cap) {
+            const isStillOnBoard = currentBoard.some(row => row.some(p => p?.id === cap.id));
+            if (!isStillOnBoard) {
+              const cleanCap = {
+                ...cap,
+                owner: activePlayer,
+                isPromoted: false,
+                coolDownTurnsRemaining: 0,
+                isRevealed: true
+              };
+              if (!currentCaptured[activePlayer].some(p => p.id === cleanCap.id)) {
+                currentCaptured[activePlayer].push(cleanCap);
+              }
+            }
+          }
+        }
+
+        // Force the moved piece to have 0 cooldown
+        for (let r = 0; r < BOARD_SIZE; r++) {
+          for (let c = 0; c < BOARD_SIZE; c++) {
+            const p = currentBoard[r][c];
+            if (p && p.id === piece.id) {
+              currentBoard[r][c] = {
+                ...p,
+                cool_down_turns: 0,
+                coolDownTurnsRemaining: 0
+              };
+            }
+          }
+        }
+      }
+    }
+
+    // Check game over conditions after autonomous moves
+    const sKingPostAuto = currentBoard.some(row => row.some(piece => piece?.isKing && piece.owner === 'sente'));
+    const gKingPostAuto = currentBoard.some(row => row.some(piece => piece?.isKing && piece.owner === 'gote'));
+    if (!sKingPostAuto && !gKingPostAuto) {
+      gameOver = true;
+      winner = activePlayer === 'sente' ? 'gote' : 'sente';
+    } else if (!sKingPostAuto) {
+      gameOver = true;
+      winner = 'gote';
+    } else if (!gKingPostAuto) {
+      gameOver = true;
+      winner = 'sente';
+    }
+
+    // If game ended during autonomous moves, update state and show win screen
+    if (gameOver) {
+      setState(prev => ({
+        ...prev,
+        board: currentBoard,
+        capturedPieces: currentCaptured,
+        customDecks: nextCustomDecks,
+        destroyedPieces: currentDestroyedPieces,
+        selectedCell: null,
+        promotionPending: null,
+      }));
+
+      setTimeout(() => {
+        setState(prev => ({
+          ...prev,
+          winner,
+        }));
+        saveHistorySnapshot(currentBoard, currentCaptured, activePlayer, currentLogs, nextCustomDecks, currentDestroyedPieces);
+        syncOnlineState(
+          currentBoard,
+          activePlayer,
+          'finished',
+          winner,
+          currentCaptured,
+          nextShared,
+          nextCustomDecks,
+          currentDestroyedPieces,
+          currentLogs
+        );
+      }, 1200);
+      return;
+    }
+
+    // 2. Decrement cooldowns and curses for nextPlayer's pieces on the board
     const updatedLogsList: GameLog[] = [];
-    const finalBoard = nextBoard.map((row, r) =>
+    const finalBoard = currentBoard.map((row, r) =>
       row.map((piece, c) => {
         if (!piece) return null;
         if (piece.owner === nextPlayer) {
           const updated = { ...piece };
           let died = false;
           
-          if (updated.coolDownTurnsRemaining > 0) {
-            updated.coolDownTurnsRemaining -= 1;
+          if (isAutonomous(updated)) {
+            updated.cool_down_turns = 0;
+            updated.coolDownTurnsRemaining = 0;
+          } else if (updated.coolDownTurnsRemaining > 0) {
+            // Keep permanent debuff at 99
+            if (updated.coolDownTurnsRemaining !== 99) {
+              updated.coolDownTurnsRemaining -= 1;
+            }
           }
           
           if (updated.stunTurnsRemaining && updated.stunTurnsRemaining > 0) {
@@ -994,22 +1176,14 @@ export const App: React.FC = () => {
       })
     );
 
-    nextLogs.push(...updatedLogsList);
+    currentLogs.push(...updatedLogsList);
+    currentBoard = finalBoard;
 
-    let currentBoard = finalBoard;
-    const currentCaptured = {
-      sente: [...nextCaptured.sente],
-      gote: [...nextCaptured.gote],
-    };
-    const currentLogs = [...nextLogs];
-    let gameOver = false;
-    let winner: Player | null = null;
-
-    // Scan and apply TURN_START automated triggers for nextPlayer
+    // 3. Scan and apply TURN_START automated triggers for nextPlayer
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
         const p = currentBoard[r][c];
-        if (p && p.owner === nextPlayer && getPieceTrigger(p) === 'TURN_START' && p.coolDownTurnsRemaining === 0) {
+        if (p && p.owner === nextPlayer && isTriggerMatching(p, 'TURN_START') && p.coolDownTurnsRemaining === 0) {
           const targetsInfo = getAbilityTargets(currentBoard, [r, c], nextPlayer);
           if (targetsInfo && isPieceOwnerHuman(nextPlayer)) {
             // Suspend turn start!
@@ -1021,13 +1195,19 @@ export const App: React.FC = () => {
               board: currentBoard,
               capturedPieces: currentCaptured,
               logs: currentLogs,
-              customStateUpdates
+              customStateUpdates: {
+                ...customStateUpdates,
+                customDecks: nextCustomDecks,
+                destroyedPieces: currentDestroyedPieces
+              }
             });
 
             setState(prev => ({
               ...prev,
               board: currentBoard,
               capturedPieces: currentCaptured,
+              customDecks: nextCustomDecks,
+              destroyedPieces: currentDestroyedPieces,
               turn: nextPlayer, // SWITCH TURN NOW!
               selectedCell: null,
               activeAbilityMode: true,
@@ -1038,7 +1218,20 @@ export const App: React.FC = () => {
             }));
             return; // Return early, do NOT finish finalization yet!
           } else {
-            const effectRes = applyAutomatedEffect(currentBoard, [r, c], 'TURN_START', nextPlayer, currentCaptured[nextPlayer]);
+            const graveyardCandidates = [
+              ...currentCaptured[nextPlayer],
+              ...currentDestroyedPieces.filter(piece => piece.owner !== nextPlayer)
+            ];
+            const effectRes = applyAutomatedEffect(
+              currentBoard,
+              [r, c],
+              'TURN_START',
+              nextPlayer,
+              currentCaptured[nextPlayer],
+              undefined,
+              undefined,
+              graveyardCandidates
+            );
             if (effectRes.triggered || effectRes.logs.length > 0) {
               if (effectRes.triggered) {
                 currentBoard = effectRes.board;
@@ -1056,100 +1249,25 @@ export const App: React.FC = () => {
     }
 
     // Check game over conditions after TURN_START triggers
-    const sKing = currentBoard.some(row => row.some(piece => piece?.isKing && piece.owner === 'sente'));
-    const gKing = currentBoard.some(row => row.some(piece => piece?.isKing && piece.owner === 'gote'));
-    if (!sKing && !gKing) {
+    const finalSenteKing = currentBoard.some(row => row.some(piece => piece?.isKing && piece.owner === 'sente'));
+    const finalGoteKing = currentBoard.some(row => row.some(piece => piece?.isKing && piece.owner === 'gote'));
+    if (!finalSenteKing && !finalGoteKing) {
       gameOver = true;
       winner = nextPlayer === 'sente' ? 'gote' : 'sente';
-    } else if (!sKing) {
+    } else if (!finalSenteKing) {
       gameOver = true;
       winner = 'gote';
-    } else if (!gKing) {
+    } else if (!finalGoteKing) {
       gameOver = true;
       winner = 'sente';
     }
 
-    // Scan for autonomous pieces of nextPlayer
-    const autonomousCoords: [number, number][] = [];
-    for (let r = 0; r < BOARD_SIZE; r++) {
-      for (let c = 0; c < BOARD_SIZE; c++) {
-        const p = currentBoard[r][c];
-        if (p && p.owner === nextPlayer && isAutoNormalMover(p) && p.coolDownTurnsRemaining === 0) {
-          autonomousCoords.push([r, c]);
-        }
-      }
-    }
-
-    // Execute moves for autonomous pieces
-    for (const [sy, sx] of autonomousCoords) {
-      if (gameOver) break;
-      const piece = currentBoard[sy][sx];
-      if (!piece || piece.owner !== nextPlayer || !isAutoNormalMover(piece)) continue;
-
-      const valid = getValidMoves(sy, sx, currentBoard);
-      if (valid.length > 0) {
-        const [ty, tx] = valid[Math.floor(Math.random() * valid.length)];
-        const promote = isPromotionEligible(piece, sy, ty, nextPlayer);
-        
-        const moveRes = executeMove(currentBoard, [sy, sx], [ty, tx], nextPlayer, promote, playerNames, vsAiMode);
-        
-        currentBoard = moveRes.board;
-        if (moveRes.gameOver) {
-          gameOver = true;
-          winner = moveRes.winner;
-        }
-
-        currentLogs.push({
-          id: generateId(),
-          timestamp: new Date().toLocaleTimeString(),
-          player: nextPlayer,
-          message: `【自律行動】操作不能の『${piece.word}』が勝手に${getCellLabel(ty, tx)}へ移動しました！`,
-          type: 'ability'
-        });
-
-        currentLogs.push(...moveRes.logs.map(l => ({
-          ...l,
-          id: generateId(),
-          timestamp: new Date().toLocaleTimeString()
-        })));
-
-        const capturedList: Piece[] = [];
-        if (moveRes.capturedPieces && moveRes.capturedPieces.length > 0) {
-          capturedList.push(...moveRes.capturedPieces);
-        } else if (moveRes.capturedPiece) {
-          capturedList.push(moveRes.capturedPiece);
-        }
-
-        for (const cap of capturedList) {
-          if (cap) {
-            const isStillOnBoard = currentBoard.some(row => row.some(p => p?.id === cap.id));
-            if (!isStillOnBoard) {
-              const cleanCap = {
-                ...cap,
-                owner: nextPlayer,
-                isPromoted: false,
-                coolDownTurnsRemaining: 0,
-                isRevealed: true
-              };
-              if (!currentCaptured[nextPlayer].some(p => p.id === cleanCap.id)) {
-                currentCaptured[nextPlayer].push(cleanCap);
-              }
-            }
-          }
-        }
-      }
-    }
-
     // === すべての自動効果完了後にステルス近接スキャンを実行 ===
-    // TURN_START生成駒や自律移動駒も含めた最終的な盤面状態でチェックする
     currentBoard = scanStealthPieces(currentBoard, currentLogs);
 
     if (gameOver) {
       // 破壊された玉将の位置に多重グリッチ爆発エフェクトをトリガー
       const destroyedKingPositions: [number, number][] = [];
-      const finalSenteKing = currentBoard.some(row => row.some(p => p?.isKing && p.owner === 'sente'));
-      const finalGoteKing = currentBoard.some(row => row.some(p => p?.isKing && p.owner === 'gote'));
-
       if (!finalSenteKing && prevSenteKingPos) destroyedKingPositions.push(prevSenteKingPos);
       if (!finalGoteKing && prevGoteKingPos) destroyedKingPositions.push(prevGoteKingPos);
 
@@ -1173,6 +1291,8 @@ export const App: React.FC = () => {
         ...prev,
         board: currentBoard,
         capturedPieces: currentCaptured,
+        customDecks: nextCustomDecks,
+        destroyedPieces: currentDestroyedPieces,
         sharedPieces: nextShared,
         selectedCell: null,
         activeAbilityMode: false,
@@ -1187,7 +1307,7 @@ export const App: React.FC = () => {
           ...prev,
           winner: winner,
         }));
-        saveHistorySnapshot(currentBoard, currentCaptured, nextPlayer, currentLogs);
+        saveHistorySnapshot(currentBoard, currentCaptured, nextPlayer, currentLogs, nextCustomDecks, currentDestroyedPieces);
         syncOnlineState(
           currentBoard,
           nextPlayer,
@@ -1195,6 +1315,8 @@ export const App: React.FC = () => {
           winner,
           currentCaptured,
           nextShared,
+          nextCustomDecks,
+          currentDestroyedPieces,
           currentLogs
         );
       }, 1200);
@@ -1220,6 +1342,8 @@ export const App: React.FC = () => {
         ...prev,
         board: currentBoard,
         capturedPieces: currentCaptured,
+        customDecks: nextCustomDecks,
+        destroyedPieces: currentDestroyedPieces,
         sharedPieces: nextShared,
         turn: nextPlayer,
         selectedCell: null,
@@ -1229,7 +1353,7 @@ export const App: React.FC = () => {
         logs: currentLogs,
         ...customStateUpdates,
       };
-      saveHistorySnapshot(currentBoard, currentCaptured, nextPlayer, currentLogs);
+      saveHistorySnapshot(currentBoard, currentCaptured, nextPlayer, currentLogs, nextCustomDecks, currentDestroyedPieces);
       return nextState;
     });
 
@@ -1242,6 +1366,8 @@ export const App: React.FC = () => {
       null,
       currentCaptured,
       nextShared,
+      nextCustomDecks,
+      currentDestroyedPieces,
       currentLogs
     );
   };
@@ -1326,6 +1452,8 @@ export const App: React.FC = () => {
             finalWinner,
             nextCaptured,
             state.sharedPieces,
+            undefined,
+            undefined,
             finalLogs
           );
         }, 1200);
@@ -1349,7 +1477,7 @@ export const App: React.FC = () => {
       for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
           const p = currentBoard[r][c];
-          if (p && p.owner === activePlayer && getPieceTrigger(p) === 'TURN_START' && p.coolDownTurnsRemaining === 0) {
+          if (p && p.owner === activePlayer && isTriggerMatching(p, 'TURN_START') && p.coolDownTurnsRemaining === 0) {
             const targetsInfo = getAbilityTargets(currentBoard, [r, c], activePlayer);
             if (targetsInfo && isPieceOwnerHuman(activePlayer)) {
               setSuspendedAbility({
@@ -1408,71 +1536,6 @@ export const App: React.FC = () => {
         winner = 'sente';
       }
 
-      // Autonomous moves
-      const autonomousCoords: [number, number][] = [];
-      for (let r = 0; r < BOARD_SIZE; r++) {
-        for (let c = 0; c < BOARD_SIZE; c++) {
-          const p = currentBoard[r][c];
-          if (p && p.owner === activePlayer && isAutoNormalMover(p) && p.coolDownTurnsRemaining === 0) {
-            autonomousCoords.push([r, c]);
-          }
-        }
-      }
-
-      for (const [sy, sx] of autonomousCoords) {
-        if (gameOver) break;
-        const piece = currentBoard[sy][sx];
-        if (!piece || piece.owner !== activePlayer || !isAutoNormalMover(piece)) continue;
-
-        const valid = getValidMoves(sy, sx, currentBoard);
-        if (valid.length > 0) {
-          const [ty, tx] = valid[Math.floor(Math.random() * valid.length)];
-          const promote = isPromotionEligible(piece, sy, ty, activePlayer);
-          const moveRes = executeMove(currentBoard, [sy, sx], [ty, tx], activePlayer, promote, playerNames, vsAiMode);
-          
-          currentBoard = moveRes.board;
-          if (moveRes.gameOver) {
-            gameOver = true;
-            winner = moveRes.winner;
-          }
-
-          currentLogs.push({
-            id: generateId(),
-            timestamp: new Date().toLocaleTimeString(),
-            player: activePlayer,
-            message: `【自律行動】操作不能の『${piece.word}』が勝手に${getCellLabel(ty, tx)}へ移動しました！`,
-            type: 'ability'
-          });
-
-          currentLogs.push(...moveRes.logs.map(l => ({ ...l, id: generateId(), timestamp: new Date().toLocaleTimeString() })));
-
-          const capturedList: Piece[] = [];
-          if (moveRes.capturedPieces && moveRes.capturedPieces.length > 0) {
-            capturedList.push(...moveRes.capturedPieces);
-          } else if (moveRes.capturedPiece) {
-            capturedList.push(moveRes.capturedPiece);
-          }
-
-          for (const cap of capturedList) {
-            if (cap) {
-              const isStillOnBoard = currentBoard.some(row => row.some(p => p?.id === cap.id));
-              if (!isStillOnBoard) {
-                const cleanCap = {
-                  ...cap,
-                  owner: activePlayer,
-                  isPromoted: false,
-                  coolDownTurnsRemaining: 0,
-                  isRevealed: true
-                };
-                if (!currentCaptured[activePlayer].some(p => p.id === cleanCap.id)) {
-                  currentCaptured[activePlayer].push(cleanCap);
-                }
-              }
-            }
-          }
-        }
-      }
-
       // Stealth proximity scan
       currentBoard = scanStealthPieces(currentBoard, currentLogs);
 
@@ -1502,6 +1565,8 @@ export const App: React.FC = () => {
             winner,
             currentCaptured,
             state.sharedPieces,
+            undefined,
+            undefined,
             currentLogs
           );
         }, 1200);
@@ -1547,6 +1612,8 @@ export const App: React.FC = () => {
         null,
         currentCaptured,
         state.sharedPieces,
+        undefined,
+        undefined,
         currentLogs
       );
     }
@@ -1560,64 +1627,35 @@ export const App: React.FC = () => {
   }, [state.phase]);
 
   const autoPlacePieces = (sentePieces: Piece[], gotePieces: Piece[]) => {
-    let nextBoard = state.board.map(row => [...row]);
+    let nextBoard = initializeBoard();
 
-    // 1. Auto-place Sente pieces on Sente's territory (ranks 6, 7, 8)
-    const senteAvailable: [number, number][] = [];
-    for (let y = 6; y <= 8; y++) {
-      for (let x = 0; x < BOARD_SIZE; x++) {
-        if (nextBoard[y][x] === null) {
-          senteAvailable.push([y, x]);
-        }
-      }
-    }
-    senteAvailable.sort(() => Math.random() - 0.5);
-    sentePieces.forEach((piece, index) => {
-      if (index < senteAvailable.length) {
-        const [cy, cx] = senteAvailable[index];
-        nextBoard[cy][cx] = {
-          ...piece,
-          originalPosition: [cy, cx] as [number, number],
-          coolDownTurnsRemaining: 0,
-          isRevealed: piece.mechanics_type === 'STEALTH_TRAP' ? false : true,
-        };
-      }
-    });
-
-    // 2. Auto-place Gote pieces on Gote's territory (ranks 0, 1, 2)
-    const goteAvailable: [number, number][] = [];
-    for (let y = 0; y <= 2; y++) {
-      for (let x = 0; x < BOARD_SIZE; x++) {
-        if (nextBoard[y][x] === null) {
-          goteAvailable.push([y, x]);
-        }
-      }
-    }
-    goteAvailable.sort(() => Math.random() - 0.5);
-    gotePieces.forEach((piece, index) => {
-      if (index < goteAvailable.length) {
-        const [cy, cx] = goteAvailable[index];
-        nextBoard[cy][cx] = {
-          ...piece,
-          originalPosition: [cy, cx] as [number, number],
-          coolDownTurnsRemaining: 0,
-          isRevealed: piece.mechanics_type === 'STEALTH_TRAP' ? false : true,
-        };
-      }
-    });
+    const initializedSente = sentePieces.map(piece => ({
+      ...piece,
+      originalPosition: null,
+      coolDownTurnsRemaining: 0,
+      isRevealed: isStealthPiece(piece) ? false : true,
+    }));
+    const initializedGote = gotePieces.map(piece => ({
+      ...piece,
+      originalPosition: null,
+      coolDownTurnsRemaining: 0,
+      isRevealed: isStealthPiece(piece) ? false : true,
+    }));
 
     setState(prev => ({
       ...prev,
       board: nextBoard,
       phase: 'playing',
       turn: 'sente',
-      customPieces: { sente: sentePieces, gote: gotePieces }
+      customPieces: { sente: initializedSente, gote: initializedGote },
+      customDecks: { sente: initializedSente, gote: initializedGote },
+      destroyedPieces: []
     }));
 
     setPiecesToPlace({ sente: [], gote: [] });
 
-    addLog(`${playerNames.sente || 'プレイヤー1'} の能力駒を自動配置しました。`, 'system', 'sente');
-    addLog(`${playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')} の能力駒を自動配置しました。`, 'system', 'gote');
+    addLog(`${playerNames.sente || 'プレイヤー1'} の能力駒を手札デッキにロードしました。`, 'system', 'sente');
+    addLog(`${playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')} の能力駒を手札デッキにロードしました。`, 'system', 'gote');
     addLog('対局を開始します！', 'system', 'sente');
   };
 
@@ -1658,12 +1696,12 @@ export const App: React.FC = () => {
           isPawn: false,
           originalPosition: null,
           coolDownTurnsRemaining: 0,
-          isRevealed: pieceData.mechanics_type === 'STEALTH_TRAP' ? false : true,
+          isRevealed: isStealthPiece(pieceData) ? false : true,
           isPromoted: false,
         }));
 
         setPiecesToPlace(prev => ({ ...prev, gote: gotePieces }));
-        addLog(`🤖 Gemini AI の能力駒ロード完了（${gotePieces.map(p => p.mechanics_type === 'STEALTH_TRAP' ? '？' : p.word).join('・')}）`, 'system', 'gote');
+        addLog(`🤖 Gemini AI の能力駒ロード完了（${gotePieces.map(p => isStealthPiece(p) ? '？' : p.word).join('・')}）`, 'system', 'gote');
         autoPlacePieces(pieces, gotePieces);
       } else {
         setSetupSubPhase('gote_create');
@@ -1692,7 +1730,7 @@ export const App: React.FC = () => {
 
     const nextBoard = state.board.map(row => [...row]);
     pieceToPlace.originalPosition = [y, x];
-    pieceToPlace.isRevealed = pieceToPlace.mechanics_type === 'STEALTH_TRAP' ? false : true;
+    pieceToPlace.isRevealed = isStealthPiece(pieceToPlace) ? false : true;
     nextBoard[y][x] = pieceToPlace;
 
     setPiecesToPlace(prev => ({
@@ -1767,33 +1805,42 @@ export const App: React.FC = () => {
 
     const piece = state.board[y][x];
 
-    // Case 1: Drop selected captured piece OR shared piece
-    if (selectedCapturedPiece || selectedSharedPiece) {
+    // Case 1: Drop selected captured piece OR shared piece OR custom deck piece
+    if (selectedCapturedPiece || selectedSharedPiece || selectedCustomDeckPiece) {
       const isValid = validMoves.some(([my, mx]) => my === y && mx === x);
       if (!isValid) {
         setSelectedCapturedPiece(null);
         setSelectedSharedPiece(null);
+        setSelectedCustomDeckPiece(null);
         setValidMoves([]);
         return;
       }
       
-      const targetPiece = selectedCapturedPiece ? selectedCapturedPiece.piece : selectedSharedPiece!.piece;
+      const targetPiece = selectedCapturedPiece
+        ? selectedCapturedPiece.piece
+        : (selectedSharedPiece ? selectedSharedPiece.piece : selectedCustomDeckPiece!.piece);
       const nextBoard = executeDrop(state.board, targetPiece, [y, x], state.turn);
       
       let nextHand = [...state.capturedPieces[state.turn]];
       let nextShared = [...state.sharedPieces];
+      let nextCustomDecks = {
+        sente: [...state.customDecks.sente],
+        gote: [...state.customDecks.gote]
+      };
 
       if (selectedCapturedPiece) {
         nextHand.splice(selectedCapturedPiece.index, 1);
-      } else {
-        nextShared.splice(selectedSharedPiece!.index, 1);
+      } else if (selectedSharedPiece) {
+        nextShared.splice(selectedSharedPiece.index, 1);
+      } else if (selectedCustomDeckPiece) {
+        nextCustomDecks[state.turn].splice(selectedCustomDeckPiece.index, 1);
       }
 
       const newLog: GameLog = {
         id: generateId(),
         timestamp: new Date().toLocaleTimeString(),
         player: state.turn,
-        message: `${targetPiece.word}を${selectedCapturedPiece ? '持ち駒' : '共有プール'}から打ちました。`,
+        message: `${targetPiece.word}を${selectedCapturedPiece ? '持ち駒' : (selectedSharedPiece ? '共有プール' : 'カスタムデッキ')}から打ちました。`,
         type: 'move'
       };
       const nextCaptured = {
@@ -1801,9 +1848,10 @@ export const App: React.FC = () => {
         [state.turn]: nextHand,
       };
 
-      finalizeTurn(nextBoard, nextCaptured, nextShared, [...state.logs, newLog]);
+      finalizeTurn(nextBoard, nextCaptured, nextShared, [...state.logs, newLog], undefined, nextCustomDecks, state.destroyedPieces);
       setSelectedCapturedPiece(null);
       setSelectedSharedPiece(null);
+      setSelectedCustomDeckPiece(null);
       return;
     }
 
@@ -1880,6 +1928,7 @@ export const App: React.FC = () => {
 
     setSelectedCapturedPiece({ piece, index });
     setSelectedSharedPiece(null);
+    setSelectedCustomDeckPiece(null);
     setState(prev => ({ ...prev, selectedCell: null, activeAbilityMode: false, activeAbilityTargets: [] }));
 
     // Use drop-rule-aware valid cells (Nifu, No-move Drop)
@@ -1893,9 +1942,25 @@ export const App: React.FC = () => {
 
     setSelectedSharedPiece({ piece, index });
     setSelectedCapturedPiece(null);
+    setSelectedCustomDeckPiece(null);
     setState(prev => ({ ...prev, selectedCell: null, activeAbilityMode: false, activeAbilityTargets: [] }));
 
     // Use drop-rule-aware valid cells for shared pool pieces too
+    setValidMoves(getValidDropCells(state.board, piece, state.turn));
+  };
+
+  // Custom deck piece click
+  const handleCustomDeckPieceClick = (piece: Piece, index: number, owner: Player) => {
+    if (onlineMode && state.turn !== myRole) return;
+    if (state.phase !== 'playing' || state.winner) return;
+    if (owner !== state.turn) return;
+
+    setSelectedCustomDeckPiece({ piece, index });
+    setSelectedCapturedPiece(null);
+    setSelectedSharedPiece(null);
+    setState(prev => ({ ...prev, selectedCell: null, activeAbilityMode: false, activeAbilityTargets: [] }));
+
+    // Use drop-rule-aware valid cells (Nifu, No-move Drop)
     setValidMoves(getValidDropCells(state.board, piece, state.turn));
   };
 
@@ -1938,6 +2003,8 @@ export const App: React.FC = () => {
       null,
       state.capturedPieces,
       state.sharedPieces,
+      undefined,
+      undefined,
       nextLogs
     );
   };
@@ -1951,6 +2018,8 @@ export const App: React.FC = () => {
       turn: 'sente' as Player,
       phase: 'start',
       customPieces: { sente: [], gote: [] },
+      customDecks: { sente: [], gote: [] },
+      destroyedPieces: [],
       capturedPieces: { sente: [], gote: [] },
       sharedPieces: [],
       selectedCell: null,
@@ -1965,6 +2034,7 @@ export const App: React.FC = () => {
     setPiecesToPlace({ sente: [], gote: [] });
     setSelectedCapturedPiece(null);
     setSelectedSharedPiece(null);
+    setSelectedCustomDeckPiece(null);
     setValidMoves([]);
     setOnlineMode(false);
     setRoomCode('');
@@ -1983,7 +2053,7 @@ export const App: React.FC = () => {
 
       const board = state.board;
       let aiMoves: {
-        type: 'move' | 'action' | 'drop' | 'shared_drop';
+        type: 'move' | 'action' | 'drop' | 'shared_drop' | 'custom_deck_drop';
         from?: [number, number];
         to: [number, number];
         weight: number;
@@ -2012,8 +2082,6 @@ export const App: React.FC = () => {
               }
               aiMoves.push({ type: 'move', from: [y, x], to: [ny, nx], weight });
             });
-
-
           }
         }
       }
@@ -2027,6 +2095,19 @@ export const App: React.FC = () => {
             let weight = 8;
             if (ey >= 3) weight += 5; // drop closer to Sente front
             aiMoves.push({ type: 'drop', to: [ey, ex], piece, index, weight });
+          });
+        });
+      }
+
+      // 3.5. Drop pieces from custom deck
+      const aiCustomDeck = state.customDecks.gote;
+      if (aiCustomDeck && aiCustomDeck.length > 0) {
+        aiCustomDeck.forEach((piece, index) => {
+          const validDropSpots = getValidDropCells(board, piece, 'gote');
+          validDropSpots.forEach(([ey, ex]) => {
+            let weight = 15; // Give slightly higher weight to playing custom pieces!
+            if (ey >= 3) weight += 5; // drop closer to Sente front
+            aiMoves.push({ type: 'custom_deck_drop', to: [ey, ex], piece, index, weight });
           });
         });
       }
@@ -2096,13 +2177,27 @@ export const App: React.FC = () => {
           }
         }
 
+        const nextDestroyedPieces = [...state.destroyedPieces, ...(res.destroyedPieces || [])];
         let finalBoard = res.board;
         const finalLogs = [...state.logs, ...res.logs.map(l => ({ ...l, id: generateId(), timestamp: new Date().toLocaleTimeString() }))];
 
         // Check for ON_MOVE automatic trigger
         const landingPiece = finalBoard[chosenMove.to[0]][chosenMove.to[1]];
-        if (landingPiece && landingPiece.owner === 'gote' && getPieceTrigger(landingPiece) === 'ON_MOVE' && landingPiece.coolDownTurnsRemaining === 0) {
-          const effectRes = applyAutomatedEffect(finalBoard, chosenMove.to, 'ON_MOVE', 'gote', nextCaptured.gote, chosenMove.from);
+        if (landingPiece && landingPiece.owner === 'gote' && isTriggerMatching(landingPiece, 'ON_MOVE') && landingPiece.coolDownTurnsRemaining === 0) {
+          const graveyardCandidates = [
+            ...nextCaptured.gote,
+            ...nextDestroyedPieces.filter(piece => piece.owner !== 'gote')
+          ];
+          const effectRes = applyAutomatedEffect(
+            finalBoard,
+            chosenMove.to,
+            'ON_MOVE',
+            'gote',
+            nextCaptured.gote,
+            chosenMove.from,
+            undefined,
+            graveyardCandidates
+          );
           if (effectRes.triggered || effectRes.logs.length > 0) {
             if (effectRes.triggered) {
               finalBoard = effectRes.board;
@@ -2149,7 +2244,7 @@ export const App: React.FC = () => {
         }
 
         if (isGameOver) {
-          // 破壊された玉将の位置に多重グリッチ爆発エフェクトをトリガー
+          // 破壊された玉将の位置に多重グリッチ爆発エフェガーをトリガー
           const destroyedKingPositions: [number, number][] = [];
           if (!senteKing && prevSenteKingPos) destroyedKingPositions.push(prevSenteKingPos);
           if (!goteKing && prevGoteKingPos) destroyedKingPositions.push(prevGoteKingPos);
@@ -2174,6 +2269,7 @@ export const App: React.FC = () => {
             ...prev,
             board: finalBoard,
             capturedPieces: nextCaptured,
+            destroyedPieces: nextDestroyedPieces,
           }));
 
           setTimeout(() => {
@@ -2181,14 +2277,17 @@ export const App: React.FC = () => {
               ...prev,
               winner: finalWinner,
             }));
-            saveHistorySnapshot(finalBoard, nextCaptured, 'gote', finalLogs);
+            saveHistorySnapshot(finalBoard, nextCaptured, 'gote', finalLogs, state.customDecks, nextDestroyedPieces);
           }, 1200);
         } else {
           finalizeTurn(
             finalBoard,
             nextCaptured,
             state.sharedPieces,
-            finalLogs
+            finalLogs,
+            undefined,
+            state.customDecks,
+            nextDestroyedPieces
           );
         }
 
@@ -2207,7 +2306,32 @@ export const App: React.FC = () => {
           message: `${chosenMove.piece.word}を持ち駒から配置しました。`,
           type: 'move'
         };
-        finalizeTurn(nextBoard, nextCaptured, state.sharedPieces, [...state.logs, newLog]);
+        finalizeTurn(nextBoard, nextCaptured, state.sharedPieces, [...state.logs, newLog], undefined, state.customDecks, state.destroyedPieces);
+
+      } else if (chosenMove.type === 'custom_deck_drop' && chosenMove.piece && chosenMove.index !== undefined) {
+        const nextBoard = executeDrop(board, chosenMove.piece, chosenMove.to, 'gote');
+        const nextDeck = [...state.customDecks.gote];
+        nextDeck.splice(chosenMove.index, 1);
+        const nextCustomDecks = {
+          ...state.customDecks,
+          gote: nextDeck
+        };
+        const newLog: GameLog = {
+          id: generateId(),
+          timestamp: new Date().toLocaleTimeString(),
+          player: 'gote',
+          message: `${chosenMove.piece.word}をカスタムデッキから配置しました。`,
+          type: 'move'
+        };
+        finalizeTurn(
+          nextBoard,
+          state.capturedPieces,
+          state.sharedPieces,
+          [...state.logs, newLog],
+          undefined,
+          nextCustomDecks,
+          state.destroyedPieces
+        );
 
       } else if (chosenMove.type === 'shared_drop' && chosenMove.piece && chosenMove.index !== undefined) {
         const nextBoard = executeDrop(board, chosenMove.piece, chosenMove.to, 'gote');
@@ -2375,16 +2499,20 @@ export const App: React.FC = () => {
                   turn={state.turn}
                   phase={state.phase}
                   capturedPieces={state.capturedPieces}
+                  customDecks={state.customDecks}
+                  destroyedPieces={state.destroyedPieces}
                   sharedPieces={state.sharedPieces}
                   customPiecesToPlace={state.turn === 'sente' ? piecesToPlace.sente : piecesToPlace.gote}
                   selectedCell={state.selectedCell}
                   selectedCapturedPiece={selectedCapturedPiece}
                   selectedSharedPiece={selectedSharedPiece}
+                  selectedCustomDeckPiece={selectedCustomDeckPiece}
                   validMoves={validMoves}
                   activeAbilityTargets={state.activeAbilityTargets}
                   activeAbilityMode={state.activeAbilityMode}
                   onCellClick={handleCellClick}
                   onCapturedPieceClick={handleCapturedPieceClick}
+                  onCustomDeckPieceClick={handleCustomDeckPieceClick}
                   onSharedPieceClick={handleSharedPieceClick}
                   onHoverPiece={setHoveredPiece}
                   vsAiMode={vsAiMode}
@@ -2507,20 +2635,48 @@ export const App: React.FC = () => {
         const loserName = state.winner === 'sente'
           ? (playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2'))
           : (playerNames.sente || 'プレイヤー1');
+
+        const isUserWinner = onlineMode
+          ? state.winner === myRole
+          : vsAiMode
+            ? state.winner === 'sente'
+            : null;
+
+        let themeClass = '';
+        let titleText = '';
+        let subtitleText = '';
+        let detailsText = '';
+
+        if (isUserWinner === true) {
+          themeClass = 'victory-theme';
+          titleText = '作戦完了';
+          subtitleText = `🏆 ${winnerName} の勝利 / MISSION ACCOMPLISHED`;
+          detailsText = '敵陣営の王将の完全排除を確認。戦略的勝利を達成しました。';
+        } else if (isUserWinner === false) {
+          themeClass = 'defeat-theme';
+          titleText = '作戦失敗';
+          subtitleText = `💀 ${winnerName} の勝利 / MISSION FAILED`;
+          detailsText = '玉将の機能停止を検知。防衛システム限界。直ちに後退してください。';
+        } else {
+          // Local Mode
+          themeClass = state.winner === 'sente' ? 'victory-theme' : 'defeat-theme';
+          titleText = '対局終了';
+          subtitleText = `🏆 ${winnerName} の勝利 / GAME OVER`;
+          detailsText = `${winnerName} が ${loserName} に勝利しました。卓越した戦略による完全勝利です。`;
+        }
+
         return (
-          <div className={`game-over-overlay ${state.winner === 'sente' ? 'victory-theme' : 'defeat-theme'}`}>
+          <div className={`game-over-overlay ${themeClass}`}>
             <div className="game-over-panel">
               <h1 className="game-over-title">
-                {state.winner === 'sente' ? '作戦完了' : '作戦失敗'}
+                {titleText}
               </h1>
               <div className="game-over-subtitle">
-                🏆 {winnerName} の勝利 / MISSION ACCOMPLISHED
+                {subtitleText}
               </div>
               <p className="game-over-details">
                 {winnerName} が {loserName} に勝利しました。<br />
-                {state.winner === 'sente'
-                  ? '敵陣営の王将の完全排除を確認。戦略的勝利を達成しました。'
-                  : '玉将の機能停止を検知。防衛システム限界。直ちに後退してください。'}
+                {detailsText}
               </p>
               <button className="cyber-btn game-over-btn" onClick={handleResetGame}>
                 再起動 (REBOOT SYSTEM)
