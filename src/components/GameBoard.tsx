@@ -41,28 +41,18 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   board,
   turn,
   phase,
-  capturedPieces,
-  customDecks,
-  sharedPieces,
   customPiecesToPlace: _customPiecesToPlace,
   selectedCell,
-  selectedCapturedPiece,
-  selectedSharedPiece,
-  selectedCustomDeckPiece,
   validMoves,
   activeAbilityTargets,
   activeAbilityMode: _activeAbilityMode,
   onCellClick,
-  onCapturedPieceClick,
-  onCustomDeckPieceClick,
-  onSharedPieceClick,
   onHoverPiece,
   vsAiMode,
   isSenteChecked = false,
   isGoteChecked = false,
   onlineMode = false,
   myRole = null,
-  playerNames,
 }) => {
   const shouldRotate = onlineMode
     ? (myRole === 'gote')
@@ -531,162 +521,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       transformOrigin: 'center center'
     }}>
       
-      {/* Gote Captured Hand */}
-      <div className="cyber-panel" style={{
-        width: '100%',
-        maxWidth: '620px',
-        padding: '6px 10px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        minHeight: '44px',
-        marginBottom: '8px',
-        border: '1px solid rgba(189,0,255,0.2)',
-        background: 'rgba(189, 0, 255, 0.03)',
-        flexWrap: 'wrap',
-        transform: shouldRotate ? 'rotate(180deg)' : 'none',
-        transition: 'transform 0.6s ease-in-out',
-      }}>
-        <div style={{ fontSize: '10px', color: 'var(--neon-purple)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-          {playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')} 持ち駒
-        </div>
-        <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', flex: 1 }}>
-          {capturedPieces.gote.map((piece, idx) => {
-            const isSel = selectedCapturedPiece?.piece.id === piece.id && selectedCapturedPiece?.index === idx;
-            return (
-              <div
-                key={piece.id}
-                onClick={() => onCapturedPieceClick(piece, idx, 'gote')}
-                onMouseEnter={() => { const viewer = vsAiMode ? 'sente' : turn; onHoverPiece?.(viewer === 'gote' ? piece : null); }}
-                onMouseLeave={() => onHoverPiece?.(null)}
-                style={{
-                  padding: '3px 8px',
-                  borderRadius: '4px',
-                  border: `1px solid ${isSel ? 'var(--neon-purple)' : 'rgba(189,0,255,0.25)'}`,
-                  background: isSel ? 'rgba(189,0,255,0.2)' : 'rgba(189,0,255,0.05)',
-                  cursor: turn === 'gote' && phase === 'playing' ? 'pointer' : 'default',
-                  fontSize: '10px',
-                  color: '#fff',
-                }}
-              >
-                {piece.word}
-              </div>
-            );
-          })}
-          {capturedPieces.gote.length === 0 && (
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>なし</span>
-          )}
-        </div>
-      </div>
-
-      {/* Gote Custom Deck */}
-      <div className="cyber-panel" style={{
-        width: '100%',
-        maxWidth: '620px',
-        padding: '6px 10px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        minHeight: '44px',
-        marginBottom: '8px',
-        border: '1px solid rgba(189,0,255,0.15)',
-        background: 'rgba(189, 0, 255, 0.02)',
-        flexWrap: 'wrap',
-        transform: shouldRotate ? 'rotate(180deg)' : 'none',
-        transition: 'transform 0.6s ease-in-out',
-      }}>
-        <div style={{ fontSize: '10px', color: 'var(--neon-purple)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-          {playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')} 手札デッキ
-        </div>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', flex: 1 }}>
-          {customDecks.gote.map((piece, idx) => {
-            const isSel = selectedCustomDeckPiece?.piece.id === piece.id && selectedCustomDeckPiece?.index === idx;
-            return (
-              <div
-                key={piece.id}
-                onClick={() => onCustomDeckPieceClick(piece, idx, 'gote')}
-                onMouseEnter={() => { const viewer = vsAiMode ? 'sente' : turn; onHoverPiece?.(viewer === 'gote' ? piece : null); }}
-                onMouseLeave={() => onHoverPiece?.(null)}
-                className={`custom-deck-card gote-card ${isSel ? 'selected' : ''}`}
-                style={{
-                  border: isSel ? '1px solid var(--neon-purple)' : undefined,
-                  background: isSel ? 'rgba(189,0,255,0.15)' : undefined,
-                  boxShadow: isSel ? '0 0 12px rgba(189,0,255,0.4)' : undefined,
-                  cursor: turn === 'gote' && phase === 'playing' ? 'pointer' : 'default',
-                }}
-              >
-                <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }} title={piece.effect_name || piece.word}>
-                  {piece.effect_name || piece.word}
-                </span>
-                <div style={{ display: 'flex', gap: '4px', alignItems: 'center', width: '100%', marginTop: '2px' }}>
-                  <span style={{ fontSize: '8px', color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '60%' }} title={piece.word}>
-                    {piece.word}
-                  </span>
-                  <span style={{ fontSize: '7px', color: 'rgba(255,255,255,0.4)', border: '0.5px solid rgba(255,255,255,0.2)', borderRadius: '2px', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '40%' }} title={piece.ability_genre || '能力駒'}>
-                    {piece.ability_genre || '能力駒'}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-          {customDecks.gote.length === 0 && (
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>なし</span>
-          )}
-        </div>
-      </div>
-
-      {/* Shared cooperative pool (Coexistence tray) */}
-      <div className="cyber-panel pink-glow" style={{
-        width: '100%',
-        maxWidth: '620px',
-        padding: '6px 10px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        minHeight: '44px',
-        marginBottom: '8px',
-        background: 'rgba(255, 0, 127, 0.03)',
-        flexWrap: 'wrap',
-        transform: shouldRotate ? 'rotate(180deg)' : 'none',
-        transition: 'transform 0.6s ease-in-out',
-      }}>
-        <div style={{ fontSize: '10px', color: 'var(--neon-pink)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-          共有プール
-        </div>
-        <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', flex: 1 }}>
-          {sharedPieces.map((piece, idx) => {
-            const isSel = selectedSharedPiece?.piece.id === piece.id && selectedSharedPiece?.index === idx;
-            return (
-              <div
-                key={piece.id}
-                onClick={() => onSharedPieceClick(piece, idx)}
-                onMouseEnter={() => onHoverPiece?.(piece)}
-                onMouseLeave={() => onHoverPiece?.(null)}
-                style={{
-                  padding: '3px 8px',
-                  borderRadius: '4px',
-                  border: `1px solid ${isSel ? 'var(--neon-pink)' : 'rgba(255,0,127,0.25)'}`,
-                  background: isSel ? 'rgba(255,0,127,0.2)' : 'rgba(255,0,127,0.05)',
-                  cursor: phase === 'playing' ? 'pointer' : 'default',
-                  fontSize: '10px',
-                  color: '#fff',
-                }}
-                title={`もとの所有者: ${piece.owner === 'sente' ? (playerNames.sente || 'プレイヤー1') : (playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2'))}`}
-              >
-                {piece.word}
-              </div>
-            );
-          })}
-          {sharedPieces.length === 0 && (
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>（共同幻想プールは現在空です）</span>
-          )}
-        </div>
-      </div>
-
       {/* Main Shogi Grid (9x9) */}
       <div className="shogi-board-outer" style={{
         width: '100%',
-        maxWidth: 'min(620px, max(360px, calc(100vh - 350px)))',
+        maxWidth: 'min(620px, max(360px, calc(100vh - 180px)))',
         position: 'relative',
         padding: '15px 15px 15px 5px',
         boxSizing: 'border-box'
@@ -707,110 +545,6 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         }}>
           {Array.from({ length: BOARD_SIZE }).map((_, y) => 
             Array.from({ length: BOARD_SIZE }).map((_, x) => renderCell(y, x))
-          )}
-        </div>
-      </div>
-
-      {/* Sente Captured Hand */}
-      <div className="cyber-panel" style={{
-        width: '100%',
-        maxWidth: '620px',
-        padding: '6px 10px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        minHeight: '44px',
-        marginTop: '8px',
-        border: '1px solid rgba(0,243,255,0.2)',
-        background: 'rgba(0, 243, 255, 0.03)',
-        flexWrap: 'wrap',
-        transform: shouldRotate ? 'rotate(180deg)' : 'none',
-        transition: 'transform 0.6s ease-in-out',
-      }}>
-        <div style={{ fontSize: '10px', color: 'var(--neon-cyan)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-          {playerNames.sente || 'プレイヤー1'} 持ち駒
-        </div>
-        <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', flex: 1 }}>
-          {capturedPieces.sente.map((piece, idx) => {
-            const isSel = selectedCapturedPiece?.piece.id === piece.id && selectedCapturedPiece?.index === idx;
-            return (
-              <div
-                key={piece.id}
-                onClick={() => onCapturedPieceClick(piece, idx, 'sente')}
-                onMouseEnter={() => { const viewer = vsAiMode ? 'sente' : turn; onHoverPiece?.(viewer === 'sente' ? piece : null); }}
-                onMouseLeave={() => onHoverPiece?.(null)}
-                style={{
-                  padding: '3px 8px',
-                  borderRadius: '4px',
-                  border: `1px solid ${isSel ? 'var(--neon-cyan)' : 'rgba(0,243,255,0.25)'}`,
-                  background: isSel ? 'rgba(0,243,255,0.2)' : 'rgba(0,243,255,0.05)',
-                  cursor: turn === 'sente' && phase === 'playing' ? 'pointer' : 'default',
-                  fontSize: '10px',
-                  color: '#fff',
-                }}
-              >
-                {piece.word}
-              </div>
-            );
-          })}
-          {capturedPieces.sente.length === 0 && (
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>なし</span>
-          )}
-        </div>
-      </div>
-
-      {/* Sente Custom Deck */}
-      <div className="cyber-panel" style={{
-        width: '100%',
-        maxWidth: '620px',
-        padding: '6px 10px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        minHeight: '44px',
-        marginTop: '8px',
-        border: '1px solid rgba(0,243,255,0.15)',
-        background: 'rgba(0, 243, 255, 0.02)',
-        flexWrap: 'wrap',
-        transform: shouldRotate ? 'rotate(180deg)' : 'none',
-        transition: 'transform 0.6s ease-in-out',
-      }}>
-        <div style={{ fontSize: '10px', color: 'var(--neon-cyan)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-          {playerNames.sente || 'プレイヤー1'} 手札デッキ
-        </div>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', flex: 1 }}>
-          {customDecks.sente.map((piece, idx) => {
-            const isSel = selectedCustomDeckPiece?.piece.id === piece.id && selectedCustomDeckPiece?.index === idx;
-            return (
-              <div
-                key={piece.id}
-                onClick={() => onCustomDeckPieceClick(piece, idx, 'sente')}
-                onMouseEnter={() => { const viewer = vsAiMode ? 'sente' : turn; onHoverPiece?.(viewer === 'sente' ? piece : null); }}
-                onMouseLeave={() => onHoverPiece?.(null)}
-                className={`custom-deck-card sente-card ${isSel ? 'selected' : ''}`}
-                style={{
-                  border: isSel ? '1px solid var(--neon-cyan)' : undefined,
-                  background: isSel ? 'rgba(0,243,255,0.15)' : undefined,
-                  boxShadow: isSel ? '0 0 12px rgba(0,243,255,0.4)' : undefined,
-                  cursor: turn === 'sente' && phase === 'playing' ? 'pointer' : 'default',
-                }}
-              >
-                <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }} title={piece.effect_name || piece.word}>
-                  {piece.effect_name || piece.word}
-                </span>
-                <div style={{ display: 'flex', gap: '4px', alignItems: 'center', width: '100%', marginTop: '2px' }}>
-                  <span style={{ fontSize: '8px', color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '60%' }} title={piece.word}>
-                    {piece.word}
-                  </span>
-                  <span style={{ fontSize: '7px', color: 'rgba(255,255,255,0.4)', border: '0.5px solid rgba(255,255,255,0.2)', borderRadius: '2px', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '40%' }} title={piece.ability_genre || '能力駒'}>
-                    {piece.ability_genre || '能力駒'}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-          {customDecks.sente.length === 0 && (
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>なし</span>
           )}
         </div>
       </div>

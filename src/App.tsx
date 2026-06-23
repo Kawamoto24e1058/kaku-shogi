@@ -15,6 +15,7 @@ import {
   getValidDropCells,
   isKingInCheck,
   getAbilityTargets,
+  placeCustomPiecesRandomly
 } from './gameLogic';
 import { PieceCreator } from './components/PieceCreator';
 import { GameBoard } from './components/GameBoard';
@@ -257,7 +258,7 @@ export const App: React.FC = () => {
     x: number,
     promote: boolean
   ) => {
-    const res = executeMove(state.board, [sy, sx], [y, x], state.turn, promote, playerNames, vsAiMode, true);
+    const res = executeMove(state.board, [sy, sx], [y, x], state.turn, promote, playerNames, vsAiMode, true, state.capturedPieces);
 
     if (res.bombTriggered) {
       setExplosionEffects(prev => [...prev, [y, x]]);
@@ -282,13 +283,12 @@ export const App: React.FC = () => {
         if (!isStillOnBoard) {
           const cleanCap = {
             ...cap,
-            owner: state.turn,
             isPromoted: false,
             coolDownTurnsRemaining: 0,
             isRevealed: true
           };
-          if (!nextCaptured[state.turn].some(p => p.id === cleanCap.id)) {
-            nextCaptured[state.turn] = [...nextCaptured[state.turn], cleanCap];
+          if (!nextCaptured[cleanCap.owner].some(p => p.id === cleanCap.id)) {
+            nextCaptured[cleanCap.owner] = [...nextCaptured[cleanCap.owner], cleanCap];
           }
         }
       }
@@ -763,6 +763,7 @@ export const App: React.FC = () => {
           turn: newTurn,
           phase: 'playing',
           customPieces: data.customPieces,
+          customDecks: data.customDecksJson ? JSON.parse(data.customDecksJson) : { sente: [], gote: [] },
           capturedPieces: JSON.parse(data.capturedPieces),
           sharedPieces: JSON.parse(data.sharedPieces),
           logs: data.logs || [],
@@ -840,25 +841,23 @@ export const App: React.FC = () => {
       const sentePieces: Piece[] = matchDoc.sentePieces;
       const gotePieces: Piece[] = matchDoc.gotePieces;
       
-      let nextBoard = initializeBoard();
-      
       const initializedSente = sentePieces.map(piece => ({
         ...piece,
-        originalPosition: null,
         coolDownTurnsRemaining: 0,
         isRevealed: isStealthPiece(piece) ? false : true,
       }));
       const initializedGote = gotePieces.map(piece => ({
         ...piece,
-        originalPosition: null,
         coolDownTurnsRemaining: 0,
         isRevealed: isStealthPiece(piece) ? false : true,
       }));
 
+      const nextBoard = placeCustomPiecesRandomly(initializeBoard(), initializedSente, initializedGote);
+
       const nextLogs = [
         ...matchDoc.logs,
-        { player: 'system', message: `${matchDoc.senteName || 'プレイヤー1'} の能力駒をデッキにロードしました。`, type: 'system' },
-        { player: 'system', message: `${matchDoc.goteName || 'プレイヤー2'} の能力駒をデッキにロードしました。`, type: 'system' },
+        { player: 'system', message: `${matchDoc.senteName || 'プレイヤー1'} の能力駒を自陣に配置しました。`, type: 'system' },
+        { player: 'system', message: `${matchDoc.goteName || 'プレイヤー2'} の能力駒を自陣に配置しました。`, type: 'system' },
         { player: 'system', message: '対局を開始します！', type: 'system' }
       ];
 
@@ -867,7 +866,7 @@ export const App: React.FC = () => {
         status: 'playing',
         board: JSON.stringify(nextBoard),
         customPieces: { sente: initializedSente, gote: initializedGote },
-        customDecksJson: JSON.stringify({ sente: initializedSente, gote: initializedGote }),
+        customDecksJson: JSON.stringify({ sente: [], gote: [] }),
         destroyedPiecesJson: JSON.stringify([]),
         capturedPieces: JSON.stringify({ sente: [], gote: [] }),
         sharedPieces: JSON.stringify([]),
@@ -1002,7 +1001,7 @@ export const App: React.FC = () => {
         const [ty, tx] = valid[Math.floor(Math.random() * valid.length)];
         const promote = isPromotionEligible(piece, sy, ty, activePlayer);
         
-        const moveRes = executeMove(currentBoard, [sy, sx], [ty, tx], activePlayer, promote, playerNames, vsAiMode);
+        const moveRes = executeMove(currentBoard, [sy, sx], [ty, tx], activePlayer, promote, playerNames, vsAiMode, false, currentCaptured);
         
         currentBoard = moveRes.board;
         if (moveRes.gameOver) {
@@ -1012,6 +1011,30 @@ export const App: React.FC = () => {
 
         if (moveRes.destroyedPieces && moveRes.destroyedPieces.length > 0) {
           currentDestroyedPieces.push(...moveRes.destroyedPieces);
+        }
+
+        const capturedList: Piece[] = [];
+        if (moveRes.capturedPieces && moveRes.capturedPieces.length > 0) {
+          capturedList.push(...moveRes.capturedPieces);
+        } else if (moveRes.capturedPiece) {
+          capturedList.push(moveRes.capturedPiece);
+        }
+
+        for (const cap of capturedList) {
+          if (cap) {
+            const isStillOnBoard = moveRes.board.some(row => row.some(p => p?.id === cap.id));
+            if (!isStillOnBoard) {
+              const cleanCap = {
+                ...cap,
+                isPromoted: false,
+                coolDownTurnsRemaining: 0,
+                isRevealed: true
+              };
+              if (!currentCaptured[cleanCap.owner].some(p => p.id === cleanCap.id)) {
+                currentCaptured[cleanCap.owner].push(cleanCap);
+              }
+            }
+          }
         }
 
         currentLogs.push({
@@ -1027,32 +1050,6 @@ export const App: React.FC = () => {
           id: generateId(),
           timestamp: new Date().toLocaleTimeString()
         })));
-
-        const capturedList: Piece[] = [];
-        if (moveRes.capturedPieces && moveRes.capturedPieces.length > 0) {
-          capturedList.push(...moveRes.capturedPieces);
-        } else if (moveRes.capturedPiece) {
-          capturedList.push(moveRes.capturedPiece);
-        }
-
-        for (const cap of capturedList) {
-          if (cap) {
-            const isStillOnBoard = currentBoard.some(row => row.some(p => p?.id === cap.id));
-            if (!isStillOnBoard) {
-              const cleanCap = {
-                ...cap,
-                owner: activePlayer,
-                isPromoted: false,
-                coolDownTurnsRemaining: 0,
-                isRevealed: true
-              };
-              if (!currentCaptured[activePlayer].some(p => p.id === cleanCap.id)) {
-                currentCaptured[activePlayer].push(cleanCap);
-              }
-            }
-          }
-        }
-
         // Force the moved piece to have 0 cooldown
         for (let r = 0; r < BOARD_SIZE; r++) {
           for (let c = 0; c < BOARD_SIZE; c++) {
@@ -1627,20 +1624,18 @@ export const App: React.FC = () => {
   }, [state.phase]);
 
   const autoPlacePieces = (sentePieces: Piece[], gotePieces: Piece[]) => {
-    let nextBoard = initializeBoard();
-
     const initializedSente = sentePieces.map(piece => ({
       ...piece,
-      originalPosition: null,
       coolDownTurnsRemaining: 0,
       isRevealed: isStealthPiece(piece) ? false : true,
     }));
     const initializedGote = gotePieces.map(piece => ({
       ...piece,
-      originalPosition: null,
       coolDownTurnsRemaining: 0,
       isRevealed: isStealthPiece(piece) ? false : true,
     }));
+
+    const nextBoard = placeCustomPiecesRandomly(initializeBoard(), initializedSente, initializedGote);
 
     setState(prev => ({
       ...prev,
@@ -1648,14 +1643,14 @@ export const App: React.FC = () => {
       phase: 'playing',
       turn: 'sente',
       customPieces: { sente: initializedSente, gote: initializedGote },
-      customDecks: { sente: initializedSente, gote: initializedGote },
+      customDecks: { sente: [], gote: [] },
       destroyedPieces: []
     }));
 
     setPiecesToPlace({ sente: [], gote: [] });
 
-    addLog(`${playerNames.sente || 'プレイヤー1'} の能力駒を手札デッキにロードしました。`, 'system', 'sente');
-    addLog(`${playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')} の能力駒を手札デッキにロードしました。`, 'system', 'gote');
+    addLog(`${playerNames.sente || 'プレイヤー1'} の能力駒を自陣に配置しました。`, 'system', 'sente');
+    addLog(`${playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')} の能力駒を自陣に配置しました。`, 'system', 'gote');
     addLog('対局を開始します！', 'system', 'sente');
   };
 
@@ -2150,8 +2145,11 @@ export const App: React.FC = () => {
         const movingPiece = board[chosenMove.from[0]][chosenMove.from[1]]!;
         const promote = isPromotionEligible(movingPiece, chosenMove.from[0], chosenMove.to[0], 'gote');
 
-        const res = executeMove(board, chosenMove.from, chosenMove.to, 'gote', promote, playerNames, vsAiMode);
-        const nextCaptured = { ...state.capturedPieces };
+        const res = executeMove(board, chosenMove.from, chosenMove.to, 'gote', promote, playerNames, vsAiMode, false, state.capturedPieces);
+        const nextCaptured = {
+          sente: [...state.capturedPieces.sente],
+          gote: [...state.capturedPieces.gote]
+        };
         const capturedList: Piece[] = [];
         if (res.capturedPieces && res.capturedPieces.length > 0) {
           capturedList.push(...res.capturedPieces);
@@ -2165,13 +2163,12 @@ export const App: React.FC = () => {
             if (!isStillOnBoard) {
               const cleanCap = {
                 ...cap,
-                owner: 'gote' as Player,
                 isPromoted: false,
                 coolDownTurnsRemaining: 0,
                 isRevealed: true
               };
-              if (!nextCaptured.gote.some(p => p.id === cleanCap.id)) {
-                nextCaptured.gote = [...nextCaptured.gote, cleanCap];
+              if (!nextCaptured[cleanCap.owner].some(p => p.id === cleanCap.id)) {
+                nextCaptured[cleanCap.owner] = [...nextCaptured[cleanCap.owner], cleanCap];
               }
             }
           }
@@ -2607,6 +2604,13 @@ export const App: React.FC = () => {
                   vsAiMode={vsAiMode}
                   onToggleVsAi={() => setVsAiMode(!vsAiMode)}
                   playerNames={playerNames}
+                  capturedPieces={state.capturedPieces}
+                  selectedCapturedPiece={selectedCapturedPiece}
+                  onCapturedPieceClick={handleCapturedPieceClick}
+                  sharedPieces={state.sharedPieces}
+                  selectedSharedPiece={selectedSharedPiece}
+                  onSharedPieceClick={handleSharedPieceClick}
+                  onHoverPiece={setHoveredPiece}
                 />
               </div>
 

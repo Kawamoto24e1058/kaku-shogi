@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import type { GameLog, Player, Piece, GamePhase } from '../types';
 import { getPieceTrigger } from '../gameLogic';
 import { PieceDetailCard } from './PieceDetailCard';
@@ -16,6 +16,15 @@ interface ControlPanelProps {
   vsAiMode: boolean;
   onToggleVsAi: () => void;
   playerNames: { sente: string; gote: string };
+
+  // New props
+  capturedPieces: { sente: Piece[]; gote: Piece[] };
+  selectedCapturedPiece: { piece: Piece; index: number } | null;
+  onCapturedPieceClick: (piece: Piece, index: number, owner: Player) => void;
+  sharedPieces: Piece[];
+  selectedSharedPiece: { piece: Piece; index: number } | null;
+  onSharedPieceClick: (piece: Piece, index: number) => void;
+  onHoverPiece?: (piece: Piece | null) => void;
 }
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -23,7 +32,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   phase,
   customPiecesToPlace,
   winner,
-  logs,
   selectedPiece,
   hoveredPiece,
   onResetGame,
@@ -31,27 +39,14 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   vsAiMode,
   onToggleVsAi,
   playerNames,
+  capturedPieces,
+  selectedCapturedPiece,
+  onCapturedPieceClick,
+  sharedPieces,
+  selectedSharedPiece,
+  onSharedPieceClick,
+  onHoverPiece,
 }) => {
-  const logContainerRef = useRef<HTMLDivElement>(null);
-
-  // Auto scroll logs internally without scrolling the browser window
-  useEffect(() => {
-    if (logContainerRef.current) {
-      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-    }
-  }, [logs]);
-
-  const getLogColor = (type: string) => {
-    switch (type) {
-      case 'move': return 'var(--text-primary)';
-      case 'action': return 'var(--neon-pink)';
-      case 'capture': return 'var(--neon-yellow)';
-      case 'ability': return 'var(--neon-green)';
-      case 'system': return '#00f3ff';
-      default: return 'var(--text-secondary)';
-    }
-  };
-
   const triggerEvent = selectedPiece ? getPieceTrigger(selectedPiece) : 'ALWAYS';
 
   return (
@@ -169,46 +164,116 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         </div>
       )}
 
-      {/* Game Logs Panel */}
-      <div className="cyber-panel" style={{ padding: '15px', flex: 1, display: 'flex', flexDirection: 'column', minHeight: '140px' }}>
-        <h3 className="cyber-title" style={{ fontSize: '15px', marginBottom: '8px' }}>
-          戦術記録ログ
+      {/* Captured Pieces & Shared Pool Panel */}
+      <div className="cyber-panel" style={{ padding: '15px', flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', minHeight: '180px' }}>
+        <h3 className="cyber-title" style={{ fontSize: '15px', marginBottom: '4px' }}>
+          獲得した持ち駒
         </h3>
-        <div ref={logContainerRef} style={{
-          flex: 1,
-          background: 'rgba(5, 2, 18, 0.7)',
-          borderRadius: '6px',
-          border: '1px solid rgba(255, 255, 255, 0.05)',
-          padding: '8px',
-          overflowY: 'auto',
-          fontSize: '11px',
-          fontFamily: 'monospace',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '5px',
-          maxHeight: '160px'
-        }}>
-          {logs.map((log) => (
-            <div key={log.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', paddingBottom: '3px' }}>
-              <span style={{ color: 'var(--text-muted)', marginRight: '4px' }}>[{log.timestamp}]</span>
-              <span style={{
-                color: log.type === 'system'
-                  ? 'var(--neon-yellow)'
-                  : (log.player === 'sente' ? 'var(--neon-cyan)' : 'var(--neon-purple)'),
-                fontWeight: 'bold',
-                marginRight: '4px'
-              }}>
-                {log.type === 'system'
-                  ? '📢 システム'
-                  : (log.player === 'sente'
-                      ? (playerNames.sente || 'プレイヤー1')
-                      : (playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2'))
-                    )
-                }
-              </span>
-              <span style={{ color: getLogColor(log.type) }}>{log.message}</span>
-            </div>
-          ))}
+        
+        {/* Gote Captured Hand */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+          <div style={{ fontSize: '10px', color: 'var(--neon-purple)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold' }}>
+            ▽ {playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')} 持ち駒
+          </div>
+          <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', minHeight: '34px', padding: '6px', background: 'rgba(189,0,255,0.02)', border: '1px solid rgba(189,0,255,0.1)', borderRadius: '4px' }}>
+            {capturedPieces.gote.map((piece, idx) => {
+              const isSel = selectedCapturedPiece?.piece.id === piece.id && selectedCapturedPiece?.index === idx;
+              return (
+                <div
+                  key={piece.id}
+                  onClick={() => onCapturedPieceClick(piece, idx, 'gote')}
+                  onMouseEnter={() => onHoverPiece?.(piece)}
+                  onMouseLeave={() => onHoverPiece?.(null)}
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    border: `1px solid ${isSel ? 'var(--neon-purple)' : 'rgba(189,0,255,0.25)'}`,
+                    background: isSel ? 'rgba(189,0,255,0.2)' : 'rgba(189,0,255,0.05)',
+                    cursor: turn === 'gote' && phase === 'playing' ? 'pointer' : 'default',
+                    fontSize: '10px',
+                    color: '#fff',
+                    userSelect: 'none'
+                  }}
+                >
+                  {piece.word}
+                </div>
+              );
+            })}
+            {capturedPieces.gote.length === 0 && (
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic', alignSelf: 'center' }}>なし</span>
+            )}
+          </div>
+        </div>
+
+        {/* Shared Pool */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+          <div style={{ fontSize: '10px', color: 'var(--neon-pink)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold' }}>
+            🤝 共有プール
+          </div>
+          <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', minHeight: '34px', padding: '6px', background: 'rgba(255,0,127,0.02)', border: '1px solid rgba(255,0,127,0.1)', borderRadius: '4px' }}>
+            {sharedPieces.map((piece, idx) => {
+              const isSel = selectedSharedPiece?.piece.id === piece.id && selectedSharedPiece?.index === idx;
+              return (
+                <div
+                  key={piece.id}
+                  onClick={() => onSharedPieceClick(piece, idx)}
+                  onMouseEnter={() => onHoverPiece?.(piece)}
+                  onMouseLeave={() => onHoverPiece?.(null)}
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    border: `1px solid ${isSel ? 'var(--neon-pink)' : 'rgba(255,0,127,0.25)'}`,
+                    background: isSel ? 'rgba(255,0,127,0.2)' : 'rgba(255,0,127,0.05)',
+                    cursor: phase === 'playing' ? 'pointer' : 'default',
+                    fontSize: '10px',
+                    color: '#fff',
+                    userSelect: 'none'
+                  }}
+                  title={`もとの所有者: ${piece.owner === 'sente' ? (playerNames.sente || 'プレイヤー1') : (playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2'))}`}
+                >
+                  {piece.word}
+                </div>
+              );
+            })}
+            {sharedPieces.length === 0 && (
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic', alignSelf: 'center' }}>空</span>
+            )}
+          </div>
+        </div>
+
+        {/* Sente Captured Hand */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+          <div style={{ fontSize: '10px', color: 'var(--neon-cyan)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold' }}>
+            ▲ {playerNames.sente || 'プレイヤー1'} 持ち駒
+          </div>
+          <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', minHeight: '34px', padding: '6px', background: 'rgba(0,243,255,0.02)', border: '1px solid rgba(0,243,255,0.1)', borderRadius: '4px' }}>
+            {capturedPieces.sente.map((piece, idx) => {
+              const isSel = selectedCapturedPiece?.piece.id === piece.id && selectedCapturedPiece?.index === idx;
+              return (
+                <div
+                  key={piece.id}
+                  onClick={() => onCapturedPieceClick(piece, idx, 'sente')}
+                  onMouseEnter={() => onHoverPiece?.(piece)}
+                  onMouseLeave={() => onHoverPiece?.(null)}
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    border: `1px solid ${isSel ? 'var(--neon-cyan)' : 'rgba(0,243,255,0.25)'}`,
+                    background: isSel ? 'rgba(0,243,255,0.2)' : 'rgba(0,243,255,0.05)',
+                    cursor: turn === 'sente' && phase === 'playing' ? 'pointer' : 'default',
+                    fontSize: '10px',
+                    color: '#fff',
+                    userSelect: 'none'
+                  }}
+                >
+                  {piece.word}
+                </div>
+              );
+            })}
+            {capturedPieces.sente.length === 0 && (
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic', alignSelf: 'center' }}>なし</span>
+            )}
+          </div>
         </div>
       </div>
 

@@ -18,7 +18,7 @@ export function getPieceTrigger(piece: Piece): 'ALWAYS' | 'ON_MOVE' | 'TURN_STAR
   return piece.trigger || 'ALWAYS';
 }
 
-export function isTriggerMatching(piece: Piece, triggerType: 'ON_MOVE' | 'TURN_START'): boolean {
+export function isTriggerMatching(piece: Piece, triggerType: 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN'): boolean {
   const trigger = getPieceTrigger(piece);
   return trigger === 'ALWAYS' || trigger === triggerType;
 }
@@ -920,7 +920,8 @@ export function executeMove(
   promote: boolean = false,
   playerNames?: { sente: string; gote: string },
   vsAiMode?: boolean,
-  isManual: boolean = false
+  _isManual: boolean = false,
+  _capturedPieces?: { sente: Piece[]; gote: Piece[] }
 ): MoveResult {
   const getPlayerName = (p: Player) => {
     if (playerNames) {
@@ -947,9 +948,7 @@ export function executeMove(
     ? { ...piece, isPromoted: true, isRevealed: isStealthTrap ? piece.isRevealed : true }
     : { ...piece, isRevealed: isStealthTrap ? piece.isRevealed : true };
   
-  if (isManual) {
-    finalPiece.hasMovedManually = true;
-  }
+  finalPiece.hasMovedManually = true;
   if (finalPiece.is_once_per_game) {
     finalPiece.coolDownTurnsRemaining = 99; // Permanent debuff (restricted to charging_grid /十字1マス)
   }
@@ -1214,9 +1213,35 @@ export function executeMove(
             message: logMsg,
             type: 'ability'
           });
-          
-          nextBoard[ty][tx] = null;
-          nextBoard[fy][fx] = null;
+
+          // Temporarily place the trap at [ty][tx] with isRevealed: true to trigger its effect
+          const tempBoard = nextBoard.map(row => [...row]);
+          tempBoard[ty][tx] = { ...targetCell, isRevealed: true };
+          tempBoard[fy][fx] = null;
+
+          const trapOwner = targetCell.owner;
+          const trapEffectRes = applyAutomatedEffect(
+            tempBoard,
+            [ty, tx],
+            'ON_TAKEN',
+            trapOwner,
+            [],
+            undefined,
+            undefined,
+            [...destroyedPieces]
+          );
+
+          if (trapEffectRes.triggered) {
+            nextBoard = trapEffectRes.board;
+            if (trapEffectRes.capturedPieces) {
+              capturedPiecesList.push(...trapEffectRes.capturedPieces);
+            }
+            logs.push(...trapEffectRes.logs);
+          } else {
+            // Default self-destruct if no custom effect triggered
+            nextBoard[ty][tx] = null;
+            nextBoard[fy][fx] = null;
+          }
           bombTriggered = true;
           destroyedPieces.push(
             { ...piece, owner: player },
@@ -1296,6 +1321,26 @@ export function executeMove(
             message: `【接近開示】${getCellLabel(ny, nx)} に潜む罠「${adjacentPiece.effect_name}」が接近により発動し、姿が露見しました！`,
             type: 'ability'
           });
+
+          // Run the trap's automated effect!
+          const trapOwner = adjacentPiece.owner;
+          const trapEffectRes = applyAutomatedEffect(
+            nextBoard,
+            [ny, nx],
+            'ON_APPROACH',
+            trapOwner,
+            [],
+            undefined,
+            undefined,
+            [...destroyedPieces]
+          );
+          if (trapEffectRes.triggered) {
+            nextBoard = trapEffectRes.board;
+            if (trapEffectRes.capturedPieces) {
+              capturedPiecesList.push(...trapEffectRes.capturedPieces);
+            }
+            logs.push(...trapEffectRes.logs);
+          }
         }
       }
     }
@@ -1333,6 +1378,7 @@ export function executeMove(
   return {
     board: nextBoard,
     capturedPiece,
+    capturedPieces: capturedPiecesList,
     destroyedPieces,
     logs,
     shieldTriggered,
@@ -1522,7 +1568,7 @@ function isAutonomousPiece(p: Piece | null): boolean {
 export function applyAutomatedEffect(
   board: Board,
   position: [number, number],
-  triggerType: 'ON_MOVE' | 'TURN_START',
+  triggerType: 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN',
   player: Player,
   capturedPieces: Piece[],
   fromPosition?: [number, number],
@@ -1536,7 +1582,12 @@ export function applyAutomatedEffect(
 } {
   const [y, x] = position;
   const piece = board[y][x];
-  if (!piece || piece.owner !== player || !isTriggerMatching(piece, triggerType) || piece.hasMovedManually === false) {
+  if (!piece || piece.owner !== player || !isTriggerMatching(piece, triggerType)) {
+    return { board, capturedPieces, logs: [], triggered: false };
+  }
+  const trigger = getPieceTrigger(piece);
+  const isTrap = trigger === 'ON_TAKEN' || trigger === 'ON_APPROACH';
+  if (!isTrap && piece.hasMovedManually === false) {
     return { board, capturedPieces, logs: [], triggered: false };
   }
   if (!isAutonomousPiece(piece) && piece.coolDownTurnsRemaining > 0) {
@@ -1653,7 +1704,24 @@ export function applyAutomatedEffect(
   }
 
   // 2. Explosion / Blast (checks logic_code or description)
-  else if (desc.includes('爆破') || desc.includes('爆発') || desc.includes('自爆') || desc.includes('爆砕') || logic === 'kill_adjacent_remote' || logic === 'kill_front_enemy' || logic === 'kill_linear') {
+  else if (
+    desc.includes('爆破') || 
+    desc.includes('爆発') || 
+    desc.includes('自爆') || 
+    desc.includes('爆砕') || 
+    desc.includes('捕獲') || 
+    desc.includes('吸収') || 
+    desc.includes('一掃') || 
+    desc.includes('巻き込む') || 
+    desc.includes('消滅') || 
+    logic === 'kill_adjacent_remote' || 
+    logic === 'kill_front_enemy' || 
+    logic === 'kill_linear' ||
+    logic.includes('kill_adjacent') ||
+    logic.includes('capture_adjacent') ||
+    logic.includes('blast') ||
+    logic.includes('explode')
+  ) {
     const adjacent = [
       [-1, -1], [-1, 0], [-1, 1],
       [0, -1],           [0, 1],
@@ -2546,4 +2614,125 @@ export function getAbilityTargets(
   }
 
   return null;
+}
+
+export function placeCustomPiecesRandomly(board: Board, sentePieces: Piece[], gotePieces: Piece[]): Board {
+  const nextBoard = board.map(row => [...row]);
+
+  // Find Gote King position (should be at (0, 4))
+  let goteKingPos: [number, number] = [0, 4];
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      if (board[r][c]?.isKing && board[r][c]?.owner === 'gote') {
+        goteKingPos = [r, c];
+      }
+    }
+  }
+
+  // Find Sente King position (should be at (8, 4))
+  let senteKingPos: [number, number] = [8, 4];
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      if (board[r][c]?.isKing && board[r][c]?.owner === 'sente') {
+        senteKingPos = [r, c];
+      }
+    }
+  }
+
+  // Helper to check if a piece at a position can attack the enemy King
+  const canAttackTarget = (piece: Piece, py: number, px: number, ty: number, tx: number): boolean => {
+    // 1. Column safety: do not place on the same column as the target King (x === 4)
+    if (px === tx) return true;
+
+    // 2. Check if the target is within the piece's normal movement geometry
+    const grid = piece.range_geometry.normal_grid;
+    const dy = ty - py;
+    const dx = tx - px;
+    
+    // Relative coordinates in the 5x5 grid (centered at [2, 2])
+    const isSente = piece.owner === 'sente';
+    const relY = 2 + (isSente ? dy : -dy);
+    const relX = 2 + (isSente ? dx : -dx);
+
+    if (relY >= 0 && relY < 5 && relX >= 0 && relX < 5) {
+      const idx = relY * 5 + relX;
+      const char = grid[idx];
+      if (char === '1' || char === '2') {
+        return true;
+      }
+    }
+
+    // 3. For sliding pieces, check long range
+    const logic = (piece.logic_code || '').toLowerCase();
+    const desc = piece.description || '';
+    const isStraightLineDestruction = desc.includes('狙撃') || desc.includes('貫通') || desc.includes('直線上') || logic === 'linear_charge' || logic === 'remote_snipe';
+    
+    if (isStraightLineDestruction) {
+      if (py === ty || px === tx || Math.abs(py - ty) === Math.abs(px - tx)) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  // Helper to place pieces for one player
+  const placeForPlayer = (pieces: Piece[], rows: number[], opponentKingPos: [number, number]) => {
+    // Gather all empty positions in rows
+    let emptyCells: [number, number][] = [];
+    for (const r of rows) {
+      for (let c = 0; c < 9; c++) {
+        if (nextBoard[r][c] === null) {
+          emptyCells.push([r, c]);
+        }
+      }
+    }
+
+    // Shuffle emptyCells
+    for (let i = emptyCells.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [emptyCells[i], emptyCells[j]] = [emptyCells[j], emptyCells[i]];
+    }
+
+    // Place each piece
+    for (const piece of pieces) {
+      let placed = false;
+      for (let idx = 0; idx < emptyCells.length; idx++) {
+        const [py, px] = emptyCells[idx];
+        if (!canAttackTarget(piece, py, px, opponentKingPos[0], opponentKingPos[1])) {
+          nextBoard[py][px] = {
+            ...piece,
+            originalPosition: [py, px],
+            coolDownTurnsRemaining: 0,
+            hasMovedManually: true, // starts on board, so active from start
+            isRevealed: isStealthPiece(piece) ? false : true
+          };
+          emptyCells.splice(idx, 1);
+          placed = true;
+          break;
+        }
+      }
+
+      // Fallback
+      if (!placed && emptyCells.length > 0) {
+        const [py, px] = emptyCells[0];
+        nextBoard[py][px] = {
+          ...piece,
+          originalPosition: [py, px],
+          coolDownTurnsRemaining: 0,
+          hasMovedManually: true,
+          isRevealed: isStealthPiece(piece) ? false : true
+        };
+        emptyCells.shift();
+      }
+    }
+  };
+
+  // Place Sente custom pieces (rows 7, 8) avoiding Gote King
+  placeForPlayer(sentePieces, [7, 8], goteKingPos);
+
+  // Place Gote custom pieces (rows 0, 1) avoiding Sente King
+  placeForPlayer(gotePieces, [0, 1], senteKingPos);
+
+  return nextBoard;
 }
