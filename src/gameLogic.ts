@@ -953,7 +953,9 @@ export function executeMove(
   
   finalPiece.hasMovedManually = true;
   if (finalPiece.is_once_per_game) {
-    finalPiece.coolDownTurnsRemaining = 99; // Permanent debuff (restricted to charging_grid /十字1マス)
+    if (getPieceTrigger(finalPiece) !== 'ON_MOVE') {
+      finalPiece.coolDownTurnsRemaining = 99; // Permanent debuff (restricted to charging_grid /十字1マス)
+    }
   }
 
   const logs: Omit<GameLog, 'id' | 'timestamp'>[] = [];
@@ -2646,12 +2648,32 @@ export function applyAutomatedEffect(
       if (foundPiece) break;
     }
     if (foundPiece) {
-      if (isAutonomousPiece(foundPiece)) {
+      if (foundPiece.is_once_per_game) {
+        foundPiece.coolDownTurnsRemaining = 99;
+      } else if (isAutonomousPiece(foundPiece)) {
         foundPiece.cool_down_turns = 0;
         foundPiece.coolDownTurnsRemaining = 0;
       } else if (foundPiece.cool_down_turns > 0) {
         foundPiece.coolDownTurnsRemaining = foundPiece.cool_down_turns;
       }
+    }
+  }
+
+  // Set once per game cooldown if evaluated on move
+  if (piece.is_once_per_game && triggerType === 'ON_MOVE') {
+    let foundPiece: Piece | null = null;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const p = nextBoard[r][c];
+        if (p && p.id === piece.id) {
+          foundPiece = p;
+          break;
+        }
+      }
+      if (foundPiece) break;
+    }
+    if (foundPiece) {
+      foundPiece.coolDownTurnsRemaining = 99;
     }
   }
 
