@@ -38,63 +38,41 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   onStartGame,
 }) => {
   const [inputCode, setInputCode] = useState('');
+
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', width: '100%', padding: '12px', boxSizing: 'border-box' }}>
-      <div 
-        className="cyber-panel" 
-        style={{
-          background: 'var(--bg-panel)',
-          border: '1px solid rgba(244, 237, 226, 0.12)',
-          borderRadius: '2px',
-          padding: 'clamp(20px, 5vw, 40px) clamp(16px, 4vw, 30px)',
-          boxShadow: '0 20px 50px rgba(0, 0, 0, 0.8)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '24px',
-          fontFamily: 'var(--font-cyber)',
-        }}
-      >
+    <main className="min-h-screen bg-[#141414] text-neutral-200 font-sans flex flex-col items-center justify-center p-6 selection:bg-neutral-700 w-full">
+      
+      {/* Header */}
+      <header className="w-full max-w-2xl flex justify-between items-center border-b border-neutral-800/60 pb-4 mb-12">
+        <h1 className="font-serif text-lg tracking-[0.2em] text-white">AI駆動・拡張将棋</h1>
+        <span className="text-xs font-mono tracking-widest text-neutral-500">SAPIENS RUNTIME v3.0.0</span>
+      </header>
+
+      {/* Main card */}
+      <div className="w-full max-w-2xl bg-[#1A1A1A]/80 border border-neutral-800/[0.5] p-10 shadow-2xl backdrop-blur-md">
+        
         {/* Banner Title */}
-        <div style={{ textAlign: 'center', borderBottom: '1.5px solid rgba(244, 237, 226, 0.1)', paddingBottom: '20px' }}>
-          <h2 className="cyber-title" style={{ fontSize: 'clamp(20px, 5vw, 32px)', margin: '0 0 8px 0', letterSpacing: '0.15em', borderBottom: 'none', paddingBottom: 0 }}>
-            AI駆動・拡張将棋
-          </h2>
-          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0, fontFamily: 'var(--font-ui)', letterSpacing: '0.08em' }}>
-            ― 言葉から能力を創造し、9×9の戦場をハックせよ ―
-          </p>
+        <div className="text-center mb-12">
+          <h2 className="font-serif text-2xl tracking-[0.3em] text-white mb-2">AI駆動・拡張将棋</h2>
+          <p className="text-xs tracking-widest text-neutral-400 font-serif">― 言葉から能力を創造し、九×九の戦場をハックせよ ―</p>
         </div>
 
-        {/* Player Name Setup */}
-        <div>
-          <h3 style={{ fontSize: '15px', color: 'var(--color-gold)', marginBottom: '12px', fontWeight: 'bold', letterSpacing: '0.1em' }}>
-            ■ プレイヤー名設定
-          </h3>
-          <div style={{
-            background: 'rgba(255,255,255,0.02)',
-            border: '1px solid rgba(244, 237, 226, 0.08)',
-            borderRadius: '2px',
-            padding: '16px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
-          }}>
-            {/* Sente name */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              <label style={{
-                fontSize: '13px',
-                color: 'var(--color-shinku)',
-                fontFamily: 'var(--font-cyber)',
-                minWidth: '110px',
-                flexShrink: 0,
-              }}>
-                {onlineMode ? 'プレイヤー名' : (vsAiMode ? 'プレイヤー名' : 'プレイヤー1名')}
+        {/* Config Section */}
+        <section className="mb-10">
+          <h3 className="font-serif text-xs tracking-[0.2em] text-amber-200/70 uppercase mb-4 border-l border-amber-200/40 pl-3">設定</h3>
+          <div className="space-y-4 bg-black/20 p-6 border border-neutral-900">
+            
+            {/* Sente name input */}
+            <div className="flex items-center justify-between">
+              <label className="text-xs tracking-widest text-neutral-400">
+                {onlineMode ? "名（名乗り）" : (vsAiMode ? "名（先手名乗り）" : "名（先手名乗り）")}
               </label>
-              <input
-                type="text"
-                placeholder={onlineMode ? 'あなたの名前を入力' : (vsAiMode ? 'プレイヤーの名前を入力' : 'プレイヤー1の名前を入力')}
+              <input 
+                type="text" 
                 maxLength={16}
+                className="bg-transparent border-b border-neutral-800 focus:border-neutral-500 text-sm px-2 py-1 text-right text-white tracking-widest outline-none w-64 transition-colors font-serif"
                 value={playerNames.sente}
-                onChange={e => {
+                onChange={(e) => {
                   const val = e.target.value;
                   if (onlineMode) {
                     onSetPlayerNames({ sente: val, gote: val });
@@ -102,382 +80,232 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                     onSetPlayerNames({ ...playerNames, sente: val });
                   }
                 }}
-                style={{
-                  flex: 1,
-                  minWidth: '160px',
-                  background: 'rgba(26, 26, 26, 0.4)',
-                  border: '1px solid rgba(244, 237, 226, 0.15)',
-                  color: '#fff',
-                  padding: '8px 14px',
-                  borderRadius: '2px',
-                  fontSize: '14px',
-                  fontFamily: 'var(--font-ui)',
-                  outline: 'none',
-                  transition: 'border-color 0.2s',
-                }}
-                onFocus={e => (e.target.style.borderColor = 'var(--color-shinku)')}
-                onBlur={e => (e.target.style.borderColor = 'rgba(244, 237, 226, 0.15)')}
               />
             </div>
-            {/* Gote name (hidden in online mode) */}
-            {!onlineMode && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                <label style={{
-                  fontSize: '13px',
-                  color: 'var(--color-gold)',
-                  fontFamily: 'var(--font-cyber)',
-                  minWidth: '110px',
-                  flexShrink: 0,
-                }}>
-                  {vsAiMode ? 'AI名' : 'プレイヤー2名'}
-                </label>
-                {vsAiMode ? (
-                  <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontFamily: 'var(--font-ui)', padding: '8px 14px' }}>
-                    Gemini AI (封印済み)
-                  </span>
-                ) : (
-                  <input
-                    type="text"
-                    placeholder="プレイヤー2の名前を入力"
-                    maxLength={16}
-                    value={playerNames.gote}
-                    onChange={e => onSetPlayerNames({ ...playerNames, gote: e.target.value })}
-                    style={{
-                      flex: 1,
-                      minWidth: '160px',
-                      background: 'rgba(26, 26, 26, 0.4)',
-                      border: '1px solid rgba(244, 237, 226, 0.15)',
-                      color: '#fff',
-                      padding: '8px 14px',
-                      borderRadius: '2px',
-                      fontSize: '14px',
-                      fontFamily: 'var(--font-ui)',
-                      outline: 'none',
-                      transition: 'border-color 0.2s',
-                    }}
-                    onFocus={e => (e.target.style.borderColor = 'var(--color-gold)')}
-                    onBlur={e => (e.target.style.borderColor = 'rgba(244, 237, 226, 0.15)')}
-                  />
-                )}
-              </div>
-            )}
-            {onlineMode && (
-              <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0, fontFamily: 'var(--font-ui)' }}>
-                オンライン対戦の場合、相手の名前は相手が入室後に自動で取得されます。
-              </p>
-            )}
-          </div>
-        </div>
 
-        {/* Mode Selector */}
-        <div>
-          <h3 style={{ fontSize: '15px', color: 'var(--color-gold)', marginBottom: '12px', fontWeight: 'bold', letterSpacing: '0.1em' }}>
-            ■ 対局モード選択
-          </h3>
-          <div className="start-screen-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
-            {/* VS AI Mode */}
-            <div 
-              onClick={() => { onSetVsAiMode(true); onSetOnlineMode(false); }}
-              className="cyber-panel"
-              style={{
-                padding: '20px',
-                cursor: 'pointer',
-                borderRadius: '2px',
-                border: (vsAiMode && !onlineMode) ? '1.5px solid var(--color-gold)' : '1px solid rgba(244, 237, 226, 0.08)',
-                background: (vsAiMode && !onlineMode) ? 'rgba(244, 237, 226, 0.05)' : 'rgba(0, 0, 0, 0.2)',
-                transition: 'all 0.3s ease',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-                userSelect: 'none'
-              }}
-            >
-              <div style={{ fontSize: '17px', fontWeight: 'bold', color: (vsAiMode && !onlineMode) ? 'var(--color-gold)' : '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span>🤖</span> VS AI (1人対戦)
+            {/* Gote name input (only for Local 2P) */}
+            {!vsAiMode && !onlineMode && (
+              <div className="flex items-center justify-between pt-2 border-t border-neutral-900/30">
+                <label className="text-xs tracking-widest text-neutral-400">名（後手名乗り）</label>
+                <input 
+                  type="text" 
+                  maxLength={16}
+                  className="bg-transparent border-b border-neutral-800 focus:border-neutral-500 text-sm px-2 py-1 text-right text-white tracking-widest outline-none w-64 transition-colors font-serif"
+                  value={playerNames.gote}
+                  onChange={(e) => onSetPlayerNames({ ...playerNames, gote: e.target.value })}
+                />
               </div>
-              <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.4', fontFamily: 'var(--font-ui)' }}>
-                Gemini AIと対戦します。AIの特殊能力駒は、対局開始時に自動的にテーマに沿って動的コンパイルされます。
-              </p>
+            )}
+
+            {/* Opponent display */}
+            <div className="flex items-center justify-between pt-2 border-t border-neutral-900/30">
+              <span className="text-xs tracking-widest text-neutral-500">対局相手</span>
+              <span className="text-xs tracking-widest text-neutral-400 font-serif">
+                {onlineMode ? "オンライン対戦相手" : (vsAiMode ? "Gemini AI" : "盤上後手プレイヤー")}
+              </span>
             </div>
+
+          </div>
+        </section>
+
+        {/* Game Mode Selector */}
+        <section className="mb-10">
+          <h3 className="font-serif text-xs tracking-[0.2em] text-amber-200/70 uppercase mb-4 border-l border-amber-200/40 pl-3">対局選択</h3>
+          <div className="grid grid-cols-3 gap-4">
+            
+            {/* VS AI Mode */}
+            <button 
+              onClick={() => { onSetVsAiMode(true); onSetOnlineMode(false); }}
+              className={`group relative border p-6 text-left transition-all duration-300 bg-neutral-900/20 cursor-pointer ${
+                (vsAiMode && !onlineMode) 
+                  ? "border-amber-200/60 bg-amber-200/[0.02]" 
+                  : "border-neutral-800 hover:border-neutral-500"
+              }`}
+            >
+              <div className={`font-serif text-sm tracking-widest transition-colors mb-2 ${
+                (vsAiMode && !onlineMode) ? "text-amber-200" : "text-white group-hover:text-amber-200"
+              }`}>一人対局</div>
+              <p className="text-[10px] text-neutral-400 leading-relaxed font-serif">人工知能と対峙します。言葉から紡がれたカスタム駒が動的にコンパイルされます。</p>
+            </button>
 
             {/* VS Player Mode */}
-            <div 
+            <button 
               onClick={() => { onSetVsAiMode(false); onSetOnlineMode(false); }}
-              className="cyber-panel"
-              style={{
-                padding: '20px',
-                cursor: 'pointer',
-                borderRadius: '2px',
-                border: (!vsAiMode && !onlineMode) ? '1.5px solid var(--color-gold)' : '1px solid rgba(244, 237, 226, 0.08)',
-                background: (!vsAiMode && !onlineMode) ? 'rgba(244, 237, 226, 0.05)' : 'rgba(0, 0, 0, 0.2)',
-                transition: 'all 0.3s ease',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-                userSelect: 'none'
-              }}
+              className={`group relative border p-6 text-left transition-all duration-300 bg-neutral-900/20 cursor-pointer ${
+                (!vsAiMode && !onlineMode) 
+                  ? "border-amber-200/60 bg-amber-200/[0.02]" 
+                  : "border-neutral-800 hover:border-neutral-500"
+              }`}
             >
-              <div style={{ fontSize: '17px', fontWeight: 'bold', color: (!vsAiMode && !onlineMode) ? 'var(--color-gold)' : '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span>⚔️</span> VS PLAYER (2人対戦)
-              </div>
-              <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.4', fontFamily: 'var(--font-ui)' }}>
-                ローカル対面対戦（パス＆プレイ）を行います。1台のデバイスを交互操作し、カスタム駒を3枚ずつ構築します。
-              </p>
-            </div>
+              <div className={`font-serif text-sm tracking-widest transition-colors mb-2 ${
+                (!vsAiMode && !onlineMode) ? "text-amber-200" : "text-white group-hover:text-amber-200"
+              }`}>二人対局</div>
+              <p className="text-[10px] text-neutral-400 leading-relaxed font-serif">端末を交互に操作するローカル対戦。互いに三枚の切り札を懐に忍ばせます。</p>
+            </button>
 
             {/* Online Match Mode */}
-            <div 
+            <button 
               onClick={() => { onSetVsAiMode(false); onSetOnlineMode(true); }}
-              className="cyber-panel"
-              style={{
-                padding: '20px',
-                cursor: 'pointer',
-                borderRadius: '2px',
-                border: onlineMode ? '1.5px solid var(--color-gold)' : '1px solid rgba(244, 237, 226, 0.08)',
-                background: onlineMode ? 'rgba(244, 237, 226, 0.05)' : 'rgba(0, 0, 0, 0.2)',
-                transition: 'all 0.3s ease',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-                userSelect: 'none'
-              }}
+              className={`group relative border p-6 text-left transition-all duration-300 bg-neutral-900/20 cursor-pointer ${
+                onlineMode 
+                  ? "border-amber-200/60 bg-amber-200/[0.02]" 
+                  : "border-neutral-800 hover:border-neutral-500"
+              }`}
             >
-              <div style={{ fontSize: '17px', fontWeight: 'bold', color: onlineMode ? 'var(--color-gold)' : '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span>🌐</span> ONLINE (オンライン)
-              </div>
-              <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.4', fontFamily: 'var(--font-ui)' }}>
-                オンラインで異なるデバイス間の対戦を行います。6桁の部屋コードを発行・入力して離れた相手とマッチングし、リアルタイムに対戦します。
-              </p>
-            </div>
+              <div className={`font-serif text-sm tracking-widest transition-colors mb-2 ${
+                onlineMode ? "text-amber-200" : "text-white group-hover:text-amber-200"
+              }`}>遠隔対局</div>
+              <p className="text-[10px] text-neutral-400 leading-relaxed font-serif">合言葉による部屋作成、または未知の棋士とのランダムマッチングを行います。</p>
+            </button>
+
           </div>
-        </div>
+        </section>
 
+        {/* Online Room Section (Visible only when Online Mode is active) */}
         {onlineMode && (
-          <div 
-            className="cyber-panel"
-            style={{
-              padding: '24px',
-              background: 'rgba(255, 255, 255, 0.01)',
-              border: '1px solid rgba(244, 237, 226, 0.15)',
-              borderRadius: '2px',
-              marginTop: '10px'
-            }}
-          >
-            <h4 style={{ color: 'var(--color-gold)', margin: '0 0 16px 0', fontSize: '14px', fontFamily: 'var(--font-cyber)', fontWeight: 'bold' }}>
-              ■ オンライン対局室の選択
-            </h4>
-            
-            {isSearchingMatch ? (
-              <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                <div style={{
-                  fontSize: '18px',
-                  fontWeight: 'bold',
-                  color: 'var(--color-gold)',
-                  margin: '12px 0',
-                }}>
-                  🔍 対戦相手を探しています…
+          <section className="mb-10">
+            <h3 className="font-serif text-xs tracking-[0.2em] text-amber-200/70 uppercase mb-4 border-l border-amber-200/40 pl-3">
+              遠隔対局設定
+            </h3>
+            <div className="bg-black/20 p-6 border border-neutral-900 space-y-6">
+              {isSearchingMatch ? (
+                <div className="text-center py-4">
+                  <div className="text-sm tracking-widest text-amber-200/80 font-serif mb-4">
+                    対戦相手を探索中
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onCancelMatchmaking}
+                    className="border border-red-900/40 hover:border-red-400 bg-red-950/10 text-red-400 text-xs tracking-widest px-6 py-2 transition-all duration-300 cursor-pointer font-serif"
+                  >
+                    探索中止
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={onCancelMatchmaking}
-                  className="cyber-btn"
-                  style={{
-                    padding: '8px 20px',
-                    borderColor: 'var(--color-shinku)',
-                    color: 'var(--color-shinku)',
-                    background: 'rgba(158, 42, 43, 0.05)',
-                    marginTop: '15px'
-                  }}
-                >
-                  キャンセル
-                </button>
-              </div>
-            ) : isWaitingForOpponent ? (
-              <div style={{ textAlign: 'center', padding: '10px 0' }}>
-                {isRandomMatch ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ fontSize: '14px', color: 'var(--color-gold)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
-                      🌐 対戦相手を探しています… (自動マッチング)
-                    </div>
-                    {/* Dots pulse animation */}
-                    <div style={{
-                      display: 'flex',
-                      gap: '6px',
-                      justifyContent: 'center',
-                      margin: '15px 0'
-                    }}>
-                      <span className="dot-pulse-1" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-gold)' }}></span>
-                      <span className="dot-pulse-2" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-gold)' }}></span>
-                      <span className="dot-pulse-3" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-gold)' }}></span>
-                    </div>
-                    {roomCode && (
-                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                        (管理コード: {roomCode})
+              ) : isWaitingForOpponent ? (
+                <div className="text-center py-4">
+                  {isRandomMatch ? (
+                    <div className="space-y-4">
+                      <div className="text-sm tracking-widest text-amber-200/80 font-serif">
+                        自動マッチング対局の接続待機中
                       </div>
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                      対戦相手へこのコードを伝えてください
+                      <div className="flex gap-2 justify-center">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-200/50 animate-pulse"></span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-200/50 animate-pulse [animation-delay:0.2s]"></span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-200/50 animate-pulse [animation-delay:0.4s]"></span>
+                      </div>
                     </div>
-                    <div style={{
-                      fontSize: '36px',
-                      fontWeight: 'bold',
-                      color: 'var(--color-gold)',
-                      letterSpacing: '0.2em',
-                      margin: '12px 0',
-                    }}>
-                      {roomCode}
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="text-xs text-neutral-400 tracking-widest font-serif">
+                        対戦相手に下記コードを共有してください
+                      </div>
+                      <div className="text-3xl font-bold tracking-[0.25em] text-amber-200 font-mono py-2">
+                        {roomCode}
+                      </div>
                     </div>
-                  </>
-                )}
-                <div style={{ fontSize: '13px', color: 'var(--color-gold)', marginBottom: '15px' }}>
-                  {isRandomMatch 
-                    ? '⏳ 他のプレイヤーが「誰でもランダム対戦」を開始すると自動で対局が開始されます。'
-                    : '⏳ 接続を待機中… (対戦相手が参加すると自動で対局室に入ります)'
-                  }
-                </div>
-                <button
-                  type="button"
-                  onClick={onCancelMatchmaking}
-                  className="cyber-btn"
-                  style={{
-                    padding: '8px 20px',
-                    borderColor: 'var(--color-shinku)',
-                    color: 'var(--color-shinku)',
-                    background: 'rgba(158, 42, 43, 0.05)'
-                  }}
-                >
-                  {isRandomMatch ? 'マッチングをキャンセル' : '待機をキャンセル'}
-                </button>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                {/* Option 0: Random Matchmaking */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '2px', borderLeft: '3px solid var(--color-gold)' }}>
-                  <div style={{ textAlign: 'left', flex: 1, marginRight: '20px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>誰でもランダム対戦</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>待機中の他のプレイヤーと自動的にマッチングして対戦します。</div>
+                  )}
+                  <div className="text-[11px] text-neutral-500 tracking-wider font-serif my-4">
+                    {isRandomMatch
+                      ? "他者がランダム対局を開始すると自動で接続されます。"
+                      : "対局相手が参加すると自動で対局室に入ります。"}
                   </div>
                   <button
                     type="button"
-                    onClick={onRandomMatch}
-                    className="cyber-btn"
-                    style={{ padding: '8px 20px', borderColor: 'var(--color-gold)', color: 'var(--color-gold)', background: 'rgba(212,175,55,0.05)' }}
+                    onClick={onCancelMatchmaking}
+                    className="border border-red-900/40 hover:border-red-400 bg-red-950/10 text-red-400 text-xs tracking-widest px-6 py-2 transition-all duration-300 cursor-pointer font-serif"
                   >
-                    対戦相手を探す
+                    待機中止
                   </button>
                 </div>
-
-                {/* Option 1: Create Room */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '2px', borderLeft: '3px solid var(--color-shinku)' }}>
-                  <div style={{ textAlign: 'left', flex: 1, marginRight: '20px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>合言葉対局室を作成する (プライベート)</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>新しい対局部屋を作成し、発行される6桁のコードを対戦相手に教えます。</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={onCreateRoom}
-                    className="cyber-btn"
-                    style={{ padding: '8px 20px', borderColor: 'var(--color-shinku)', color: 'var(--color-shinku)', background: 'rgba(158, 42, 43, 0.05)' }}
-                  >
-                    部屋を作る
-                  </button>
-                </div>
-
-                {/* Option 2: Join Room */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '2px', borderLeft: '3px solid var(--color-gold)' }}>
-                  <div style={{ flex: 1, marginRight: '20px', textAlign: 'left' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>合言葉対局室に入る (プライベート)</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>対戦相手が作成した6桁の部屋コードを入力して接続します。</div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <input
-                      type="text"
-                      placeholder="6桁のコード"
-                      value={inputCode}
-                      onChange={(e) => setInputCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
-                      style={{
-                        width: '120px',
-                        background: 'rgba(0,0,0,0.5)',
-                        border: '1px solid rgba(244, 237, 226, 0.2)',
-                        color: '#fff',
-                        padding: '8px 12px',
-                        borderRadius: '2px',
-                        fontSize: '14px',
-                        textAlign: 'center',
-                        fontFamily: 'monospace',
-                        letterSpacing: '0.1em'
-                      }}
-                    />
+              ) : (
+                <div className="space-y-6">
+                  {/* Option 0: Random */}
+                  <div className="flex items-center justify-between border-b border-neutral-900 pb-4">
+                    <div className="text-left">
+                      <div className="text-xs tracking-widest text-white">ランダム対局</div>
+                      <div className="text-[10px] text-neutral-400 tracking-wider mt-1">待機中の他のプレイヤーと自動的にマッチングして開始します。</div>
+                    </div>
                     <button
                       type="button"
-                      disabled={inputCode.length !== 6}
-                      onClick={() => onJoinRoom(inputCode)}
-                      className="cyber-btn"
-                      style={{
-                        padding: '8px 20px',
-                        borderColor: inputCode.length === 6 ? 'var(--color-gold)' : 'var(--text-muted)',
-                        color: inputCode.length === 6 ? 'var(--color-gold)' : 'var(--text-muted)',
-                        background: inputCode.length === 6 ? 'rgba(212,175,55,0.05)' : 'transparent',
-                        cursor: inputCode.length === 6 ? 'pointer' : 'not-allowed'
-                      }}
+                      onClick={onRandomMatch}
+                      className="border border-neutral-800 hover:border-neutral-400 text-xs tracking-widest px-4 py-2 text-white bg-neutral-900/40 transition-colors duration-300 cursor-pointer font-serif"
                     >
-                      参戦する
+                      対局相手を探索
                     </button>
                   </div>
-                </div>
-              </div>
-            )}
 
-            {matchmakingError && (
-              <div style={{ color: 'var(--color-shinku)', fontSize: '12px', marginTop: '12px', textAlign: 'center' }}>
-                ⚠️ エラー: {matchmakingError}
-              </div>
-            )}
-          </div>
+                  {/* Option 1: Create Room */}
+                  <div className="flex items-center justify-between border-b border-neutral-900 pb-4">
+                    <div className="text-left">
+                      <div className="text-xs tracking-widest text-white">対局室作成</div>
+                      <div className="text-[10px] text-neutral-400 tracking-wider mt-1">新規の対局部屋を作成し、入室用コードを発行します。</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onCreateRoom}
+                      className="border border-neutral-800 hover:border-neutral-400 text-xs tracking-widest px-4 py-2 text-white bg-neutral-900/40 transition-colors duration-300 cursor-pointer font-serif"
+                    >
+                      部屋を作成
+                    </button>
+                  </div>
+
+                  {/* Option 2: Join Room */}
+                  <div className="flex items-center justify-between">
+                    <div className="text-left">
+                      <div className="text-xs tracking-widest text-white">対局室入室</div>
+                      <div className="text-[10px] text-neutral-400 tracking-wider mt-1">発行された6桁の部屋コードを入力して参戦します。</div>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="部屋コード"
+                        value={inputCode}
+                        onChange={(e) => setInputCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                        className="bg-transparent border border-neutral-800 text-xs px-3 py-2 text-center text-white tracking-widest outline-none w-28 transition-colors focus:border-neutral-500 font-mono"
+                      />
+                      <button
+                        type="button"
+                        disabled={inputCode.length !== 6}
+                        onClick={() => onJoinRoom(inputCode)}
+                        className={`text-xs tracking-widest px-4 py-2 border transition-all duration-300 font-serif ${
+                          inputCode.length === 6
+                            ? "border-amber-200/50 hover:border-amber-200 text-amber-200 bg-amber-200/5 cursor-pointer"
+                            : "border-neutral-900 text-neutral-600 cursor-not-allowed"
+                        }`}
+                      >
+                        入室
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {matchmakingError && (
+                <div className="text-xs text-red-400 text-center tracking-widest pt-2 font-serif">
+                  エラー: {matchmakingError}
+                </div>
+              )}
+            </div>
+          </section>
         )}
 
         {/* Shogi Rules and Instructions */}
-        <div style={{ borderTop: '1.5px solid rgba(244, 237, 226, 0.1)', paddingTop: '20px' }}>
-          <h3 style={{ fontSize: '15px', color: 'var(--color-gold)', marginBottom: '12px', fontWeight: 'bold', letterSpacing: '0.1em' }}>
-            ■ 拡張ルール説明
-          </h3>
-          <div 
-            style={{ 
-              fontSize: '11.5px', 
-              color: 'var(--text-secondary)', 
-              fontFamily: 'var(--font-ui)', 
-              lineHeight: '1.6', 
-              display: 'flex', 
-              flexDirection: 'column', 
-              gap: '6px',
-              backgroundColor: 'rgba(0,0,0,0.2)',
-              padding: '12px',
-              borderRadius: '2px',
-              border: '1px solid rgba(244, 237, 226, 0.05)'
-            }}
-          >
-            <div><strong>1. 概念創造:</strong> 対局前に任意の単語を入力します。AIがその意味を分析し、オリジナルの移動力・HP・攻撃力・秘奥義を持つ「カスタム駒」をゼロから構築します（2人対戦時はプレイヤー1が作り終えた後、デバイスをプレイヤー2に渡してプレイヤー2が駒を作成します）。</div>
-            <div><strong>2. 盤面配置:</strong> 作成された3枚のカスタム駒は、自陣に自動的に配置されます（歩兵と王将も最初から配置済み）。</div>
-            <div><strong>3. 戦術オプション:</strong> 対局中、駒の持つ「一度限りの秘奥義」（タイムリープ、洗脳、コピー等）を使用できます。発動には手番開始時に蓄積される「気力（MP）」を消費します。</div>
-            <div><strong>4. ダメージと撃破:</strong> 各駒にはHPが設定されており、攻撃されるとHPが減少します。HPが0になると撃破され、相手の持ち駒となります。</div>
+        <section className="mb-10">
+          <h3 className="font-serif text-xs tracking-[0.2em] text-amber-200/70 uppercase mb-4 border-l border-amber-200/40 pl-3">拡張規則説明</h3>
+          <div className="text-[11px] text-neutral-400 space-y-3 leading-relaxed font-serif pl-3">
+            <p>一、 任意の単語から、独自の足回りと自動能力を宿した【カスタム駒】が手札に創造される。</p>
+            <p>二、 カスタム駒は自陣の空きマスへドロップ（召喚）し、次手以降に動かすことで能力が全自動執行される。</p>
+            <p>三、 強大すぎる能力は一ゲームに一回の切り札となり、使用後は前後左右一マスの充填状態へ風化する。</p>
           </div>
-        </div>
+        </section>
 
         {/* Start Game Action */}
         {!onlineMode && (
-          <div style={{ textAlign: 'center', borderTop: '1.5px solid rgba(244, 237, 226, 0.1)', paddingTop: '25px', marginTop: '10px' }}>
+          <div className="text-center pt-8 border-t border-neutral-900">
             <button
               type="button"
               onClick={onStartGame}
-              className="cyber-btn cyber-btn-yellow"
-              style={{ 
-                padding: '15px 50px', 
-                fontSize: '18px', 
-                fontWeight: 'bold',
-              }}
+              className="border border-amber-200/60 hover:border-amber-200 bg-amber-200/5 hover:bg-amber-200/10 text-amber-200 text-sm font-serif tracking-[0.25em] px-12 py-4 transition-all duration-300 cursor-pointer shadow-lg"
             >
               戦場へ挙兵する
             </button>
@@ -485,6 +313,6 @@ export const StartScreen: React.FC<StartScreenProps> = ({
         )}
 
       </div>
-    </div>
+    </main>
   );
 };
