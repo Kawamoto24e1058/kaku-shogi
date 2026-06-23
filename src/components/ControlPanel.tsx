@@ -25,6 +25,7 @@ interface ControlPanelProps {
   selectedSharedPiece: { piece: Piece; index: number } | null;
   onSharedPieceClick: (piece: Piece, index: number) => void;
   onHoverPiece?: (piece: Piece | null) => void;
+  isResurrectActive?: boolean;
 }
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -46,6 +47,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   selectedSharedPiece,
   onSharedPieceClick,
   onHoverPiece,
+  isResurrectActive,
 }) => {
   const triggerEvent = selectedPiece ? getPieceTrigger(selectedPiece) : 'ALWAYS';
 
@@ -205,29 +207,52 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           </div>
         </div>
 
-        {/* Shared Pool */}
+        {/* Graveyard (墓場) */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          <div style={{ fontSize: '10px', color: 'var(--neon-pink)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold' }}>
-            🤝 共有プール
+          <div style={{
+            fontSize: '10px',
+            color: isResurrectActive ? 'var(--neon-cyan)' : '#888',
+            fontFamily: 'var(--font-cyber)',
+            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            animation: isResurrectActive ? 'pulseGlow 1.5s infinite alternate' : 'none'
+          }}>
+            🪦 墓場 (Graveyard) {isResurrectActive && <span style={{ color: 'var(--neon-yellow)' }}>[蘇生対象を選択]</span>}
           </div>
-          <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', minHeight: '34px', padding: '6px', background: 'rgba(255,0,127,0.02)', border: '1px solid rgba(255,0,127,0.1)', borderRadius: '4px' }}>
+          <div style={{
+            display: 'flex',
+            gap: '5px',
+            flexWrap: 'wrap',
+            minHeight: '34px',
+            padding: '6px',
+            background: isResurrectActive ? 'rgba(0,243,255,0.05)' : 'rgba(255,255,255,0.02)',
+            border: `1px solid ${isResurrectActive ? 'var(--neon-cyan)' : 'rgba(255,255,255,0.1)'}`,
+            borderRadius: '4px',
+            transition: 'all 0.3s ease',
+            boxShadow: isResurrectActive ? '0 0 10px rgba(0, 243, 255, 0.2)' : 'none'
+          }}>
             {sharedPieces.map((piece, idx) => {
               const isSel = selectedSharedPiece?.piece.id === piece.id && selectedSharedPiece?.index === idx;
               return (
                 <div
                   key={piece.id}
-                  onClick={() => onSharedPieceClick(piece, idx)}
+                  onClick={() => isResurrectActive && onSharedPieceClick(piece, idx)}
                   onMouseEnter={() => onHoverPiece?.(piece)}
                   onMouseLeave={() => onHoverPiece?.(null)}
                   style={{
                     padding: '3px 8px',
                     borderRadius: '4px',
-                    border: `1px solid ${isSel ? 'var(--neon-pink)' : 'rgba(255,0,127,0.25)'}`,
-                    background: isSel ? 'rgba(255,0,127,0.2)' : 'rgba(255,0,127,0.05)',
-                    cursor: phase === 'playing' ? 'pointer' : 'default',
+                    border: `1px solid ${isSel ? 'var(--neon-cyan)' : (isResurrectActive ? 'rgba(0,243,255,0.3)' : 'rgba(255,255,255,0.15)')}`,
+                    background: isSel ? 'rgba(0,243,255,0.2)' : (isResurrectActive ? 'rgba(0,243,255,0.05)' : 'rgba(255,255,255,0.03)'),
+                    cursor: isResurrectActive ? 'pointer' : 'not-allowed',
+                    opacity: isResurrectActive ? 1 : 0.6,
                     fontSize: '10px',
-                    color: '#fff',
-                    userSelect: 'none'
+                    color: isResurrectActive ? '#fff' : '#aaa',
+                    userSelect: 'none',
+                    transition: 'all 0.2s ease',
+                    boxShadow: isSel ? '0 0 8px rgba(0,243,255,0.5)' : 'none'
                   }}
                   title={`もとの所有者: ${piece.owner === 'sente' ? (playerNames.sente || 'プレイヤー1') : (playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2'))}`}
                 >

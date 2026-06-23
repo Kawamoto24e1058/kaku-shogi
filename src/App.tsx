@@ -118,7 +118,7 @@ export const App: React.FC = () => {
   const [suspendedAbility, setSuspendedAbility] = useState<{
     source: [number, number];
     targets: [number, number][];
-    type: 'transform' | 'mind_control' | 'swap';
+    type: 'transform' | 'mind_control' | 'swap' | 'resurrect';
     triggerType: 'ON_MOVE' | 'TURN_START';
     fromPosition?: [number, number];
     board: Board;
@@ -294,6 +294,22 @@ export const App: React.FC = () => {
       }
     }
 
+    let nextShared = [...state.sharedPieces];
+    if (res.destroyedPieces && res.destroyedPieces.length > 0) {
+      for (const p of res.destroyedPieces) {
+        if (p && !p.isKing) {
+          if (!nextShared.some(s => s.id === p.id)) {
+            nextShared.push({
+              ...p,
+              isPromoted: false,
+              coolDownTurnsRemaining: 0,
+              isRevealed: true
+            });
+          }
+        }
+      }
+    }
+
     const nextDestroyedPieces = [...state.destroyedPieces, ...(res.destroyedPieces || [])];
     let finalBoard = res.board;
     const finalLogs = [...state.logs, ...res.logs.map(l => ({ ...l, id: generateId(), timestamp: new Date().toLocaleTimeString() }))];
@@ -301,7 +317,7 @@ export const App: React.FC = () => {
     // Check for ON_MOVE automatic trigger
     const landingPiece = finalBoard[y][x];
     if (landingPiece && landingPiece.owner === state.turn && isTriggerMatching(landingPiece, 'ON_MOVE') && landingPiece.coolDownTurnsRemaining === 0) {
-      const targetsInfo = getAbilityTargets(finalBoard, [y, x], state.turn);
+      const targetsInfo = getAbilityTargets(finalBoard, [y, x], state.turn, nextShared);
       if (targetsInfo && isPieceOwnerHuman(state.turn)) {
         // Suspend!
         setSuspendedAbility({
@@ -342,12 +358,16 @@ export const App: React.FC = () => {
           nextCaptured[state.turn],
           [sy, sx],
           undefined,
-          graveyardCandidates
+          graveyardCandidates,
+          nextShared
         );
         if (effectRes.triggered || effectRes.logs.length > 0) {
           if (effectRes.triggered) {
             finalBoard = effectRes.board;
             nextCaptured[state.turn] = effectRes.capturedPieces;
+            if (effectRes.graveyard) {
+              nextShared = effectRes.graveyard;
+            }
             setScreenShake(true);
             setTimeout(() => setScreenShake(false), 300);
           }
@@ -433,7 +453,7 @@ export const App: React.FC = () => {
           'finished',
           finalWinner,
           nextCaptured,
-          state.sharedPieces,
+          nextShared,
           state.customDecks,
           nextDestroyedPieces,
           finalLogs
@@ -443,7 +463,7 @@ export const App: React.FC = () => {
       finalizeTurn(
         finalBoard,
         nextCaptured,
-        state.sharedPieces,
+        nextShared,
         finalLogs,
         { promotionPending: null },
         state.customDecks,
@@ -966,6 +986,7 @@ export const App: React.FC = () => {
     let gameOver = false;
     let winner: Player | null = null;
     let currentDestroyedPieces = [...nextDestroyedPieces];
+    let currentShared = [...nextShared];
 
     // Scan original king positions in nextBoard
     let prevSenteKingPos: [number, number] | null = null;
@@ -1011,6 +1032,18 @@ export const App: React.FC = () => {
 
         if (moveRes.destroyedPieces && moveRes.destroyedPieces.length > 0) {
           currentDestroyedPieces.push(...moveRes.destroyedPieces);
+          for (const p of moveRes.destroyedPieces) {
+            if (p && !p.isKing) {
+              if (!currentShared.some(s => s.id === p.id)) {
+                currentShared.push({
+                  ...p,
+                  isPromoted: false,
+                  coolDownTurnsRemaining: 0,
+                  isRevealed: true
+                });
+              }
+            }
+          }
         }
 
         const capturedList: Piece[] = [];
@@ -1149,6 +1182,13 @@ export const App: React.FC = () => {
             updated.deathCountdown -= 1;
             if (updated.deathCountdown === 0) {
               died = true;
+              currentDestroyedPieces.push(updated);
+              currentShared.push({
+                ...updated,
+                isPromoted: false,
+                coolDownTurnsRemaining: 0,
+                isRevealed: true
+              });
               updatedLogsList.push({
                 id: generateId(),
                 timestamp: new Date().toLocaleTimeString(),
@@ -1181,7 +1221,7 @@ export const App: React.FC = () => {
       for (let c = 0; c < BOARD_SIZE; c++) {
         const p = currentBoard[r][c];
         if (p && p.owner === nextPlayer && isTriggerMatching(p, 'TURN_START') && p.coolDownTurnsRemaining === 0) {
-          const targetsInfo = getAbilityTargets(currentBoard, [r, c], nextPlayer);
+          const targetsInfo = getAbilityTargets(currentBoard, [r, c], nextPlayer, currentShared);
           if (targetsInfo && isPieceOwnerHuman(nextPlayer)) {
             // Suspend turn start!
             setSuspendedAbility({
@@ -1195,7 +1235,8 @@ export const App: React.FC = () => {
               customStateUpdates: {
                 ...customStateUpdates,
                 customDecks: nextCustomDecks,
-                destroyedPieces: currentDestroyedPieces
+                destroyedPieces: currentDestroyedPieces,
+                sharedPieces: currentShared
               }
             });
 
@@ -1205,6 +1246,7 @@ export const App: React.FC = () => {
               capturedPieces: currentCaptured,
               customDecks: nextCustomDecks,
               destroyedPieces: currentDestroyedPieces,
+              sharedPieces: currentShared,
               turn: nextPlayer, // SWITCH TURN NOW!
               selectedCell: null,
               activeAbilityMode: true,
@@ -1227,12 +1269,16 @@ export const App: React.FC = () => {
               currentCaptured[nextPlayer],
               undefined,
               undefined,
-              graveyardCandidates
+              graveyardCandidates,
+              currentShared
             );
             if (effectRes.triggered || effectRes.logs.length > 0) {
               if (effectRes.triggered) {
                 currentBoard = effectRes.board;
                 currentCaptured[nextPlayer] = effectRes.capturedPieces;
+                if (effectRes.graveyard) {
+                  currentShared = effectRes.graveyard;
+                }
               }
               currentLogs.push(...effectRes.logs.map(l => ({
                 ...l,
@@ -1290,7 +1336,7 @@ export const App: React.FC = () => {
         capturedPieces: currentCaptured,
         customDecks: nextCustomDecks,
         destroyedPieces: currentDestroyedPieces,
-        sharedPieces: nextShared,
+        sharedPieces: currentShared,
         selectedCell: null,
         activeAbilityMode: false,
         activeAbilitySource: null,
@@ -1311,7 +1357,7 @@ export const App: React.FC = () => {
           'finished',
           winner,
           currentCaptured,
-          nextShared,
+          currentShared,
           nextCustomDecks,
           currentDestroyedPieces,
           currentLogs
@@ -1341,7 +1387,7 @@ export const App: React.FC = () => {
         capturedPieces: currentCaptured,
         customDecks: nextCustomDecks,
         destroyedPieces: currentDestroyedPieces,
-        sharedPieces: nextShared,
+        sharedPieces: currentShared,
         turn: nextPlayer,
         selectedCell: null,
         activeAbilityMode: false,
@@ -1371,6 +1417,9 @@ export const App: React.FC = () => {
 
   const resumeAbilitySelection = (ty: number, tx: number) => {
     if (!suspendedAbility) return;
+    if (suspendedAbility.type === 'resurrect' && !selectedSharedPiece) {
+      return; // Must select a graveyard piece first
+    }
 
     const { source, triggerType, fromPosition, board, capturedPieces, logs, customStateUpdates } = suspendedAbility;
     const [sy, sx] = source;
@@ -1380,6 +1429,7 @@ export const App: React.FC = () => {
     let finalBoard = board;
     const nextCaptured = { ...capturedPieces };
     const finalLogs = [...logs];
+    let nextShared = [...state.sharedPieces];
 
     const effectRes = applyAutomatedEffect(
       finalBoard,
@@ -1388,13 +1438,19 @@ export const App: React.FC = () => {
       activePlayer,
       capturedPieces[activePlayer],
       fromPosition,
-      [ty, tx]
+      [ty, tx],
+      undefined,
+      state.sharedPieces,
+      selectedSharedPiece?.piece
     );
 
     if (effectRes.triggered || effectRes.logs.length > 0) {
       if (effectRes.triggered) {
         finalBoard = effectRes.board;
         nextCaptured[activePlayer] = effectRes.capturedPieces;
+        if (effectRes.graveyard) {
+          nextShared = effectRes.graveyard;
+        }
         setScreenShake(true);
         setTimeout(() => setScreenShake(false), 300);
       }
@@ -1448,7 +1504,7 @@ export const App: React.FC = () => {
             'finished',
             finalWinner,
             nextCaptured,
-            state.sharedPieces,
+            nextShared,
             undefined,
             undefined,
             finalLogs
@@ -1458,11 +1514,12 @@ export const App: React.FC = () => {
         finalizeTurn(
           finalBoard,
           nextCaptured,
-          state.sharedPieces,
+          nextShared,
           finalLogs,
           { promotionPending: null }
         );
       }
+      setSelectedSharedPiece(null);
     } else if (triggerType === 'TURN_START') {
       let currentBoard = finalBoard;
       const currentCaptured = { ...nextCaptured };
@@ -1475,7 +1532,7 @@ export const App: React.FC = () => {
         for (let c = 0; c < BOARD_SIZE; c++) {
           const p = currentBoard[r][c];
           if (p && p.owner === activePlayer && isTriggerMatching(p, 'TURN_START') && p.coolDownTurnsRemaining === 0) {
-            const targetsInfo = getAbilityTargets(currentBoard, [r, c], activePlayer);
+            const targetsInfo = getAbilityTargets(currentBoard, [r, c], activePlayer, nextShared);
             if (targetsInfo && isPieceOwnerHuman(activePlayer)) {
               setSuspendedAbility({
                 source: [r, c],
@@ -1485,13 +1542,17 @@ export const App: React.FC = () => {
                 board: currentBoard,
                 capturedPieces: currentCaptured,
                 logs: currentLogs,
-                customStateUpdates
+                customStateUpdates: {
+                  ...customStateUpdates,
+                  sharedPieces: nextShared
+                }
               });
 
               setState(prev => ({
                 ...prev,
                 board: currentBoard,
                 capturedPieces: currentCaptured,
+                sharedPieces: nextShared,
                 turn: activePlayer,
                 selectedCell: null,
                 activeAbilityMode: true,
@@ -1502,11 +1563,24 @@ export const App: React.FC = () => {
               }));
               return;
             } else {
-              const effectRes = applyAutomatedEffect(currentBoard, [r, c], 'TURN_START', activePlayer, currentCaptured[activePlayer]);
+              const effectRes = applyAutomatedEffect(
+                currentBoard,
+                [r, c],
+                'TURN_START',
+                activePlayer,
+                currentCaptured[activePlayer],
+                undefined,
+                undefined,
+                undefined,
+                nextShared
+              );
               if (effectRes.triggered || effectRes.logs.length > 0) {
                 if (effectRes.triggered) {
                   currentBoard = effectRes.board;
                   currentCaptured[activePlayer] = effectRes.capturedPieces;
+                  if (effectRes.graveyard) {
+                    nextShared = effectRes.graveyard;
+                  }
                 }
                 currentLogs.push(...effectRes.logs.map(l => ({
                   ...l,
@@ -1561,7 +1635,7 @@ export const App: React.FC = () => {
             'finished',
             winner,
             currentCaptured,
-            state.sharedPieces,
+            nextShared,
             undefined,
             undefined,
             currentLogs
@@ -1589,6 +1663,7 @@ export const App: React.FC = () => {
           ...prev,
           board: currentBoard,
           capturedPieces: currentCaptured,
+          sharedPieces: nextShared,
           selectedCell: null,
           activeAbilityMode: false,
           activeAbilitySource: null,
@@ -1599,6 +1674,7 @@ export const App: React.FC = () => {
         saveHistorySnapshot(currentBoard, currentCaptured, activePlayer, currentLogs);
         return nextState;
       });
+      setSelectedSharedPiece(null);
 
       setValidMoves([]);
 
@@ -1920,6 +1996,7 @@ export const App: React.FC = () => {
     if (onlineMode && state.turn !== myRole) return;
     if (state.phase !== 'playing' || state.winner) return;
     if (owner !== state.turn) return;
+    if (state.activeAbilityMode) return; // Prevent clicking during active ability selection
 
     setSelectedCapturedPiece({ piece, index });
     setSelectedSharedPiece(null);
@@ -1935,13 +2012,18 @@ export const App: React.FC = () => {
     if (onlineMode && state.turn !== myRole) return;
     if (state.phase !== 'playing' || state.winner) return;
 
-    setSelectedSharedPiece({ piece, index });
-    setSelectedCapturedPiece(null);
-    setSelectedCustomDeckPiece(null);
-    setState(prev => ({ ...prev, selectedCell: null, activeAbilityMode: false, activeAbilityTargets: [] }));
-
-    // Use drop-rule-aware valid cells for shared pool pieces too
-    setValidMoves(getValidDropCells(state.board, piece, state.turn));
+    // Only allow clicking graveyard pieces when a resurrection ability is active
+    if (suspendedAbility && suspendedAbility.type === 'resurrect') {
+      setSelectedSharedPiece({ piece, index });
+      setSelectedCapturedPiece(null);
+      setSelectedCustomDeckPiece(null);
+      setState(prev => ({
+        ...prev,
+        selectedCell: null,
+        activeAbilityTargets: suspendedAbility.targets
+      }));
+      setValidMoves([]); // Disable standard dropping
+    }
   };
 
   // Custom deck piece click
@@ -1949,6 +2031,7 @@ export const App: React.FC = () => {
     if (onlineMode && state.turn !== myRole) return;
     if (state.phase !== 'playing' || state.winner) return;
     if (owner !== state.turn) return;
+    if (state.activeAbilityMode) return; // Prevent clicking during active ability selection
 
     setSelectedCustomDeckPiece({ piece, index });
     setSelectedCapturedPiece(null);
@@ -2107,18 +2190,7 @@ export const App: React.FC = () => {
         });
       }
 
-      // 4. Drop from shared pool
-      const sharedPool = state.sharedPieces;
-      if (sharedPool.length > 0) {
-        sharedPool.forEach((piece, index) => {
-          const validDropSpots = getValidDropCells(board, piece, 'gote');
-          validDropSpots.forEach(([ey, ex]) => {
-            let weight = 12;
-            if (ey >= 3) weight += 4;
-            aiMoves.push({ type: 'shared_drop', to: [ey, ex], piece, index, weight });
-          });
-        });
-      }
+
 
       if (aiMoves.length === 0) {
         handlePassTurn();
@@ -2146,6 +2218,22 @@ export const App: React.FC = () => {
         const promote = isPromotionEligible(movingPiece, chosenMove.from[0], chosenMove.to[0], 'gote');
 
         const res = executeMove(board, chosenMove.from, chosenMove.to, 'gote', promote, playerNames, vsAiMode, false, state.capturedPieces);
+
+        let nextShared = [...state.sharedPieces];
+        if (res.destroyedPieces && res.destroyedPieces.length > 0) {
+          for (const p of res.destroyedPieces) {
+            if (p && !p.isKing) {
+              if (!nextShared.some(s => s.id === p.id)) {
+                nextShared.push({
+                  ...p,
+                  isPromoted: false,
+                  coolDownTurnsRemaining: 0,
+                  isRevealed: true
+                });
+              }
+            }
+          }
+        }
         const nextCaptured = {
           sente: [...state.capturedPieces.sente],
           gote: [...state.capturedPieces.gote]
@@ -2193,12 +2281,16 @@ export const App: React.FC = () => {
             nextCaptured.gote,
             chosenMove.from,
             undefined,
-            graveyardCandidates
+            graveyardCandidates,
+            nextShared
           );
           if (effectRes.triggered || effectRes.logs.length > 0) {
             if (effectRes.triggered) {
               finalBoard = effectRes.board;
               nextCaptured.gote = effectRes.capturedPieces;
+              if (effectRes.graveyard) {
+                nextShared = effectRes.graveyard;
+              }
               setScreenShake(true);
               setTimeout(() => setScreenShake(false), 300);
             }
@@ -2267,6 +2359,7 @@ export const App: React.FC = () => {
             board: finalBoard,
             capturedPieces: nextCaptured,
             destroyedPieces: nextDestroyedPieces,
+            sharedPieces: nextShared,
           }));
 
           setTimeout(() => {
@@ -2280,7 +2373,7 @@ export const App: React.FC = () => {
           finalizeTurn(
             finalBoard,
             nextCaptured,
-            state.sharedPieces,
+            nextShared,
             finalLogs,
             undefined,
             state.customDecks,
@@ -2330,18 +2423,7 @@ export const App: React.FC = () => {
           state.destroyedPieces
         );
 
-      } else if (chosenMove.type === 'shared_drop' && chosenMove.piece && chosenMove.index !== undefined) {
-        const nextBoard = executeDrop(board, chosenMove.piece, chosenMove.to, 'gote');
-        const nextShared = [...state.sharedPieces];
-        nextShared.splice(chosenMove.index, 1);
-        const newLog: GameLog = {
-          id: generateId(),
-          timestamp: new Date().toLocaleTimeString(),
-          player: 'gote',
-          message: `${chosenMove.piece.word}を共有プールから配置しました。`,
-          type: 'move'
-        };
-        finalizeTurn(nextBoard, state.capturedPieces, nextShared, [...state.logs, newLog]);
+
       }
     };
 
@@ -2488,7 +2570,9 @@ export const App: React.FC = () => {
                     fontFamily: 'var(--font-cyber)',
                     animation: 'pulseGlow 1.5s infinite alternate'
                   }}>
-                    ⚡ 【能力対象選択】効果を適用する対象の駒を盤上から選択してください（青く光るマス）。
+                    {suspendedAbility.type === 'resurrect'
+                      ? '⚡ 【死者蘇生】墓場から蘇生する駒を選択し、配置する隣接マス（青く光るマス）を選択してください。'
+                      : '⚡ 【能力対象選択】効果を適用する対象の駒を盤上から選択してください（青く光るマス）。'}
                   </div>
                 )}
                 <GameBoard
@@ -2611,6 +2695,7 @@ export const App: React.FC = () => {
                   selectedSharedPiece={selectedSharedPiece}
                   onSharedPieceClick={handleSharedPieceClick}
                   onHoverPiece={setHoveredPiece}
+                  isResurrectActive={state.activeAbilityMode && suspendedAbility?.type === 'resurrect'}
                 />
               </div>
 

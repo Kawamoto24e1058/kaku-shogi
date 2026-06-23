@@ -26,10 +26,13 @@ export function isTriggerMatching(piece: Piece, triggerType: 'ON_MOVE' | 'TURN_S
 
 export function isStealthPiece(p: any): boolean {
   if (!p) return false;
+  const trigger = p.trigger || 'ALWAYS';
   const logic = (p.logic_code || (p.promoted_effect?.logic_code) || '').toLowerCase();
   const desc = p.description || '';
   const word = p.word || '';
   return p.mechanics_type === 'STEALTH_TRAP' || 
+         trigger === 'ON_TAKEN' ||
+         trigger === 'ON_APPROACH' ||
          logic.includes('stealth') || 
          desc.includes('透明') || 
          desc.includes('ステルス') || 
@@ -1042,14 +1045,7 @@ export function executeMove(
               winner = player;
             }
           } else {
-            // 罠 (ON_TAKEN) のチェック
-            const isTrapOrCurse = pathPiece.trigger === 'ON_TAKEN' && (
-              isStealthPiece(pathPiece) ||
-              pathPiece.mechanics_type === 'DYNAMICS_HACK' ||
-              getPieceLogicCode(pathPiece) === 'curse_retaliation' ||
-              pathPiece.description.includes('呪い') ||
-              pathPiece.description.includes('道連れ')
-            );
+            const isTrapOrCurse = pathPiece.trigger === 'ON_TAKEN';
             if (isTrapOrCurse) {
               const logMsg = isStealthPiece(pathPiece)
                 ? `【罠衝突】突撃中の ${piece.word} が罠「${pathPiece.effect_name}」に激突！両者爆破・消滅しました！`
@@ -1195,14 +1191,7 @@ export function executeMove(
             type: 'system',
           });
         }
-      } else {
-        const isTrapOrCurse = targetCell.trigger === 'ON_TAKEN' && (
-          isStealthPiece(targetCell) ||
-          targetCell.mechanics_type === 'DYNAMICS_HACK' ||
-          getPieceLogicCode(targetCell) === 'curse_retaliation' ||
-          targetCell.description.includes('呪い') ||
-          targetCell.description.includes('道連れ')
-        );
+        const isTrapOrCurse = targetCell.trigger === 'ON_TAKEN';
 
         if (isTrapOrCurse) {
           const logMsg = isStealthPiece(targetCell)
@@ -1306,7 +1295,6 @@ export function executeMove(
           adjacentPiece.owner !== undefined &&
           (adjacentPiece.owner === 'sente' || adjacentPiece.owner === 'gote') &&
           adjacentPiece.owner !== player &&
-          isStealthPiece(adjacentPiece) &&
           adjacentPiece.trigger === 'ON_APPROACH' &&
           !adjacentPiece.isRevealed
         ) {
@@ -1573,29 +1561,33 @@ export function applyAutomatedEffect(
   capturedPieces: Piece[],
   fromPosition?: [number, number],
   targetPosition?: [number, number],
-  graveyardCandidates?: Piece[]
+  _graveyardCandidates?: Piece[],
+  graveyard?: Piece[],
+  selectedGraveyardPiece?: Piece
 ): {
   board: Board;
   capturedPieces: Piece[];
+  graveyard?: Piece[];
   logs: Omit<GameLog, 'id' | 'timestamp'>[];
   triggered: boolean;
 } {
   const [y, x] = position;
   const piece = board[y][x];
   if (!piece || piece.owner !== player || !isTriggerMatching(piece, triggerType)) {
-    return { board, capturedPieces, logs: [], triggered: false };
+    return { board, capturedPieces, graveyard, logs: [], triggered: false };
   }
   const trigger = getPieceTrigger(piece);
   const isTrap = trigger === 'ON_TAKEN' || trigger === 'ON_APPROACH';
   if (!isTrap && piece.hasMovedManually === false) {
-    return { board, capturedPieces, logs: [], triggered: false };
+    return { board, capturedPieces, graveyard, logs: [], triggered: false };
   }
   if (!isAutonomousPiece(piece) && piece.coolDownTurnsRemaining > 0) {
-    return { board, capturedPieces, logs: [], triggered: false };
+    return { board, capturedPieces, graveyard, logs: [], triggered: false };
   }
 
   let nextBoard = board.map(row => [...row]);
   let nextCaptured = [...capturedPieces];
+  let nextGraveyard = graveyard ? [...graveyard] : [];
   const logs: Omit<GameLog, 'id' | 'timestamp'>[] = [];
   let triggered = false;
 
@@ -1722,13 +1714,39 @@ export function applyAutomatedEffect(
     logic.includes('blast') ||
     logic.includes('explode')
   ) {
-    const adjacent = [
+    let targetOffsets = [
       [-1, -1], [-1, 0], [-1, 1],
       [0, -1],           [0, 1],
       [1, -1],  [1, 0],  [1, 1]
     ];
+
+    const isFrontRow = logic === 'kill_front_enemy' || desc.includes('前一列') || desc.includes('前方一列') || desc.includes('前１列') || desc.includes('前1列') || desc.includes('前方1列') || desc.includes('前方１列');
+    const isLinear = logic === 'kill_linear' || desc.includes('直線上') || desc.includes('直線範囲');
+
+    if (isFrontRow) {
+      const dy = player === 'sente' ? -1 : 1;
+      targetOffsets = [
+        [dy, -1], [dy, 0], [dy, 1]
+      ];
+    } else if (isLinear) {
+      targetOffsets = [];
+      const directions = [
+        [-1, 0], [1, 0], [0, -1], [0, 1],
+        [-1, -1], [-1, 1], [1, -1], [1, 1]
+      ];
+      for (const [dy, dx] of directions) {
+        let ny = y + dy;
+        let nx = x + dx;
+        while (isWithinBounds(ny, nx)) {
+          targetOffsets.push([ny - y, nx - x]);
+          ny += dy;
+          nx += dx;
+        }
+      }
+    }
+
     const targets: [number, number][] = [];
-    for (const [dy, dx] of adjacent) {
+    for (const [dy, dx] of targetOffsets) {
       const ny = y + dy;
       const nx = x + dx;
       if (isWithinBounds(ny, nx)) {
@@ -1741,24 +1759,41 @@ export function applyAutomatedEffect(
     if (targets.length > 0) {
       const nullifyRes = checkAndApplyNullification(nextBoard, position, piece, effectName, targets, player, logs);
       if (nullifyRes.nullified) {
-        return { board: nullifyRes.board, capturedPieces: nextCaptured, logs, triggered: true };
+        return { board: nullifyRes.board, capturedPieces: nextCaptured, graveyard: nextGraveyard, logs, triggered: true };
       }
+
+      const isAnnihilation = desc.includes('消滅') || desc.includes('消し飛ば') || desc.includes('レーザー') || desc.includes('ビーム') || desc.includes('爆破') || desc.includes('爆発') || desc.includes('自爆') || desc.includes('爆砕') || logic.includes('blast') || logic.includes('explode') || logic === 'kill_front_enemy' || logic === 'kill_adjacent_remote' || logic === 'kill_linear';
 
       for (const [ny, nx] of targets) {
         const victim = nextBoard[ny][nx];
         if (victim) {
-          logs.push({
-            player,
-            message: `【自動発動】${piece.word} の効果「${effectName}」の衝撃波が命中！ ${victim.word} (${getCellLabel(ny, nx)}) を爆破捕獲しました！`,
-            type: 'capture'
-          });
-          nextCaptured.push({
-            ...victim,
-            owner: player,
-            isPromoted: false,
-            coolDownTurnsRemaining: 0,
-            isRevealed: true
-          });
+          if (isAnnihilation) {
+            logs.push({
+              player,
+              message: `【自動発動】${piece.word} の効果「${effectName}」が命中！ ${victim.word} (${getCellLabel(ny, nx)}) を消滅（墓地送り）させました！`,
+              type: 'system'
+            });
+            nextGraveyard.push({
+              ...victim,
+              owner: victim.owner,
+              isPromoted: false,
+              coolDownTurnsRemaining: 0,
+              isRevealed: true
+            });
+          } else {
+            logs.push({
+              player,
+              message: `【自動発動】${piece.word} の効果「${effectName}」が命中！ ${victim.word} (${getCellLabel(ny, nx)}) を爆破捕獲しました！`,
+              type: 'capture'
+            });
+            nextCaptured.push({
+              ...victim,
+              owner: player,
+              isPromoted: false,
+              coolDownTurnsRemaining: 0,
+              isRevealed: true
+            });
+          }
           nextBoard[ny][nx] = null;
         }
       }
@@ -2405,54 +2440,77 @@ export function applyAutomatedEffect(
         message: `【自動発動制限】盤面に存在するゾンビ兵が上限(2体)に達しているため、新規召喚をスキップしました。`,
         type: 'ability'
       });
-      return { board: nextBoard, capturedPieces: nextCaptured, logs, triggered: true };
+      return { board: nextBoard, capturedPieces: nextCaptured, graveyard: nextGraveyard, logs, triggered: true };
     }
 
-    // Filter graveyard candidates (opponent custom pieces, Rook, or Bishop)
-    const candidates = (graveyardCandidates || []).filter(p => p && !p.isKing && (isCustomPiece(p) || p.isHisha || p.isKaku));
+    let target: Piece | null = null;
+    let targetIdx = -1;
 
-    if (candidates.length > 0) {
-      // Pick one randomly
-      const target = candidates[Math.floor(Math.random() * candidates.length)];
-      
-      // Find empty adjacent cells
+    if (selectedGraveyardPiece) {
+      target = selectedGraveyardPiece;
+      targetIdx = nextGraveyard.findIndex(p => p.id === selectedGraveyardPiece.id);
+    } else {
+      const candidates = nextGraveyard.filter(p => p && !p.isKing && (isCustomPiece(p) || p.isHisha || p.isKaku));
+      if (candidates.length > 0) {
+        target = candidates[Math.floor(Math.random() * candidates.length)];
+        targetIdx = nextGraveyard.findIndex(p => p.id === target!.id);
+      }
+    }
+
+    if (target && targetIdx !== -1) {
       const adjacent = [
         [-1, -1], [-1, 0], [-1, 1],
         [0, -1],           [0, 1],
         [1, -1],  [1, 0],  [1, 1]
       ];
-      const emptySpawnCells: [number, number][] = [];
-      for (const [dy, dx] of adjacent) {
-        const ny = y + dy;
-        const nx = x + dx;
-        if (isWithinBounds(ny, nx) && nextBoard[ny][nx] === null) {
-          emptySpawnCells.push([ny, nx]);
+      
+      let spawnCell: [number, number] | null = null;
+
+      if (targetPosition) {
+        const [ty, tx] = targetPosition;
+        if (isWithinBounds(ty, tx) && nextBoard[ty][tx] === null) {
+          spawnCell = targetPosition;
+        }
+      } else {
+        const emptySpawnCells: [number, number][] = [];
+        for (const [dy, dx] of adjacent) {
+          const ny = y + dy;
+          const nx = x + dx;
+          if (isWithinBounds(ny, nx) && nextBoard[ny][nx] === null) {
+            emptySpawnCells.push([ny, nx]);
+          }
+        }
+        if (emptySpawnCells.length > 0) {
+          spawnCell = emptySpawnCells[Math.floor(Math.random() * emptySpawnCells.length)];
         }
       }
 
-      if (emptySpawnCells.length > 0) {
-        const [sy, sx] = emptySpawnCells[Math.floor(Math.random() * emptySpawnCells.length)];
-        
-        // Nullify check on spawn cell
+      if (spawnCell) {
+        const [sy, sx] = spawnCell;
         const nullifyRes = checkAndApplyNullification(nextBoard, position, piece, effectName, [[sy, sx]], player, logs);
         if (nullifyRes.nullified) {
-          return { board: nullifyRes.board, capturedPieces: nextCaptured, logs, triggered: true };
+          return { board: nullifyRes.board, capturedPieces: nextCaptured, graveyard: nextGraveyard, logs, triggered: true };
         }
 
+        const isZombie = target.owner !== player;
         const zombiePiece: Piece = {
           ...target,
           id: generateId(),
-          word: `ゾンビ・${target.word}`,
+          word: isZombie ? `ゾンビ・${target.word}` : target.word,
           owner: player,
           isPromoted: false,
           coolDownTurnsRemaining: 0,
           originalPosition: [sy, sx]
         };
         nextBoard[sy][sx] = zombiePiece;
+        nextGraveyard.splice(targetIdx, 1);
         triggered = true;
+
         logs.push({
           player,
-          message: `【死者蘇生】${piece.word} が闇の魔術を発動！墓地から敵の『${target.word}』をゾンビ兵「${zombiePiece.word}」として ${getCellLabel(sy, sx)} に寝返り召喚しました！`,
+          message: isZombie 
+            ? `【死者蘇生】${piece.word} が闇の魔術を発動！墓地から敵の『${target.word}』をゾンビ兵「${zombiePiece.word}」として ${getCellLabel(sy, sx)} に寝返り召喚しました！`
+            : `【死者蘇生】${piece.word} が闇の魔術を発動！墓地から自軍の『${target.word}』を ${getCellLabel(sy, sx)} に蘇生召喚しました！`,
           type: 'ability'
         });
       } else {
@@ -2467,7 +2525,7 @@ export function applyAutomatedEffect(
       triggered = true;
       logs.push({
         player,
-        message: `【自動発動制限】墓地に召喚可能な敵の対象駒（カスタム駒または飛車・角）がないため、死者蘇生できませんでした。`,
+        message: `【自動発動制限】墓地に召喚可能な対象駒（カスタム駒または飛車・角）がないため、死者蘇生できませんでした。`,
         type: 'system'
       });
     }
@@ -2495,7 +2553,7 @@ export function applyAutomatedEffect(
     }
   }
 
-  return { board: nextBoard, capturedPieces: nextCaptured, logs, triggered };
+  return { board: nextBoard, capturedPieces: nextCaptured, graveyard: nextGraveyard, logs, triggered };
 }
 
 export function isKingInCheck(board: Board, player: Player): boolean {
@@ -2535,8 +2593,9 @@ export function isKingInCheck(board: Board, player: Player): boolean {
 export function getAbilityTargets(
   board: Board,
   position: [number, number],
-  player: Player
-): { targets: [number, number][]; type: 'transform' | 'mind_control' | 'swap' } | null {
+  player: Player,
+  graveyard?: Piece[]
+): { targets: [number, number][]; type: 'transform' | 'mind_control' | 'swap' | 'resurrect' } | null {
   const [y, x] = position;
   const piece = board[y][x];
   if (!piece || piece.coolDownTurnsRemaining > 0) return null;
@@ -2547,6 +2606,27 @@ export function getAbilityTargets(
   const isTransform = logic === 'transform' || logic === 'mimic' || logic === 'ability_theft' || desc.includes('擬態') || desc.includes('コピー') || desc.includes('変身');
   const isMindControl = logic === 'mind_control' || logic === 'puppet' || logic === 'parasite' || desc.includes('洗脳') || desc.includes('寄生') || desc.includes('支配');
   const isSwap = logic === 'swap' || logic === 'swap_pawn' || desc.includes('スワップ') || desc.includes('入れ替え');
+  const isResurrect = logic === 'recycle_dead' || logic === 'recycle' || desc.includes('死者蘇生') || desc.includes('蘇生') || desc.includes('ゾンビ');
+
+  if (isResurrect) {
+    const candidates = (graveyard || []).filter(p => p && !p.isKing && (isCustomPiece(p) || p.isHisha || p.isKaku));
+    if (candidates.length === 0) return null;
+
+    const targets: [number, number][] = [];
+    const adjacent = [
+      [-1, -1], [-1, 0], [-1, 1],
+      [0, -1],           [0, 1],
+      [1, -1],  [1, 0],  [1, 1]
+    ];
+    for (const [dy, dx] of adjacent) {
+      const ny = y + dy;
+      const nx = x + dx;
+      if (isWithinBounds(ny, nx) && board[ny][nx] === null) {
+        targets.push([ny, nx]);
+      }
+    }
+    return targets.length > 0 ? { targets, type: 'resurrect' } : null;
+  }
 
   if (isTransform) {
     const targets: [number, number][] = [];
