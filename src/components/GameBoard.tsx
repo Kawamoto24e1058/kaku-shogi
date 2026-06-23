@@ -615,8 +615,17 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                   cursor: turn === 'gote' && phase === 'playing' ? 'pointer' : 'default',
                 }}
               >
-                <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#ffffff' }}>{piece.word}</span>
-                <span style={{ fontSize: '8px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>{piece.ability_genre || '能力駒'}</span>
+                <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }} title={piece.effect_name || piece.word}>
+                  {piece.effect_name || piece.word}
+                </span>
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center', width: '100%', marginTop: '2px' }}>
+                  <span style={{ fontSize: '8px', color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '60%' }} title={piece.word}>
+                    {piece.word}
+                  </span>
+                  <span style={{ fontSize: '7px', color: 'rgba(255,255,255,0.4)', border: '0.5px solid rgba(255,255,255,0.2)', borderRadius: '2px', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '40%' }} title={piece.ability_genre || '能力駒'}>
+                    {piece.ability_genre || '能力駒'}
+                  </span>
+                </div>
               </div>
             );
           })}
@@ -675,7 +684,13 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       </div>
 
       {/* Main Shogi Grid (9x9) */}
-      <div className="shogi-board-outer" style={{ width: '100%', maxWidth: '620px', position: 'relative', padding: '15px 15px 15px 5px' }}>
+      <div className="shogi-board-outer" style={{
+        width: '100%',
+        maxWidth: 'min(620px, max(360px, calc(100vh - 350px)))',
+        position: 'relative',
+        padding: '15px 15px 15px 5px',
+        boxSizing: 'border-box'
+      }}>
         <div style={{
           display: 'grid',
           gridTemplateColumns: `repeat(${BOARD_SIZE}, 1fr)`,
@@ -780,8 +795,17 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                   cursor: turn === 'sente' && phase === 'playing' ? 'pointer' : 'default',
                 }}
               >
-                <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#ffffff' }}>{piece.word}</span>
-                <span style={{ fontSize: '8px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>{piece.ability_genre || '能力駒'}</span>
+                <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }} title={piece.effect_name || piece.word}>
+                  {piece.effect_name || piece.word}
+                </span>
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center', width: '100%', marginTop: '2px' }}>
+                  <span style={{ fontSize: '8px', color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '60%' }} title={piece.word}>
+                    {piece.word}
+                  </span>
+                  <span style={{ fontSize: '7px', color: 'rgba(255,255,255,0.4)', border: '0.5px solid rgba(255,255,255,0.2)', borderRadius: '2px', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '40%' }} title={piece.ability_genre || '能力駒'}>
+                    {piece.ability_genre || '能力駒'}
+                  </span>
+                </div>
               </div>
             );
           })}
