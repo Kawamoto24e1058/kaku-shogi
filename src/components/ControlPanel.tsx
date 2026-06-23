@@ -139,6 +139,17 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
       const stamp = getStampInfo(piece.mechanics_type);
 
+      const getThemeColor = (theme?: string) => {
+        switch (theme) {
+          case 'WARRIOR_IRON': return 'var(--color-shinku)';
+          case 'MYSTIC_MIST': return 'var(--color-murasaki)';
+          case 'SHADOW_NIGHT': return '#555555';
+          case 'NATURE_STONE': return 'var(--color-matsuba)';
+          default: return 'transparent';
+        }
+      };
+      const themeColor = getThemeColor(piece.visual_theme);
+
       return (
         <div
           key={piece.id}
@@ -179,8 +190,21 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             boxSizing: 'border-box',
             padding: '2px',
           }}
-          title={type === 'shared' ? `もとの所有者: ${piece.owner === 'sente' ? (playerNames.sente || '先手') : (playerNames.gote || '後手')}` : undefined}
+          title={type === 'shared' ? `も元の所有者: ${piece.owner === 'sente' ? (playerNames.sente || '先手') : (playerNames.gote || '後手')}` : undefined}
         >
+          {/* Theme Accent Bottom Bar */}
+          {themeColor !== 'transparent' && (
+            <div style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              width: '100%',
+              height: '3px',
+              backgroundColor: themeColor,
+              borderRadius: '0 0 2px 2px'
+            }} />
+          )}
+
           <div style={{
             position: 'absolute',
             top: '2px',

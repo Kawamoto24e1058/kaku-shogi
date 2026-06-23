@@ -510,6 +510,13 @@ AIは、生成対象のユーザー入力単語の「概念、物理的特性（
 5. 罠を設置する（罠設置、地雷設置、トラップ配置）能力を設計する場合は、必ず「移動完了時、移動先の隣接マスの空きマスにランダムに1個の裏向きの罠（地雷）を設置する（logic_code: 'spawn_trap'）」仕様とし、説明文も「移動先の隣接マスに裏向きの罠をランダムに1個設置する」と書いてください（元の位置に設置する仕様は完全に廃止されました）。
 6. レーザーやビーム等の縦一直線の破壊能力（logic_code: 'kill_linear'）を設計する場合は、必ず「移動完了時、移動先の縦直線上にいる敵のすべての駒を消滅（墓地送り）させる（玉将を除く）」仕様とし、説明文もそのように書いてください（移動前の位置からの直線攻撃は完全に廃止されました）。
 
+【和風演出テーマ（visual_theme）の判定ガイドライン】
+入力された単語の歴史的背景、概念、特徴から、最も相応しい「モダン和風演出テーマ」を1つ割り当ててください：
+- 'WARRIOR_IRON' (武将・武器系): 戦場、武力、金属に関連する単語（例：「信長」「大砲」「刀」など）。演出モチーフは錆びた鉄、赤黒い土、掠れ筆。
+- 'MYSTIC_MIST' (神話・呪術・怪異系): 霊、死、神仏、魔力に関連する単語（例：「お化け」「仏」「呪い」など）。演出モチーフは立ち込める川霧、和蝋燭のじんわりとした陰影。
+- 'SHADOW_NIGHT' (隠密・罠・忍系): 暗殺、隠蔽、夜、闇に関連する単語（例：「忍者」「ステルス」「影」など）。演出モチーフは夜の帳、引き裂かれる影、静寂な闇。
+- 'NATURE_STONE' (自然・建造物・概念系): 天候、地形、城、動植物、その他基本概念に関連する単語（例：「山」「新幹線」「犬」「城」など）。演出モチーフは風塵の渦、大地の重い沈み込み。
+
 ### 🚨 最重要：能力説明文の厳格な構造化フォーマット
 能力説明文（description および promoted_effect.description）は、初心者がルールを直感的に理解できるよう、余計な修飾語を省き、主語・述語を明確にして、以下の【改行文字 \n を含んだ3部構成のフォーマット】を【完全厳守】して出力してください。
 
@@ -642,6 +649,7 @@ AIは、駒の移動パターンとして強力な『八方無限スライド（
   "effect_name": "漢字の能力名",
   "mechanics_type": "内部属性コード（'FORCE_CRUSH' / 'HACK_AND_STEAL' / 'STEALTH_GHOST' / 'SUPPORT_BUFF' / 'SPAWNER_BUILD' / 'TRAP_MINE' / 'AUTOMATIC_DRIVE' / 'UNKNOWN_HERESY' 等）",
   "ability_genre": "画面の属性欄に表示する日本語のジャンル名（例: '武力・突撃', '擬態・洗脳', 'ステルス・隠密', '能力無効化・結界', '支援・強化' など単語から適切に選択）",
+  "visual_theme": "演出テーマコード（'WARRIOR_IRON' / 'MYSTIC_MIST' / 'SHADOW_NIGHT' / 'NATURE_STONE'）",
   "trigger": "発動形式（'ALWAYS' / 'ON_MOVE' / 'TURN_START' / 'ON_TAKEN' / 'ON_APPROACH'）",
   "is_once_per_game": true,
   "cool_down_turns": 0,
@@ -887,6 +895,19 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
     if (parsed.mechanics_type === 'DYNAMICS_HACK' && parsed.ability_genre === 'ステルス・隠密') {
       parsed.ability_genre = '擬態・洗脳';
     }
+  }
+
+  // Repair visual_theme
+  const validThemes = ['WARRIOR_IRON', 'MYSTIC_MIST', 'SHADOW_NIGHT', 'NATURE_STONE'];
+  if (!parsed.visual_theme || !validThemes.includes(parsed.visual_theme)) {
+    const defaultThemeMap: Record<string, 'WARRIOR_IRON' | 'MYSTIC_MIST' | 'SHADOW_NIGHT' | 'NATURE_STONE'> = {
+      'MOVEMENT_HACK': 'WARRIOR_IRON',
+      'STEALTH_TRAP': 'SHADOW_NIGHT',
+      'RULE_BREAK': 'MYSTIC_MIST',
+      'DYNAMICS_HACK': 'NATURE_STONE',
+      'AUTOMATIC_DRIVE': 'NATURE_STONE'
+    };
+    parsed.visual_theme = defaultThemeMap[parsed.mechanics_type] || 'NATURE_STONE';
   }
 
   // For AUTOMATIC_DRIVE pieces, ensure cool_down_turns is 0 and is_once_per_game is false
