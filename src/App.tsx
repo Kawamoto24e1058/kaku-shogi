@@ -2854,7 +2854,6 @@ export const App: React.FC = () => {
                   onResetGame={handleResetGame}
                   onPassTurn={handlePassTurn}
                   vsAiMode={vsAiMode}
-                  onToggleVsAi={() => setVsAiMode(!vsAiMode)}
                   playerNames={playerNames}
                   capturedPieces={state.capturedPieces}
                   selectedCapturedPiece={selectedCapturedPiece}

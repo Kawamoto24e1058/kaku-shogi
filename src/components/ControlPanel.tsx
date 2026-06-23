@@ -14,7 +14,6 @@ interface ControlPanelProps {
   onResetGame: () => void;
   onPassTurn: () => void;
   vsAiMode: boolean;
-  onToggleVsAi: () => void;
   playerNames: { sente: string; gote: string };
 
   // New props
@@ -38,7 +37,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onResetGame,
   onPassTurn,
   vsAiMode,
-  onToggleVsAi,
   playerNames,
   capturedPieces,
   selectedCapturedPiece,
@@ -308,21 +306,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic', alignSelf: 'center' }}>なし</span>
             )}
           </div>
-        </div>
-      </div>
-
-      {/* Mode Settings Panel */}
-      <div className="cyber-panel" style={{ padding: '10px 15px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={vsAiMode}
-              onChange={onToggleVsAi}
-              style={{ cursor: 'pointer' }}
-            />
-            後手をAIに任せる (VS AI)
-          </label>
         </div>
       </div>
 
