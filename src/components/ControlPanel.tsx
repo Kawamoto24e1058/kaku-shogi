@@ -110,7 +110,16 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
       {/* Dynamic Special Ability Panel */}
       {phase === 'playing' && !winner && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          height: '360px', 
+          minHeight: '360px', 
+          maxHeight: '360px', 
+          overflowY: 'auto',
+          boxSizing: 'border-box',
+          paddingRight: '4px'
+        }}>
           {(hoveredPiece || selectedPiece) ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <h3 className="cyber-title" style={{ fontSize: '15px', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -157,7 +166,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               )}
             </div>
           ) : (
-            <div className="cyber-panel" style={{ padding: '15px', textAlign: 'center' }}>
+            <div className="cyber-panel" style={{ padding: '15px', textAlign: 'center', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
               <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>
                 自陣の駒を選択するか、盤面の駒にマウスを重ねると、その言葉に秘められた特殊能力が表示されます。
               </p>
