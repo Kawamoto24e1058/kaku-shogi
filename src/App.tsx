@@ -15,7 +15,8 @@ import {
   getValidDropCells,
   isKingInCheck,
   getAbilityTargets,
-  placeCustomPiecesRandomly
+  placeCustomPiecesRandomly,
+  isStealthPiece
 } from './gameLogic';
 import { PieceCreator } from './components/PieceCreator';
 import { GameBoard } from './components/GameBoard';
@@ -234,22 +235,6 @@ export const App: React.FC = () => {
     return logicCode === 'random_teleport' || isAutoNormalMover(p);
   };
 
-  const isStealthPiece = (p: any): boolean => {
-    if (!p) return false;
-    const logic = (p.logic_code || (p.promoted_effect?.logic_code) || '').toLowerCase();
-    const desc = p.description || '';
-    const word = p.word || '';
-    return p.mechanics_type === 'STEALTH_TRAP' || 
-           logic.includes('stealth') || 
-           desc.includes('透明') || 
-           desc.includes('ステルス') || 
-           desc.includes('潜伏') || 
-           desc.includes('隠密') ||
-           word.includes('透明') ||
-           word.includes('ステルス') ||
-           word.includes('潜伏') ||
-           word.includes('隠密');
-  };
 
   const executeMoveWithPromotion = (
     sy: number,

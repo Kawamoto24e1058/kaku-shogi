@@ -1706,13 +1706,26 @@ export function applyAutomatedEffect(
     desc.includes('一掃') || 
     desc.includes('巻き込む') || 
     desc.includes('消滅') || 
+    desc.includes('消し去る') || 
+    desc.includes('消し飛ば') || 
+    desc.includes('レーザー') || 
+    desc.includes('ビーム') || 
+    desc.includes('狙撃') || 
+    desc.includes('スナイプ') || 
+    desc.includes('貫通') || 
+    desc.includes('破壊') || 
     logic === 'kill_adjacent_remote' || 
     logic === 'kill_front_enemy' || 
     logic === 'kill_linear' ||
+    logic === 'remote_snipe' ||
+    logic === 'sniper' ||
+    logic === 'linear_charge' ||
     logic.includes('kill_adjacent') ||
     logic.includes('capture_adjacent') ||
     logic.includes('blast') ||
-    logic.includes('explode')
+    logic.includes('explode') ||
+    logic.includes('laser') ||
+    logic.includes('beam')
   ) {
     let targetOffsets = [
       [-1, -1], [-1, 0], [-1, 1],
@@ -1720,8 +1733,14 @@ export function applyAutomatedEffect(
       [1, -1],  [1, 0],  [1, 1]
     ];
 
-    const isFrontRow = logic === 'kill_front_enemy' || desc.includes('前一列') || desc.includes('前方一列') || desc.includes('前１列') || desc.includes('前1列') || desc.includes('前方1列') || desc.includes('前方１列');
-    const isLinear = logic === 'kill_linear' || desc.includes('直線上') || desc.includes('直線範囲');
+    const isFrontRow = logic === 'kill_front_enemy' || 
+                       desc.includes('前一列') || desc.includes('前方一列') || desc.includes('前１列') || desc.includes('前1列') || desc.includes('前方1列') || desc.includes('前方１列') ||
+                       desc.includes('正面一列') || desc.includes('正面1列') || desc.includes('正面１列');
+                       
+    const isLinear = logic === 'kill_linear' || logic === 'linear_charge' || logic === 'remote_snipe' || logic === 'sniper' || logic.includes('laser') || logic.includes('beam') ||
+                     desc.includes('直線上') || desc.includes('直線範囲') || desc.includes('直線方向') || desc.includes('一直線') || desc.includes('直線状') || desc.includes('前方直線') ||
+                     desc.includes('縦横一直線') || desc.includes('縦横直線') || desc.includes('縦横の直線') ||
+                     desc.includes('レーザー') || desc.includes('ビーム') || desc.includes('貫通') || desc.includes('狙撃') || desc.includes('スナイプ');
 
     if (isFrontRow) {
       const dy = player === 'sente' ? -1 : 1;
