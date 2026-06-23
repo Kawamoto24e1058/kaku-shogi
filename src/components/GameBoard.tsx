@@ -166,7 +166,9 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       fontSize: '11px',
       userSelect: 'none',
       transition: 'all 0.15s ease',
-      border: '1px solid rgba(139, 101, 58, 0.25)',
+      borderWidth: '1px',
+      borderStyle: 'solid',
+      borderColor: 'rgba(139, 101, 58, 0.25)',
       background: 'rgba(240, 235, 215, 0.35)'
     };
 
@@ -217,7 +219,9 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         let baseBorderColor = isGote ? 'rgba(255, 0, 85, 0.4)' : 'rgba(0, 243, 255, 0.4)';
         let insetShadow = isGote ? 'inset 0 0 6px rgba(255, 0, 85, 0.25)' : 'inset 0 0 6px rgba(0, 243, 255, 0.25)';
 
-        let borderStyle = `1px solid ${baseBorderColor}`;
+        let borderWidthVal = '1px';
+        let borderStyleVal = 'solid';
+        let borderColorVal = baseBorderColor;
         let boxShadowStyle = insetShadow;
         let widthStyle = '92%';
         let heightStyle = '92%';
@@ -225,24 +229,32 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 
         // 2. 駒の種類ごとの差別化（歩兵 vs 王将 vs カスタム駒）
         if (piece.isKing) {
-          borderStyle = '2px solid var(--neon-yellow)';
+          borderWidthVal = '2px';
+          borderStyleVal = 'solid';
+          borderColorVal = 'var(--neon-yellow)';
           boxShadowStyle = `0 0 12px rgba(219, 188, 98, 0.65), ${insetShadow}`;
           borderRadiusStyle = '4px';
           baseBg = isGote ? '#261a10' : '#1c1c15';
         } else if (piece.isPawn) {
-          borderStyle = '1px dashed rgba(255, 255, 255, 0.15)';
+          borderWidthVal = '1px';
+          borderStyleVal = 'dashed';
+          borderColorVal = 'rgba(255, 255, 255, 0.15)';
           boxShadowStyle = 'none';
           widthStyle = '78%';
           heightStyle = '78%';
           borderRadiusStyle = '1px';
         } else if (piece.isHisha || piece.isKaku) {
-          borderStyle = `1.5px solid ${baseBorderColor}`;
+          borderWidthVal = '1.5px';
+          borderStyleVal = 'solid';
+          borderColorVal = baseBorderColor;
           boxShadowStyle = `0 0 8px ${isGote ? 'rgba(255, 0, 85, 0.35)' : 'rgba(0, 243, 255, 0.35)'}, ${insetShadow}`;
           widthStyle = '90%';
           heightStyle = '90%';
           borderRadiusStyle = '3px';
         } else if (isCustom) {
-          borderStyle = '1px solid #e6d0af';
+          borderWidthVal = '1px';
+          borderStyleVal = 'solid';
+          borderColorVal = '#e6d0af';
           let glowColor = 'rgba(230, 208, 175, 0.2)';
           if (piece.mechanics_type === 'STEALTH_TRAP') {
             glowColor = 'rgba(168, 85, 247, 0.45)'; // 罠：紫
@@ -266,7 +278,9 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          border: borderStyle,
+          borderWidth: borderWidthVal,
+          borderStyle: borderStyleVal,
+          borderColor: borderColorVal,
           boxShadow: boxShadowStyle,
           background: baseBg,
           transform: isMyPiece

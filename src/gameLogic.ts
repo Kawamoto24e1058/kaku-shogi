@@ -1,4 +1,4 @@
-import type { Board, Piece, Player, GameLog } from './types';
+import type { Board, Piece, Player, GameLog, AbilityEvent } from './types';
 
 export const BOARD_SIZE = 9;
 
@@ -12,6 +12,13 @@ export function getPieceLogicCode(piece: Piece): string {
     return piece.promoted_effect.logic_code || '';
   }
   return piece.logic_code || '';
+}
+
+export function getPieceDescription(piece: Piece): string {
+  if (piece.isPromoted && piece.promoted_effect) {
+    return piece.promoted_effect.description || '';
+  }
+  return piece.description || '';
 }
 
 export function getPieceTrigger(piece: Piece): 'ALWAYS' | 'ON_MOVE' | 'TURN_START' | 'ON_TAKEN' | 'ON_APPROACH' {
@@ -28,7 +35,7 @@ export function isStealthPiece(p: any): boolean {
   if (!p) return false;
   const trigger = p.trigger || 'ALWAYS';
   const logic = (p.logic_code || (p.promoted_effect?.logic_code) || '').toLowerCase();
-  const desc = p.description || '';
+  const desc = ((p.isPromoted && p.promoted_effect ? p.promoted_effect.description : p.description) || '').toLowerCase();
   const word = p.word || '';
   return p.mechanics_type === 'STEALTH_TRAP' || 
          trigger === 'ON_TAKEN' ||
@@ -50,8 +57,8 @@ export function isCustomPiece(piece: Piece): boolean {
 }
 
 export function isStraightLineDestruction(piece: Piece): boolean {
-  const logic = (piece.logic_code || '').toLowerCase();
-  const desc = (piece.description || '').toLowerCase();
+  const logic = getPieceLogicCode(piece).toLowerCase();
+  const desc = getPieceDescription(piece).toLowerCase();
   const name = (piece.word || '').toLowerCase();
   const effect = (piece.isPromoted ? (piece.promoted_effect?.effect_name || piece.effect_name) : piece.effect_name || '').toLowerCase();
   return (
@@ -866,6 +873,7 @@ export interface MoveResult {
   bombTriggered: boolean;
   gameOver: boolean;
   winner: Player | null;
+  abilityEvents?: AbilityEvent[];
 }
 
 function pushPiece(
@@ -964,6 +972,7 @@ export function executeMove(
   let bombTriggered = false;
   let gameOver = false;
   let winner: Player | null = null;
+  const abilityEvents: AbilityEvent[] = [];
   const dy = Math.sign(ty - fy);
   const dx = Math.sign(tx - fx);
   const isStraightLine = dy === 0 || dx === 0 || Math.abs(dy) === Math.abs(dx);
@@ -1142,135 +1151,73 @@ export function executeMove(
       const isCurseStun = code === 'curse_stun' || desc.includes('呪縛') || desc.includes('行動封印');
       const isCurseSilence = code === 'curse_silence' || desc.includes('能力封印');
       const isCurseDeath = code === 'curse_death' || desc.includes('死の宣告');
+      const isTrap = targetCell.trigger === 'ON_TAKEN';
 
-      if (targetCell.trigger === 'ON_TAKEN' && (isCurseStun || isCurseSilence || isCurseDeath)) {
-        logs.push({
-          player,
-          message: `【捕獲】${piece.word} が呪いの駒 ${targetCell.word} (${getCellLabel(ty, tx)}) を捕獲しました。`,
-          type: 'capture'
+      if (isTrap) {
+        // Queue ON_TAKEN ability event
+        abilityEvents.push({
+          id: generateId(),
+          priority: 1,
+          triggerType: 'ON_TAKEN',
+          pieceId: targetCell.id,
+          position: [ty, tx],
+          owner: targetCell.owner,
+          attackerPieceId: piece.id,
+          attackerPiecePos: [ty, tx],
+          targetCellPiece: targetCell
         });
 
-        capturedPiece = {
-          ...targetCell,
-          owner: player,
-          isPromoted: false,
-          isRevealed: true,
-          coolDownTurnsRemaining: 0
-        };
-
-        if (isCurseStun) {
-          finalPiece.stunTurnsRemaining = 3;
-          logs.push({
-            player,
-            message: `【呪縛発動】${targetCell.word} を捕獲した呪いにより、${finalPiece.word} は3手番の間、行動封印（移動不可）になりました！`,
-            type: 'ability'
-          });
-        } else if (isCurseSilence) {
-          degradeToNormalPawn(finalPiece);
-          logs.push({
-            player,
-            message: `【能力封印】${targetCell.word} を捕獲した呪いにより、${finalPiece.word} はすべての特殊能力を奪われ、普通の歩兵に弱体化しました！`,
-            type: 'ability'
-          });
-        } else if (isCurseDeath) {
-          finalPiece.deathCountdown = 3;
-          logs.push({
-            player,
-            message: `【死の宣告】${targetCell.word} を捕獲した呪いにより、${finalPiece.word} に3手番の死の宣告（カウントダウン）が付与されました！`,
-            type: 'ability'
-          });
-        }
-
-        nextBoard[ty][tx] = finalPiece;
-        nextBoard[fy][fx] = null;
-
-        if (targetCell.isKing) {
-          gameOver = true;
-          winner = player;
-          logs.push({
-            player,
-            message: `敵の玉将が討ち取られました！${getPlayerName(player)}の勝利！`,
-            type: 'system',
-          });
-        }
-        const isTrapOrCurse = targetCell.trigger === 'ON_TAKEN';
-
-        if (isTrapOrCurse) {
-          const logMsg = isStealthPiece(targetCell)
-            ? `【罠発動】移動先の駒は罠「${targetCell.effect_name}」でした！ ${piece.word} が道連れになり、両者消滅しました！`
-            : `【呪詛発動】${targetCell.word} を捕獲した瞬間、呪い「${targetCell.effect_name}」が発動！ ${piece.word} は道連れになり、両者消滅しました！`;
-          logs.push({
-            player,
-            message: logMsg,
-            type: 'ability'
-          });
-
-          // Temporarily place the trap at [ty][tx] with isRevealed: true to trigger its effect
-          const tempBoard = nextBoard.map(row => [...row]);
-          tempBoard[ty][tx] = { ...targetCell, isRevealed: true };
-          tempBoard[fy][fx] = null;
-
-          const trapOwner = targetCell.owner;
-          const trapEffectRes = applyAutomatedEffect(
-            tempBoard,
-            [ty, tx],
-            'ON_TAKEN',
-            trapOwner,
-            [],
-            undefined,
-            undefined,
-            [...destroyedPieces]
-          );
-
-          if (trapEffectRes.triggered) {
-            nextBoard = trapEffectRes.board;
-            if (trapEffectRes.capturedPieces) {
-              capturedPiecesList.push(...trapEffectRes.capturedPieces);
-            }
-            logs.push(...trapEffectRes.logs);
-          } else {
-            // Default self-destruct if no custom effect triggered
-            nextBoard[ty][tx] = null;
-            nextBoard[fy][fx] = null;
-          }
-          bombTriggered = true;
-          destroyedPieces.push(
-            { ...piece, owner: player },
-            { ...targetCell, isRevealed: true }
-          );
-          
-          if (targetCell.isKing || piece.isKing) {
-            gameOver = true;
-            winner = player === 'sente' ? 'gote' : 'sente';
-          }
-        } else {
-          logs.push({
-            player,
-            message: `【捕獲】${piece.word} が ${targetCell.word} (${getCellLabel(ty, tx)}) を捕獲しました。`,
-            type: 'capture'
-          });
-
-          capturedPiece = {
-            ...targetCell,
-            owner: player,
-            isPromoted: false,
-            isRevealed: true,
-            coolDownTurnsRemaining: 0
-          };
-
-          nextBoard[ty][tx] = finalPiece;
-          nextBoard[fy][fx] = null;
-
-          if (targetCell.isKing) {
-            gameOver = true;
-            winner = player;
+        if (isCurseStun || isCurseSilence || isCurseDeath) {
+          if (isCurseStun) {
+            finalPiece.stunTurnsRemaining = 3;
             logs.push({
               player,
-              message: `敵の玉将が討ち取られました！${getPlayerName(player)}の勝利！`,
-              type: 'system',
+              message: `【呪縛発動】${targetCell.word} を捕獲した呪いにより、${finalPiece.word} は3手番の間、行動封印（移動不可）になりました！`,
+              type: 'ability'
+            });
+          } else if (isCurseSilence) {
+            degradeToNormalPawn(finalPiece);
+            logs.push({
+              player,
+              message: `【能力封印】${targetCell.word} を捕獲した呪いにより、${finalPiece.word} はすべての特殊能力を奪われ、普通の歩兵に弱体化しました！`,
+              type: 'ability'
+            });
+          } else if (isCurseDeath) {
+            finalPiece.deathCountdown = 3;
+            logs.push({
+              player,
+              message: `【死の宣告】${targetCell.word} を捕獲した呪いにより、${finalPiece.word} に3手番の死の宣告（カウントダウン）が付与されました！`,
+              type: 'ability'
             });
           }
         }
+      }
+
+      logs.push({
+        player,
+        message: `【捕獲】${piece.word} が ${targetCell.word} (${getCellLabel(ty, tx)}) を捕獲しました。`,
+        type: 'capture'
+      });
+
+      capturedPiece = {
+        ...targetCell,
+        owner: player,
+        isPromoted: false,
+        isRevealed: true,
+        coolDownTurnsRemaining: 0
+      };
+
+      nextBoard[ty][tx] = finalPiece;
+      nextBoard[fy][fx] = null;
+
+      if (targetCell.isKing) {
+        gameOver = true;
+        winner = player;
+        logs.push({
+          player,
+          message: `敵の玉将が討ち取られました！${getPlayerName(player)}の勝利！`,
+          type: 'system',
+        });
       }
     } else {
       // 空きマスへの移動
@@ -1281,7 +1228,7 @@ export function executeMove(
 
   // 接近警報 (ON_APPROACH 罠の判定)
   // 移動が完了し、自駒が盤面 (ty, tx) に存在する場合のみ実行
-  if (nextBoard[ty][tx] && nextBoard[ty][tx] === finalPiece && !bombTriggered) {
+  if (nextBoard[ty][tx] && nextBoard[ty][tx] === finalPiece) {
     const adjacent = [
       [-1, -1], [-1, 0], [-1, 1],
       [0, -1],           [0, 1],
@@ -1300,37 +1247,17 @@ export function executeMove(
           adjacentPiece.trigger === 'ON_APPROACH' &&
           !adjacentPiece.isRevealed
         ) {
-          // 罠の強制開示
-          nextBoard[ny][nx] = {
-            ...adjacentPiece,
-            isRevealed: true
-          };
-          
-          logs.push({
-            player: adjacentPiece.owner,
-            message: `【接近開示】${getCellLabel(ny, nx)} に潜む罠「${adjacentPiece.effect_name}」が接近により発動し、姿が露見しました！`,
-            type: 'ability'
+          // Queue ON_APPROACH ability event
+          abilityEvents.push({
+            id: generateId(),
+            priority: 1,
+            triggerType: 'ON_APPROACH',
+            pieceId: adjacentPiece.id,
+            position: [ny, nx],
+            owner: adjacentPiece.owner,
+            attackerPieceId: piece.id,
+            attackerPiecePos: [ty, tx]
           });
-
-          // Run the trap's automated effect!
-          const trapOwner = adjacentPiece.owner;
-          const trapEffectRes = applyAutomatedEffect(
-            nextBoard,
-            [ny, nx],
-            'ON_APPROACH',
-            trapOwner,
-            [],
-            undefined,
-            undefined,
-            [...destroyedPieces]
-          );
-          if (trapEffectRes.triggered) {
-            nextBoard = trapEffectRes.board;
-            if (trapEffectRes.capturedPieces) {
-              capturedPiecesList.push(...trapEffectRes.capturedPieces);
-            }
-            logs.push(...trapEffectRes.logs);
-          }
         }
       }
     }
@@ -1375,6 +1302,7 @@ export function executeMove(
     bombTriggered,
     gameOver,
     winner,
+    abilityEvents
   };
 }
 
@@ -1545,8 +1473,8 @@ export function checkAndApplyNullification(
 
 function isAutonomousPiece(p: Piece | null): boolean {
   if (!p) return false;
-  const logic = p.logic_code || '';
-  const desc = p.description || '';
+  const logic = getPieceLogicCode(p);
+  const desc = getPieceDescription(p);
   return p.trigger === 'ALWAYS' || 
          logic.includes('runaway') || 
          logic === 'random_teleport' || 
@@ -1594,7 +1522,7 @@ export function applyAutomatedEffect(
   let triggered = false;
 
   const logic = getPieceLogicCode(piece);
-  const desc = piece.description || '';
+  const desc = getPieceDescription(piece);
   const effectName = piece.isPromoted ? (piece.promoted_effect?.effect_name || piece.effect_name) : piece.effect_name;
 
   // 1. Replication/Clone (spawn_piece_name is present)
@@ -1744,7 +1672,11 @@ export function applyAutomatedEffect(
                      desc.includes('縦横一直線') || desc.includes('縦横直線') || desc.includes('縦横の直線') ||
                      desc.includes('レーザー') || desc.includes('ビーム') || desc.includes('貫通') || desc.includes('狙撃') || desc.includes('スナイプ');
 
-    const isVerticalLinear = desc.includes('縦直線') || desc.includes('縦の直線') || desc.includes('レーザー') || desc.includes('ビーム');
+    const isVerticalLinear = desc.includes('縦直線') || desc.includes('縦の直線') || 
+                             desc.includes('レーザー') || desc.includes('ビーム') ||
+                             logic === 'kill_linear' || logic.includes('laser') || logic.includes('beam') ||
+                             piece.word.includes('レーザー') || piece.word.includes('ビーム') ||
+                             effectName.includes('レーザー') || effectName.includes('ビーム');
 
     if (isFrontRow) {
       const dy = player === 'sente' ? -1 : 1;
@@ -2724,7 +2656,7 @@ export function getAbilityTargets(
   const piece = board[y][x];
   if (!piece || piece.coolDownTurnsRemaining > 0) return null;
 
-  const desc = piece.description || '';
+  const desc = getPieceDescription(piece);
   const logic = getPieceLogicCode(piece);
 
   const isTransform = logic === 'transform' || logic === 'mimic' || logic === 'ability_theft' || desc.includes('擬態') || desc.includes('コピー') || desc.includes('変身');
@@ -2867,8 +2799,8 @@ export function placeCustomPiecesRandomly(board: Board, sentePieces: Piece[], go
     }
 
     // 3. For sliding pieces, check long range
-    const logic = (piece.logic_code || '').toLowerCase();
-    const desc = piece.description || '';
+    const logic = getPieceLogicCode(piece).toLowerCase();
+    const desc = getPieceDescription(piece);
     const isStraightLineDestruction = desc.includes('狙撃') || desc.includes('貫通') || desc.includes('直線上') || logic === 'linear_charge' || logic === 'remote_snipe';
     
     if (isStraightLineDestruction) {

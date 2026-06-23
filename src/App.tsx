@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import type { GameState, Piece, Player, Board, GameLog, HistoryState } from './types';
+import type { GameState, Piece, Player, Board, GameLog, HistoryState, AbilityEvent } from './types';
 import {
   initializeBoard,
   getValidMoves,
@@ -126,6 +126,7 @@ export const App: React.FC = () => {
     capturedPieces: typeof state.capturedPieces;
     logs: GameLog[];
     customStateUpdates?: Partial<GameState>;
+    remainingEvents?: AbilityEvent[];
   } | null>(null);
 
   const isPieceOwnerHuman = (owner: Player): boolean => {
@@ -136,6 +137,406 @@ export const App: React.FC = () => {
       return owner === 'sente';
     }
     return true; // Local PvP: both Sente and Gote are human
+  };
+
+  const processAbilityEventsQueue = async (
+    currentBoard: Board,
+    eventQueue: AbilityEvent[],
+    currentCaptured: typeof state.capturedPieces,
+    currentShared: Piece[],
+    currentLogs: GameLog[],
+    currentDestroyed: Piece[]
+  ) => {
+    eventQueue.sort((a, b) => a.priority - b.priority);
+
+    // Scan original king positions before processing for explosion effects
+    let prevSenteKingPos: [number, number] | null = null;
+    let prevGoteKingPos: [number, number] | null = null;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const p = currentBoard[r][c];
+        if (p?.isKing) {
+          if (p.owner === 'sente') prevSenteKingPos = [r, c];
+          else prevGoteKingPos = [r, c];
+        }
+      }
+    }
+
+    let boardState = currentBoard;
+    let capturedState = { sente: [...currentCaptured.sente], gote: [...currentCaptured.gote] };
+    let sharedState = [...currentShared];
+    let logsState = [...currentLogs];
+    let destroyedState = [...currentDestroyed];
+
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    for (let i = 0; i < eventQueue.length; i++) {
+      const event = eventQueue[i];
+
+      // 1. "死人に口なしルール" (No speech for the dead)
+      if (event.triggerType === 'ON_TAKEN') {
+        const [ay, ax] = event.attackerPiecePos!;
+        const attackerOnBoard = boardState[ay][ax];
+        if (!attackerOnBoard || attackerOnBoard.id !== event.attackerPieceId) {
+          console.log(`Skipping ON_TAKEN event ${event.id}: Attacker piece is no longer at position.`);
+          continue;
+        }
+      } else if (event.triggerType === 'ON_APPROACH') {
+        const [ty, tx] = event.position;
+        const trapOnBoard = boardState[ty][tx];
+        if (!trapOnBoard || trapOnBoard.id !== event.pieceId) {
+          console.log(`Skipping ON_APPROACH event ${event.id}: Trap piece is no longer at position.`);
+          continue;
+        }
+        const [ay, ax] = event.attackerPiecePos!;
+        const attackerOnBoard = boardState[ay][ax];
+        if (!attackerOnBoard || attackerOnBoard.id !== event.attackerPieceId) {
+          console.log(`Skipping ON_APPROACH event ${event.id}: Attacker piece is no longer at position.`);
+          continue;
+        }
+      } else {
+        const [py, px] = event.position;
+        const pieceOnBoard = boardState[py][px];
+        if (!pieceOnBoard || pieceOnBoard.id !== event.pieceId) {
+          console.log(`Skipping ${event.triggerType} event ${event.id}: Piece is no longer at position.`);
+          continue;
+        }
+      }
+
+      // 2. Check if the ability is interactive (needs human target selection)
+      if (event.triggerType === 'ON_MOVE' || event.triggerType === 'TURN_START') {
+        const targetsInfo = getAbilityTargets(boardState, event.position, event.owner, sharedState);
+        if (targetsInfo && isPieceOwnerHuman(event.owner)) {
+          // Suspend queue execution!
+          const remainingEvents = eventQueue.slice(i + 1);
+          setSuspendedAbility({
+            source: event.position,
+            targets: targetsInfo.targets,
+            type: targetsInfo.type,
+            triggerType: event.triggerType,
+            fromPosition: event.fromPosition,
+            board: boardState,
+            capturedPieces: capturedState,
+            logs: logsState,
+            customStateUpdates: {
+              destroyedPieces: destroyedState
+            },
+            remainingEvents: remainingEvents
+          });
+
+          setState(prev => ({
+            ...prev,
+            board: boardState,
+            capturedPieces: capturedState,
+            destroyedPieces: destroyedState,
+            sharedPieces: sharedState,
+            selectedCell: null,
+            activeAbilityMode: true,
+            activeAbilitySource: event.position,
+            activeAbilityTargets: targetsInfo.targets,
+            logs: logsState
+          }));
+          return; // Stop queue execution, wait for user click!
+        }
+      }
+
+      // 3. Automated Ability Execution
+      if (event.triggerType === 'ON_TAKEN') {
+        const [ty, tx] = event.position;
+        const trapPiece = event.targetCellPiece!;
+        const tempBoard = boardState.map(row => [...row]);
+        tempBoard[ty][tx] = { ...trapPiece, isRevealed: true };
+        
+        const trapEffectRes = applyAutomatedEffect(
+          tempBoard,
+          [ty, tx],
+          'ON_TAKEN',
+          event.owner,
+          [],
+          undefined,
+          undefined,
+          [...destroyedState],
+          sharedState
+        );
+
+        if (trapEffectRes.triggered) {
+          boardState = trapEffectRes.board;
+          if (trapEffectRes.capturedPieces && trapEffectRes.capturedPieces.length > 0) {
+            capturedState[event.owner] = [...capturedState[event.owner], ...trapEffectRes.capturedPieces];
+          }
+          if (trapEffectRes.graveyard) {
+            sharedState = trapEffectRes.graveyard;
+          }
+          logsState.push(...trapEffectRes.logs.map(l => ({
+            ...l,
+            id: generateId(),
+            timestamp: new Date().toLocaleTimeString()
+          })));
+
+          // Remove the captured trap from hands (because it successfully triggered and exploded)
+          capturedState[event.owner] = capturedState[event.owner].filter(p => p.id !== event.pieceId);
+          capturedState[event.owner === 'sente' ? 'gote' : 'sente'] = capturedState[event.owner === 'sente' ? 'gote' : 'sente'].filter(p => p.id !== event.pieceId);
+        } else {
+          // Default self-destruct if no custom effect triggered:
+          // Both the trap piece and the intruder (attacker) at [ty][tx] are destroyed.
+          const attackerOnBoard = boardState[ty][tx];
+          if (attackerOnBoard) {
+            destroyedState.push({ ...attackerOnBoard });
+            sharedState.push({
+              ...attackerOnBoard,
+              isPromoted: false,
+              coolDownTurnsRemaining: 0,
+              isRevealed: true
+            });
+          }
+          destroyedState.push({ ...trapPiece });
+          sharedState.push({
+            ...trapPiece,
+            isPromoted: false,
+            coolDownTurnsRemaining: 0,
+            isRevealed: true
+          });
+
+          boardState[ty][tx] = null;
+
+          const logMsg = isStealthPiece(trapPiece)
+            ? `【罠発動】移動先の駒は罠「${trapPiece.effect_name}」でした！道連れになり、両者消滅しました！`
+            : `【呪詛発動】呪い「${trapPiece.effect_name}」が発動！道連れになり、両者消滅しました！`;
+          logsState.push({
+            id: generateId(),
+            timestamp: new Date().toLocaleTimeString(),
+            player: event.owner,
+            message: logMsg,
+            type: 'ability'
+          });
+
+          // Remove the captured trap from hands
+          capturedState[event.owner] = capturedState[event.owner].filter(p => p.id !== event.pieceId);
+          capturedState[event.owner === 'sente' ? 'gote' : 'sente'] = capturedState[event.owner === 'sente' ? 'gote' : 'sente'].filter(p => p.id !== event.pieceId);
+        }
+        setScreenShake(true);
+        setTimeout(() => setScreenShake(false), 300);
+
+      } else if (event.triggerType === 'ON_APPROACH') {
+        const [ny, nx] = event.position;
+        const trapPiece = boardState[ny][nx]!;
+
+        // Reveal the trap first
+        boardState[ny][nx] = {
+          ...trapPiece,
+          isRevealed: true
+        };
+
+        logsState.push({
+          id: generateId(),
+          timestamp: new Date().toLocaleTimeString(),
+          player: event.owner,
+          message: `【接近開示】${getCellLabel(ny, nx)} に潜む罠「${trapPiece.effect_name}」が接近により発動し、姿が露見しました！`,
+          type: 'ability'
+        });
+
+        const trapEffectRes = applyAutomatedEffect(
+          boardState,
+          [ny, nx],
+          'ON_APPROACH',
+          event.owner,
+          [],
+          undefined,
+          undefined,
+          [...destroyedState],
+          sharedState
+        );
+
+        if (trapEffectRes.triggered) {
+          boardState = trapEffectRes.board;
+          if (trapEffectRes.capturedPieces && trapEffectRes.capturedPieces.length > 0) {
+            capturedState[event.owner] = [...capturedState[event.owner], ...trapEffectRes.capturedPieces];
+          }
+          if (trapEffectRes.graveyard) {
+            sharedState = trapEffectRes.graveyard;
+          }
+          logsState.push(...trapEffectRes.logs.map(l => ({
+            ...l,
+            id: generateId(),
+            timestamp: new Date().toLocaleTimeString()
+          })));
+        }
+        setScreenShake(true);
+        setTimeout(() => setScreenShake(false), 300);
+
+      } else {
+        const graveyardCandidates = [
+          ...capturedState[event.owner],
+          ...destroyedState.filter(piece => piece.owner !== event.owner)
+        ];
+
+        const effectRes = applyAutomatedEffect(
+          boardState,
+          event.position,
+          event.triggerType,
+          event.owner,
+          capturedState[event.owner],
+          event.fromPosition,
+          undefined,
+          graveyardCandidates,
+          sharedState
+        );
+
+        if (effectRes.triggered || effectRes.logs.length > 0) {
+          if (effectRes.triggered) {
+            boardState = effectRes.board;
+            capturedState[event.owner] = effectRes.capturedPieces;
+            if (effectRes.graveyard) {
+              sharedState = effectRes.graveyard;
+            }
+            setScreenShake(true);
+            setTimeout(() => setScreenShake(false), 300);
+          }
+          logsState.push(...effectRes.logs.map(l => ({
+            ...l,
+            id: generateId(),
+            timestamp: new Date().toLocaleTimeString()
+          })));
+        }
+      }
+
+      // Update React state after this event resolves, then wait for animation
+      setState(prev => ({
+        ...prev,
+        board: boardState,
+        capturedPieces: capturedState,
+        sharedPieces: sharedState,
+        logs: logsState,
+        destroyedPieces: destroyedState
+      }));
+
+      await delay(150); // Pause for rendering synchronization!
+    }
+
+    // 4. Finalize the turn once all events have processed
+    const senteKing = boardState.some(row => row.some(p => p?.isKing && p.owner === 'sente'));
+    const goteKing = boardState.some(row => row.some(p => p?.isKing && p.owner === 'gote'));
+    let isGameOver = false;
+    let finalWinner: Player | null = null;
+
+    if (!senteKing && !goteKing) {
+      isGameOver = true;
+      finalWinner = state.turn === 'sente' ? 'gote' : 'sente';
+    } else if (!senteKing) {
+      isGameOver = true;
+      finalWinner = 'gote';
+    } else if (!goteKing) {
+      isGameOver = true;
+      finalWinner = 'sente';
+    }
+
+    // === ステルス近接スキャンを実行 ===
+    boardState = scanStealthPieces(boardState, logsState);
+
+    const isTurnStartQueue = eventQueue.some(e => e.triggerType === 'TURN_START');
+
+    if (isGameOver) {
+      // Trigger multi-glitch explosion effects at the position of the destroyed King
+      const destroyedKingPositions: [number, number][] = [];
+      if (!senteKing && prevSenteKingPos) destroyedKingPositions.push(prevSenteKingPos);
+      if (!goteKing && prevGoteKingPos) destroyedKingPositions.push(prevGoteKingPos);
+
+      if (destroyedKingPositions.length > 0) {
+        for (const [ky, kx] of destroyedKingPositions) {
+          setExplosionEffects(prev => [...prev, [ky, kx]]);
+          setTimeout(() => setExplosionEffects(prev => [...prev, [ky - 1 >= 0 ? ky - 1 : ky, kx], [ky, kx + 1 < BOARD_SIZE ? kx + 1 : kx]]), 150);
+          setTimeout(() => setExplosionEffects(prev => [...prev, [ky + 1 < BOARD_SIZE ? ky + 1 : ky, kx], [ky, kx - 1 >= 0 ? kx - 1 : kx]]), 300);
+        }
+        
+        setScreenShake(true);
+        setTimeout(() => {
+          setScreenShake(false);
+          for (const [ky, kx] of destroyedKingPositions) {
+            setExplosionEffects(prev => prev.filter(coord => Math.abs(coord[0] - ky) > 1 || Math.abs(coord[1] - kx) > 1));
+          }
+        }, 1200);
+      }
+
+      setState(prev => ({
+        ...prev,
+        board: boardState,
+        capturedPieces: capturedState,
+        destroyedPieces: destroyedState,
+        selectedCell: null,
+        promotionPending: null,
+        winner: finalWinner
+      }));
+
+      saveHistorySnapshot(boardState, capturedState, state.turn, logsState, state.customDecks, destroyedState);
+      syncOnlineState(
+        boardState,
+        state.turn,
+        'finished',
+        finalWinner,
+        capturedState,
+        sharedState,
+        state.customDecks,
+        destroyedState,
+        logsState
+      );
+    } else {
+      if (isTurnStartQueue) {
+        const activePlayer = eventQueue[0].owner;
+        const isChecked = isKingInCheck(boardState, activePlayer);
+        if (isChecked) {
+          logsState.push({
+            id: generateId(),
+            timestamp: new Date().toLocaleTimeString(),
+            player: activePlayer,
+            message: `🚨 王手！${getPlayerName(activePlayer)}の玉将が狙われています！`,
+            type: 'system'
+          });
+          setShowCheckOverlay(true);
+        }
+
+        setState(prev => {
+          const nextState = {
+            ...prev,
+            board: boardState,
+            capturedPieces: capturedState,
+            sharedPieces: sharedState,
+            destroyedPieces: destroyedState,
+            turn: activePlayer,
+            selectedCell: null,
+            activeAbilityMode: false,
+            activeAbilitySource: null,
+            activeAbilityTargets: [],
+            logs: logsState,
+          };
+          saveHistorySnapshot(boardState, capturedState, activePlayer, logsState, state.customDecks, destroyedState);
+          return nextState;
+        });
+
+        setValidMoves([]);
+
+        syncOnlineState(
+          boardState,
+          activePlayer,
+          'playing',
+          null,
+          capturedState,
+          sharedState,
+          state.customDecks,
+          destroyedState,
+          logsState
+        );
+      } else {
+        finalizeTurn(
+          boardState,
+          capturedState,
+          sharedState,
+          logsState,
+          { promotionPending: null },
+          state.customDecks,
+          destroyedState
+        );
+      }
+    }
   };
 
   const adjacentOffsets: [number, number][] = [
@@ -236,14 +637,25 @@ export const App: React.FC = () => {
   };
 
 
-  const executeMoveWithPromotion = (
+  const executeMoveWithPromotion = async (
     sy: number,
     sx: number,
     y: number,
     x: number,
     promote: boolean
   ) => {
-    const res = executeMove(state.board, [sy, sx], [y, x], state.turn, promote, playerNames, vsAiMode, true, state.capturedPieces);
+    let res;
+    try {
+      res = executeMove(state.board, [sy, sx], [y, x], state.turn, promote, playerNames, vsAiMode, true, state.capturedPieces);
+    } catch (err) {
+      console.error("Failed to execute move:", err);
+      setState(prev => ({
+        ...prev,
+        promotionPending: null,
+        selectedCell: null
+      }));
+      return;
+    }
 
     if (res.bombTriggered) {
       setExplosionEffects(prev => [...prev, [y, x]]);
@@ -296,165 +708,24 @@ export const App: React.FC = () => {
     }
 
     const nextDestroyedPieces = [...state.destroyedPieces, ...(res.destroyedPieces || [])];
-    let finalBoard = res.board;
     const finalLogs = [...state.logs, ...res.logs.map(l => ({ ...l, id: generateId(), timestamp: new Date().toLocaleTimeString() }))];
 
-    // Check for ON_MOVE automatic trigger
-    const landingPiece = finalBoard[y][x];
+    const events = [...(res.abilityEvents || [])];
+    const landingPiece = res.board[y][x];
     if (landingPiece && landingPiece.owner === state.turn && isTriggerMatching(landingPiece, 'ON_MOVE') && landingPiece.coolDownTurnsRemaining === 0) {
-      const targetsInfo = getAbilityTargets(finalBoard, [y, x], state.turn, nextShared);
-      if (targetsInfo && isPieceOwnerHuman(state.turn)) {
-        // Suspend!
-        setSuspendedAbility({
-          source: [y, x],
-          targets: targetsInfo.targets,
-          type: targetsInfo.type,
-          triggerType: 'ON_MOVE',
-          fromPosition: [sy, sx],
-          board: finalBoard,
-          capturedPieces: nextCaptured,
-          logs: finalLogs,
-          customStateUpdates: {
-            destroyedPieces: nextDestroyedPieces
-          }
-        });
-        
-        setState(prev => ({
-          ...prev,
-          board: finalBoard,
-          capturedPieces: nextCaptured,
-          destroyedPieces: nextDestroyedPieces,
-          selectedCell: null,
-          activeAbilityMode: true,
-          activeAbilitySource: [y, x],
-          activeAbilityTargets: targetsInfo.targets
-        }));
-        return; // Return early, do NOT finalize turn yet!
-      } else {
-        const graveyardCandidates = [
-          ...nextCaptured[state.turn],
-          ...nextDestroyedPieces.filter(piece => piece.owner !== state.turn)
-        ];
-        const effectRes = applyAutomatedEffect(
-          finalBoard,
-          [y, x],
-          'ON_MOVE',
-          state.turn,
-          nextCaptured[state.turn],
-          [sy, sx],
-          undefined,
-          graveyardCandidates,
-          nextShared
-        );
-        if (effectRes.triggered || effectRes.logs.length > 0) {
-          if (effectRes.triggered) {
-            finalBoard = effectRes.board;
-            nextCaptured[state.turn] = effectRes.capturedPieces;
-            if (effectRes.graveyard) {
-              nextShared = effectRes.graveyard;
-            }
-            setScreenShake(true);
-            setTimeout(() => setScreenShake(false), 300);
-          }
-          finalLogs.push(...effectRes.logs.map(l => ({
-            ...l,
-            id: generateId(),
-            timestamp: new Date().toLocaleTimeString()
-          })));
-        }
-      }
+      events.push({
+        id: generateId(),
+        priority: 2,
+        triggerType: 'ON_MOVE',
+        pieceId: landingPiece.id,
+        position: [y, x],
+        owner: landingPiece.owner,
+        fromPosition: [sy, sx]
+      });
     }
 
-    // 移動前の玉将の位置を探しておく
-    let prevSenteKingPos: [number, number] | null = null;
-    let prevGoteKingPos: [number, number] | null = null;
-    for (let r = 0; r < BOARD_SIZE; r++) {
-      for (let c = 0; c < BOARD_SIZE; c++) {
-        const p = state.board[r][c];
-        if (p?.isKing) {
-          if (p.owner === 'sente') prevSenteKingPos = [r, c];
-          else prevGoteKingPos = [r, c];
-        }
-      }
-    }
-
-    // Check if game over conditions are met after ON_MOVE effect
-    const senteKing = finalBoard.some(row => row.some(p => p?.isKing && p.owner === 'sente'));
-    const goteKing = finalBoard.some(row => row.some(p => p?.isKing && p.owner === 'gote'));
-    let isGameOver = res.gameOver;
-    let finalWinner = res.winner;
-
-    if (!senteKing && !goteKing) {
-      isGameOver = true;
-      finalWinner = state.turn === 'sente' ? 'gote' : 'sente';
-    } else if (!senteKing) {
-      isGameOver = true;
-      finalWinner = 'gote';
-    } else if (!goteKing) {
-      isGameOver = true;
-      finalWinner = 'sente';
-    }
-
-    if (isGameOver) {
-      // 破壊された玉将の位置に多重グリッチ爆発エフェクトをトリガー
-      const destroyedKingPositions: [number, number][] = [];
-      if (!senteKing && prevSenteKingPos) destroyedKingPositions.push(prevSenteKingPos);
-      if (!goteKing && prevGoteKingPos) destroyedKingPositions.push(prevGoteKingPos);
-
-      if (destroyedKingPositions.length > 0) {
-        for (const [ky, kx] of destroyedKingPositions) {
-          setExplosionEffects(prev => [...prev, [ky, kx]]);
-          setTimeout(() => setExplosionEffects(prev => [...prev, [ky - 1 >= 0 ? ky - 1 : ky, kx], [ky, kx + 1 < BOARD_SIZE ? kx + 1 : kx]]), 150);
-          setTimeout(() => setExplosionEffects(prev => [...prev, [ky + 1 < BOARD_SIZE ? ky + 1 : ky, kx], [ky, kx - 1 >= 0 ? kx - 1 : kx]]), 300);
-        }
-        
-        setScreenShake(true);
-        setTimeout(() => {
-          setScreenShake(false);
-          for (const [ky, kx] of destroyedKingPositions) {
-            setExplosionEffects(prev => prev.filter(coord => Math.abs(coord[0] - ky) > 1 || Math.abs(coord[1] - kx) > 1));
-          }
-        }, 1200);
-      }
-
-      setState(prev => ({
-        ...prev,
-        board: finalBoard,
-        capturedPieces: nextCaptured,
-        destroyedPieces: nextDestroyedPieces,
-        selectedCell: null,
-        promotionPending: null,
-      }));
-
-      setTimeout(() => {
-        setState(prev => ({
-          ...prev,
-          winner: finalWinner,
-        }));
-        saveHistorySnapshot(finalBoard, nextCaptured, state.turn, finalLogs, state.customDecks, nextDestroyedPieces);
-        syncOnlineState(
-          finalBoard,
-          state.turn,
-          'finished',
-          finalWinner,
-          nextCaptured,
-          nextShared,
-          state.customDecks,
-          nextDestroyedPieces,
-          finalLogs
-        );
-      }, 1200);
-    } else {
-      finalizeTurn(
-        finalBoard,
-        nextCaptured,
-        nextShared,
-        finalLogs,
-        { promotionPending: null },
-        state.customDecks,
-        nextDestroyedPieces
-      );
-    }
+    // Process the asynchronous queue!
+    await processAbilityEventsQueue(res.board, events, nextCaptured, nextShared, finalLogs, nextDestroyedPieces);
   };
 
   const handlePromotionDecision = (promote: boolean) => {
@@ -462,6 +733,13 @@ export const App: React.FC = () => {
     const { from, to } = state.promotionPending;
     const [sy, sx] = from;
     const [y, x] = to;
+
+    const movingPiece = state.board[sy][sx];
+    if (!movingPiece || movingPiece.owner !== state.turn) {
+      console.warn("handlePromotionDecision ignored: piece is no longer at start coordinates or turn has changed.");
+      setState(prev => ({ ...prev, promotionPending: null }));
+      return;
+    }
 
     executeMoveWithPromotion(sy, sx, y, x, promote);
   };
@@ -950,7 +1228,7 @@ export const App: React.FC = () => {
   };
 
   // Turn Change Finalizer (ticks cooldowns)
-  const finalizeTurn = (
+  const finalizeTurn = async (
     nextBoard: Board,
     nextCaptured: typeof state.capturedPieces,
     nextShared: Piece[],
@@ -1201,79 +1479,27 @@ export const App: React.FC = () => {
     currentLogs.push(...updatedLogsList);
     currentBoard = finalBoard;
 
-    // 3. Scan and apply TURN_START automated triggers for nextPlayer
+    // 3. Scan and queue TURN_START triggers for nextPlayer
+    const turnStartEvents: AbilityEvent[] = [];
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
         const p = currentBoard[r][c];
         if (p && p.owner === nextPlayer && isTriggerMatching(p, 'TURN_START') && p.coolDownTurnsRemaining === 0) {
-          const targetsInfo = getAbilityTargets(currentBoard, [r, c], nextPlayer, currentShared);
-          if (targetsInfo && isPieceOwnerHuman(nextPlayer)) {
-            // Suspend turn start!
-            setSuspendedAbility({
-              source: [r, c],
-              targets: targetsInfo.targets,
-              type: targetsInfo.type,
-              triggerType: 'TURN_START',
-              board: currentBoard,
-              capturedPieces: currentCaptured,
-              logs: currentLogs,
-              customStateUpdates: {
-                ...customStateUpdates,
-                customDecks: nextCustomDecks,
-                destroyedPieces: currentDestroyedPieces,
-                sharedPieces: currentShared
-              }
-            });
-
-            setState(prev => ({
-              ...prev,
-              board: currentBoard,
-              capturedPieces: currentCaptured,
-              customDecks: nextCustomDecks,
-              destroyedPieces: currentDestroyedPieces,
-              sharedPieces: currentShared,
-              turn: nextPlayer, // SWITCH TURN NOW!
-              selectedCell: null,
-              activeAbilityMode: true,
-              activeAbilitySource: [r, c],
-              activeAbilityTargets: targetsInfo.targets,
-              logs: currentLogs,
-              ...customStateUpdates
-            }));
-            return; // Return early, do NOT finish finalization yet!
-          } else {
-            const graveyardCandidates = [
-              ...currentCaptured[nextPlayer],
-              ...currentDestroyedPieces.filter(piece => piece.owner !== nextPlayer)
-            ];
-            const effectRes = applyAutomatedEffect(
-              currentBoard,
-              [r, c],
-              'TURN_START',
-              nextPlayer,
-              currentCaptured[nextPlayer],
-              undefined,
-              undefined,
-              graveyardCandidates,
-              currentShared
-            );
-            if (effectRes.triggered || effectRes.logs.length > 0) {
-              if (effectRes.triggered) {
-                currentBoard = effectRes.board;
-                currentCaptured[nextPlayer] = effectRes.capturedPieces;
-                if (effectRes.graveyard) {
-                  currentShared = effectRes.graveyard;
-                }
-              }
-              currentLogs.push(...effectRes.logs.map(l => ({
-                ...l,
-                id: generateId(),
-                timestamp: new Date().toLocaleTimeString()
-              })));
-            }
-          }
+          turnStartEvents.push({
+            id: generateId(),
+            priority: 3,
+            triggerType: 'TURN_START',
+            pieceId: p.id,
+            position: [r, c],
+            owner: nextPlayer
+          });
         }
       }
+    }
+
+    if (turnStartEvents.length > 0) {
+      await processAbilityEventsQueue(currentBoard, turnStartEvents, currentCaptured, currentShared, currentLogs, currentDestroyedPieces);
+      return;
     }
 
     // Check game over conditions after TURN_START triggers
@@ -1400,13 +1626,13 @@ export const App: React.FC = () => {
     );
   };
 
-  const resumeAbilitySelection = (ty: number, tx: number) => {
+  const resumeAbilitySelection = async (ty: number, tx: number) => {
     if (!suspendedAbility) return;
     if (suspendedAbility.type === 'resurrect' && !selectedSharedPiece) {
       return; // Must select a graveyard piece first
     }
 
-    const { source, triggerType, fromPosition, board, capturedPieces, logs, customStateUpdates } = suspendedAbility;
+    const { source, triggerType, fromPosition, board, capturedPieces, logs, customStateUpdates, remainingEvents } = suspendedAbility;
     const [sy, sx] = source;
     const activePlayer = board[sy][sx]?.owner;
     if (!activePlayer) return;
@@ -1415,6 +1641,19 @@ export const App: React.FC = () => {
     const nextCaptured = { ...capturedPieces };
     const finalLogs = [...logs];
     let nextShared = [...state.sharedPieces];
+
+    // Scan original king positions in board before execution
+    let prevSenteKingPos: [number, number] | null = null;
+    let prevGoteKingPos: [number, number] | null = null;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const p = board[r][c];
+        if (p?.isKing) {
+          if (p.owner === 'sente') prevSenteKingPos = [r, c];
+          else prevGoteKingPos = [r, c];
+        }
+      }
+    }
 
     const effectRes = applyAutomatedEffect(
       finalBoard,
@@ -1448,6 +1687,8 @@ export const App: React.FC = () => {
 
     setSuspendedAbility(null);
 
+    const nextDestroyedPieces = customStateUpdates?.destroyedPieces || state.destroyedPieces;
+
     if (triggerType === 'ON_MOVE') {
       const senteKing = finalBoard.some(row => row.some(p => p?.isKing && p.owner === 'sente'));
       const goteKing = finalBoard.some(row => row.some(p => p?.isKing && p.owner === 'gote'));
@@ -1466,6 +1707,27 @@ export const App: React.FC = () => {
       }
 
       if (isGameOver) {
+        // Trigger multi-glitch explosion effects at the position of the destroyed King
+        const destroyedKingPositions: [number, number][] = [];
+        if (!senteKing && prevSenteKingPos) destroyedKingPositions.push(prevSenteKingPos);
+        if (!goteKing && prevGoteKingPos) destroyedKingPositions.push(prevGoteKingPos);
+
+        if (destroyedKingPositions.length > 0) {
+          for (const [ky, kx] of destroyedKingPositions) {
+            setExplosionEffects(prev => [...prev, [ky, kx]]);
+            setTimeout(() => setExplosionEffects(prev => [...prev, [ky - 1 >= 0 ? ky - 1 : ky, kx], [ky, kx + 1 < BOARD_SIZE ? kx + 1 : kx]]), 150);
+            setTimeout(() => setExplosionEffects(prev => [...prev, [ky + 1 < BOARD_SIZE ? ky + 1 : ky, kx], [ky, kx - 1 >= 0 ? kx - 1 : kx]]), 300);
+          }
+          
+          setScreenShake(true);
+          setTimeout(() => {
+            setScreenShake(false);
+            for (const [ky, kx] of destroyedKingPositions) {
+              setExplosionEffects(prev => prev.filter(coord => Math.abs(coord[0] - ky) > 1 || Math.abs(coord[1] - kx) > 1));
+            }
+          }, 1200);
+        }
+
         setState(prev => ({
           ...prev,
           board: finalBoard,
@@ -1496,13 +1758,27 @@ export const App: React.FC = () => {
           );
         }, 1200);
       } else {
-        finalizeTurn(
-          finalBoard,
-          nextCaptured,
-          nextShared,
-          finalLogs,
-          { promotionPending: null }
-        );
+        if (remainingEvents && remainingEvents.length > 0) {
+          // Resume queue!
+          await processAbilityEventsQueue(
+            finalBoard,
+            remainingEvents,
+            nextCaptured,
+            nextShared,
+            finalLogs,
+            nextDestroyedPieces
+          );
+        } else {
+          finalizeTurn(
+            finalBoard,
+            nextCaptured,
+            nextShared,
+            finalLogs,
+            { promotionPending: null },
+            state.customDecks,
+            nextDestroyedPieces
+          );
+        }
       }
       setSelectedSharedPiece(null);
     } else if (triggerType === 'TURN_START') {
@@ -2175,8 +2451,6 @@ export const App: React.FC = () => {
         });
       }
 
-
-
       if (aiMoves.length === 0) {
         handlePassTurn();
         return;
@@ -2202,24 +2476,16 @@ export const App: React.FC = () => {
         const movingPiece = board[chosenMove.from[0]][chosenMove.from[1]]!;
         const promote = isPromotionEligible(movingPiece, chosenMove.from[0], chosenMove.to[0], 'gote');
 
-        const res = executeMove(board, chosenMove.from, chosenMove.to, 'gote', promote, playerNames, vsAiMode, false, state.capturedPieces);
-
-        let nextShared = [...state.sharedPieces];
-        if (res.destroyedPieces && res.destroyedPieces.length > 0) {
-          for (const p of res.destroyedPieces) {
-            if (p && !p.isKing) {
-              if (!nextShared.some(s => s.id === p.id)) {
-                nextShared.push({
-                  ...p,
-                  isPromoted: false,
-                  coolDownTurnsRemaining: 0,
-                  isRevealed: true
-                });
-              }
-            }
-          }
+        let res;
+        try {
+          res = executeMove(board, chosenMove.from, chosenMove.to, 'gote', promote, playerNames, vsAiMode, false, state.capturedPieces);
+        } catch (err) {
+          console.error("AI failed to execute move:", err);
+          handlePassTurn();
+          return;
         }
-        const nextCaptured = {
+
+        let nextCaptured = {
           sente: [...state.capturedPieces.sente],
           gote: [...state.capturedPieces.gote]
         };
@@ -2247,124 +2513,41 @@ export const App: React.FC = () => {
           }
         }
 
+        let nextShared = [...state.sharedPieces];
+        if (res.destroyedPieces && res.destroyedPieces.length > 0) {
+          for (const p of res.destroyedPieces) {
+            if (p && !p.isKing) {
+              if (!nextShared.some(s => s.id === p.id)) {
+                nextShared.push({
+                  ...p,
+                  isPromoted: false,
+                  coolDownTurnsRemaining: 0,
+                  isRevealed: true
+                });
+              }
+            }
+          }
+        }
+
         const nextDestroyedPieces = [...state.destroyedPieces, ...(res.destroyedPieces || [])];
-        let finalBoard = res.board;
         const finalLogs = [...state.logs, ...res.logs.map(l => ({ ...l, id: generateId(), timestamp: new Date().toLocaleTimeString() }))];
 
-        // Check for ON_MOVE automatic trigger
-        const landingPiece = finalBoard[chosenMove.to[0]][chosenMove.to[1]];
+        const events = [...(res.abilityEvents || [])];
+        const landingPiece = res.board[chosenMove.to[0]][chosenMove.to[1]];
         if (landingPiece && landingPiece.owner === 'gote' && isTriggerMatching(landingPiece, 'ON_MOVE') && landingPiece.coolDownTurnsRemaining === 0) {
-          const graveyardCandidates = [
-            ...nextCaptured.gote,
-            ...nextDestroyedPieces.filter(piece => piece.owner !== 'gote')
-          ];
-          const effectRes = applyAutomatedEffect(
-            finalBoard,
-            chosenMove.to,
-            'ON_MOVE',
-            'gote',
-            nextCaptured.gote,
-            chosenMove.from,
-            undefined,
-            graveyardCandidates,
-            nextShared
-          );
-          if (effectRes.triggered || effectRes.logs.length > 0) {
-            if (effectRes.triggered) {
-              finalBoard = effectRes.board;
-              nextCaptured.gote = effectRes.capturedPieces;
-              if (effectRes.graveyard) {
-                nextShared = effectRes.graveyard;
-              }
-              setScreenShake(true);
-              setTimeout(() => setScreenShake(false), 300);
-            }
-            finalLogs.push(...effectRes.logs.map(l => ({
-              ...l,
-              id: generateId(),
-              timestamp: new Date().toLocaleTimeString()
-            })));
-          }
+          events.push({
+            id: generateId(),
+            priority: 2,
+            triggerType: 'ON_MOVE',
+            pieceId: landingPiece.id,
+            position: [chosenMove.to[0], chosenMove.to[1]],
+            owner: 'gote',
+            fromPosition: chosenMove.from
+          });
         }
 
-        // 移動前の玉将の位置を探しておく
-        let prevSenteKingPos: [number, number] | null = null;
-        let prevGoteKingPos: [number, number] | null = null;
-        for (let r = 0; r < BOARD_SIZE; r++) {
-          for (let c = 0; c < BOARD_SIZE; c++) {
-            const p = board[r][c];
-            if (p?.isKing) {
-              if (p.owner === 'sente') prevSenteKingPos = [r, c];
-              else prevGoteKingPos = [r, c];
-            }
-          }
-        }
-
-        // Check if game over conditions are met after ON_MOVE effect
-        const senteKing = finalBoard.some(row => row.some(p => p?.isKing && p.owner === 'sente'));
-        const goteKing = finalBoard.some(row => row.some(p => p?.isKing && p.owner === 'gote'));
-        let isGameOver = res.gameOver;
-        let finalWinner = res.winner;
-
-        if (!senteKing && !goteKing) {
-          isGameOver = true;
-          finalWinner = state.turn === 'sente' ? 'gote' : 'sente';
-        } else if (!senteKing) {
-          isGameOver = true;
-          finalWinner = 'gote';
-        } else if (!goteKing) {
-          isGameOver = true;
-          finalWinner = 'sente';
-        }
-
-        if (isGameOver) {
-          // 破壊された玉将の位置に多重グリッチ爆発エフェガーをトリガー
-          const destroyedKingPositions: [number, number][] = [];
-          if (!senteKing && prevSenteKingPos) destroyedKingPositions.push(prevSenteKingPos);
-          if (!goteKing && prevGoteKingPos) destroyedKingPositions.push(prevGoteKingPos);
-
-          if (destroyedKingPositions.length > 0) {
-            for (const [ky, kx] of destroyedKingPositions) {
-              setExplosionEffects(prev => [...prev, [ky, kx]]);
-              setTimeout(() => setExplosionEffects(prev => [...prev, [ky - 1 >= 0 ? ky - 1 : ky, kx], [ky, kx + 1 < BOARD_SIZE ? kx + 1 : kx]]), 150);
-              setTimeout(() => setExplosionEffects(prev => [...prev, [ky + 1 < BOARD_SIZE ? ky + 1 : ky, kx], [ky, kx - 1 >= 0 ? kx - 1 : kx]]), 300);
-            }
-            
-            setScreenShake(true);
-            setTimeout(() => {
-              setScreenShake(false);
-              for (const [ky, kx] of destroyedKingPositions) {
-                setExplosionEffects(prev => prev.filter(coord => Math.abs(coord[0] - ky) > 1 || Math.abs(coord[1] - kx) > 1));
-              }
-            }, 1200);
-          }
-
-          setState(prev => ({
-            ...prev,
-            board: finalBoard,
-            capturedPieces: nextCaptured,
-            destroyedPieces: nextDestroyedPieces,
-            sharedPieces: nextShared,
-          }));
-
-          setTimeout(() => {
-            setState(prev => ({
-              ...prev,
-              winner: finalWinner,
-            }));
-            saveHistorySnapshot(finalBoard, nextCaptured, 'gote', finalLogs, state.customDecks, nextDestroyedPieces);
-          }, 1200);
-        } else {
-          finalizeTurn(
-            finalBoard,
-            nextCaptured,
-            nextShared,
-            finalLogs,
-            undefined,
-            state.customDecks,
-            nextDestroyedPieces
-          );
-        }
+        // Process the asynchronous queue!
+        await processAbilityEventsQueue(res.board, events, nextCaptured, nextShared, finalLogs, nextDestroyedPieces);
 
       } else if (chosenMove.type === 'drop' && chosenMove.piece && chosenMove.index !== undefined) {
         const nextBoard = executeDrop(board, chosenMove.piece, chosenMove.to, 'gote');

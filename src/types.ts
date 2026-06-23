@@ -119,3 +119,16 @@ export interface GameState {
     piece: Piece;
   } | null;
 }
+
+export interface AbilityEvent {
+  id: string;
+  priority: number; // 1 = Traps (ON_TAKEN, ON_APPROACH), 2 = Moving piece abilities (ON_MOVE), 3 = Turn start / environmental (TURN_START)
+  triggerType: 'ON_TAKEN' | 'ON_APPROACH' | 'ON_MOVE' | 'TURN_START';
+  pieceId: string; // The ID of the piece triggering the event (to check if it's still alive/valid)
+  position: [number, number]; // Position of the triggering piece on the board
+  owner: Player;
+  fromPosition?: [number, number]; // Specifically for ON_MOVE
+  attackerPieceId?: string; // For traps, the ID of the piece that triggered them (the intruder)
+  attackerPiecePos?: [number, number]; // For traps, where the intruder landed
+  targetCellPiece?: Piece; // For ON_TAKEN trap context (a copy of the captured trap piece)
+}
