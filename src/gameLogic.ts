@@ -1742,6 +1742,8 @@ export function applyAutomatedEffect(
                      desc.includes('縦横一直線') || desc.includes('縦横直線') || desc.includes('縦横の直線') ||
                      desc.includes('レーザー') || desc.includes('ビーム') || desc.includes('貫通') || desc.includes('狙撃') || desc.includes('スナイプ');
 
+    const isVerticalLinear = desc.includes('縦直線') || desc.includes('縦の直線') || desc.includes('レーザー') || desc.includes('ビーム');
+
     if (isFrontRow) {
       const dy = player === 'sente' ? -1 : 1;
       targetOffsets = [
@@ -1749,10 +1751,12 @@ export function applyAutomatedEffect(
       ];
     } else if (isLinear) {
       targetOffsets = [];
-      const directions = [
-        [-1, 0], [1, 0], [0, -1], [0, 1],
-        [-1, -1], [-1, 1], [1, -1], [1, 1]
-      ];
+      const directions = isVerticalLinear 
+        ? [[-1, 0], [1, 0]] 
+        : [
+            [-1, 0], [1, 0], [0, -1], [0, 1],
+            [-1, -1], [-1, 1], [1, -1], [1, 1]
+          ];
       for (const [dy, dx] of directions) {
         let ny = y + dy;
         let nx = x + dx;
@@ -2065,7 +2069,7 @@ export function applyAutomatedEffect(
     desc.includes('爆走') ||
     piece.word.includes('呂布') ||
     (piece.effect_name && piece.effect_name.includes('貫通'))
-  )) {
+  ) && !desc.includes('レーザー') && !desc.includes('ビーム') && !desc.includes('縦直線') && !desc.includes('縦の直線')) {
     const [fy, fx] = fromPosition;
     const deltaY = y - fy;
     const deltaX = x - fx;
@@ -2438,6 +2442,85 @@ export function applyAutomatedEffect(
       if (stunnedAny) {
         triggered = true;
       }
+    }
+  }
+  // 10.5. Trap Placement / Spawn Trap (ON_MOVE trigger)
+  else if (
+    triggerType === 'ON_MOVE' &&
+    (logic === 'spawn_trap' ||
+     logic === 'place_trap' ||
+     desc.includes('罠設置') ||
+     desc.includes('地雷設置') ||
+     desc.includes('罠を設置') ||
+     desc.includes('地雷を設置') ||
+     desc.includes('トラップ設置'))
+  ) {
+    const adjacent = [
+      [-1, -1], [-1, 0], [-1, 1],
+      [0, -1],           [0, 1],
+      [1, -1],  [1, 0],  [1, 1]
+    ];
+    const emptySpawnCells: [number, number][] = [];
+    for (const [dy, dx] of adjacent) {
+      const ny = y + dy;
+      const nx = x + dx;
+      if (isWithinBounds(ny, nx) && nextBoard[ny][nx] === null) {
+        emptySpawnCells.push([ny, nx]);
+      }
+    }
+
+    if (emptySpawnCells.length > 0) {
+      const [sy, sx] = emptySpawnCells[Math.floor(Math.random() * emptySpawnCells.length)];
+      
+      const isMine = desc.includes('地雷');
+      const trapWord = isMine ? '地雷' : '罠';
+      const trapPiece: Piece = {
+        id: generateId(),
+        word: trapWord,
+        effect_name: isMine ? '道連れ地雷' : '仕掛け罠',
+        mechanics_type: 'STEALTH_TRAP',
+        ability_genre: '因果・罠',
+        trigger: 'ON_TAKEN',
+        cool_down_turns: 0,
+        range_geometry: {
+          normal_grid: '0000000100012100010000000',
+          charging_grid: '0000000100012100010000000',
+          promoted_grid: '0000001110012100111000000'
+        },
+        description: `【発動条件】敵駒に重なって捕獲された瞬間（自動発動）。\n【効果内容】敵の駒を道連れにして消滅させる。\n【制限・代償】使い捨て。`,
+        spawn_piece_name: null,
+        spawn_config: {
+          spawn_piece_name: null,
+          max_limit: 0,
+          spawn_range_geometry: null
+        },
+        promoted_effect: {
+          effect_name: isMine ? '極・道連れ地雷' : '極・仕掛け罠',
+          description: '成ることで能力が再活性化する。'
+        },
+        deep_search_analysis: '',
+        owner: player,
+        isKing: false,
+        isPawn: false,
+        originalPosition: [sy, sx],
+        coolDownTurnsRemaining: 0,
+        isRevealed: false,
+        isPromoted: false
+      };
+
+      nextBoard[sy][sx] = trapPiece;
+      triggered = true;
+      logs.push({
+        player,
+        message: `【罠設置】${piece.word} が移動先の隣接マス ${getCellLabel(sy, sx)} に裏向きの${trapWord}を設置しました！`,
+        type: 'ability'
+      });
+    } else {
+      logs.push({
+        player,
+        message: `【自動発動制限】${piece.word} の移動先の周囲に空きマスがないため、罠を設置できませんでした。`,
+        type: 'system'
+      });
     }
   }
   // 11. Resurrection Recycler / Zombie (ON_MOVE trigger)
