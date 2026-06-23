@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { GameLog, Player, Piece, GamePhase } from '../types';
 import { getPieceTrigger } from '../gameLogic';
 import { PieceDetailCard } from './PieceDetailCard';
@@ -47,19 +47,190 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onHoverPiece,
   isResurrectActive,
 }) => {
+  const [hoveredIdx, setHoveredIdx] = useState<string | null>(null);
+
+  const renderCapturedPieceTile = (piece: Piece, idx: number, owner: Player, type: 'captured' | 'shared') => {
+    const isCustom = !piece.isKing && !piece.isPawn && !piece.isHisha && !piece.isKaku;
+    const isSel = type === 'captured' 
+      ? (selectedCapturedPiece?.piece.id === piece.id && selectedCapturedPiece?.index === idx)
+      : (selectedSharedPiece?.piece.id === piece.id && selectedSharedPiece?.index === idx);
+
+    const isActive = type === 'captured'
+      ? (turn === owner && phase === 'playing')
+      : isResurrectActive;
+
+    const hoverKey = `${type}-${owner}-${idx}`;
+    const isHovered = hoveredIdx === hoverKey;
+
+    if (!isCustom) {
+      return (
+        <div
+          key={piece.id}
+          onClick={() => {
+            if (type === 'captured') {
+              if (turn === owner && phase === 'playing') onCapturedPieceClick(piece, idx, owner);
+            } else {
+              if (isResurrectActive) onSharedPieceClick(piece, idx);
+            }
+          }}
+          onMouseEnter={() => {
+            onHoverPiece?.(piece);
+            setHoveredIdx(hoverKey);
+          }}
+          onMouseLeave={() => {
+            onHoverPiece?.(null);
+            setHoveredIdx(null);
+          }}
+          style={{
+            position: 'relative',
+            width: '42px',
+            height: '46px',
+            clipPath: 'polygon(50% 0%, 100% 30%, 85% 100%, 15% 100%, 0% 30%)',
+            background: isSel ? 'var(--color-gold)' : 'rgba(26, 26, 26, 0.15)',
+            padding: '1px',
+            boxSizing: 'border-box',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: isActive ? 'pointer' : 'default',
+            opacity: isActive ? 1 : 0.6,
+            transition: 'all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1)',
+            transform: isHovered ? 'scale(1.08) translateY(-2px)' : 'none',
+            boxShadow: isHovered ? '0 8px 16px rgba(0, 0, 0, 0.4)' : 'none',
+          }}
+          title={type === 'shared' ? `もとの所有者: ${piece.owner === 'sente' ? (playerNames.sente || '先手') : (playerNames.gote || '後手')}` : undefined}
+        >
+          <div style={{
+            width: '100%',
+            height: '100%',
+            clipPath: 'polygon(50% 0%, 100% 30%, 85% 100%, 15% 100%, 0% 30%)',
+            background: 'var(--color-shiraki)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxSizing: 'border-box',
+            padding: '2px',
+            color: 'var(--color-kurogane)',
+            fontWeight: 'bold',
+            fontFamily: 'var(--font-ui)',
+          }}>
+            <div style={{ fontSize: '10px', marginTop: '6px' }}>
+              {piece.word}
+            </div>
+          </div>
+        </div>
+      );
+    } else {
+      const getStampInfo = (genre: string) => {
+        switch (genre) {
+          case 'MOVEMENT_HACK':
+            return { char: '武', color: 'var(--color-shinku)' };
+          case 'STEALTH_TRAP':
+            return { char: '隠', color: 'var(--color-kurogane)' };
+          case 'RULE_BREAK':
+            return { char: '律', color: 'var(--color-murasaki)' };
+          case 'DYNAMICS_HACK':
+            return { char: '破', color: 'var(--color-matsuba)' };
+          default:
+            return { char: '印', color: 'var(--color-gold)' };
+        }
+      };
+
+      const stamp = getStampInfo(piece.mechanics_type);
+
+      return (
+        <div
+          key={piece.id}
+          onClick={() => {
+            if (type === 'captured') {
+              if (turn === owner && phase === 'playing') onCapturedPieceClick(piece, idx, owner);
+            } else {
+              if (isResurrectActive) onSharedPieceClick(piece, idx);
+            }
+          }}
+          onMouseEnter={() => {
+            onHoverPiece?.(piece);
+            setHoveredIdx(hoverKey);
+          }}
+          onMouseLeave={() => {
+            onHoverPiece?.(null);
+            setHoveredIdx(null);
+          }}
+          style={{
+            position: 'relative',
+            width: '50px',
+            height: '66px',
+            background: 'var(--color-shiraki)',
+            border: `1px solid ${isSel ? 'var(--color-gold)' : 'rgba(26, 26, 26, 0.15)'}`,
+            borderRadius: '2px',
+            boxShadow: isHovered 
+              ? '0 10px 20px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255,255,255,0.6)' 
+              : '0 2px 4px rgba(0, 0, 0, 0.2), inset 0 1px 1px rgba(255,255,255,0.5)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: isActive ? 'pointer' : 'default',
+            opacity: isActive ? 1 : 0.6,
+            transition: 'all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1)',
+            transform: isHovered ? 'scale(1.08) translateY(-3px)' : 'none',
+            userSelect: 'none',
+            boxSizing: 'border-box',
+            padding: '2px',
+          }}
+          title={type === 'shared' ? `もとの所有者: ${piece.owner === 'sente' ? (playerNames.sente || '先手') : (playerNames.gote || '後手')}` : undefined}
+        >
+          <div style={{
+            position: 'absolute',
+            top: '2px',
+            right: '2px',
+            width: '12px',
+            height: '12px',
+            border: `1px solid ${stamp.color}`,
+            borderRadius: '1px',
+            color: stamp.color,
+            fontSize: '8px',
+            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            lineHeight: 1,
+            fontFamily: 'var(--font-cyber)',
+            background: 'rgba(255, 255, 255, 0.3)'
+          }}>
+            {stamp.char}
+          </div>
+          
+          <div style={{
+            fontSize: '11px',
+            fontWeight: 'bold',
+            color: 'var(--color-kurogane)',
+            fontFamily: 'var(--font-ui)',
+            textAlign: 'center',
+            marginTop: '8px',
+            lineHeight: 1.1
+          }}>
+            {piece.word}
+          </div>
+        </div>
+      );
+    }
+  };
+
   const triggerEvent = selectedPiece ? getPieceTrigger(selectedPiece) : 'ALWAYS';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', height: '100%' }}>
       
       {/* Turn Info & Phase Panel */}
-      <div className={`cyber-panel ${turn === 'sente' ? 'cyan-glow' : 'purple-glow'}`} style={{ padding: '15px' }}>
+      <div className="cyber-panel" style={{ padding: '15px', borderColor: turn === 'sente' ? 'var(--color-shinku)' : 'var(--color-gold)' }}>
         <h3 className="cyber-title" style={{ fontSize: '16px', marginBottom: '8px' }}>
           戦局ステータス (9x9)
         </h3>
 
         {winner ? (
-          <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--neon-yellow)', textAlign: 'center', margin: '10px 0', fontFamily: 'var(--font-cyber)' }}>
+          <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--color-gold)', textAlign: 'center', margin: '10px 0', fontFamily: 'var(--font-cyber)' }}>
             🏆 {winner === 'sente'
               ? (playerNames.sente || '先手')
               : (playerNames.gote || (vsAiMode ? 'AI' : '後手'))
@@ -69,7 +240,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontSize: '13px' }}>
               <span style={{ color: 'var(--text-secondary)' }}>フェーズ:</span>
-              <span style={{ fontWeight: 'bold', color: 'var(--neon-yellow)' }}>
+              <span style={{ fontWeight: 'bold', color: 'var(--color-gold)' }}>
                 {phase === 'placement' ? '初期配置フェーズ' : '対局中'}
               </span>
             </div>
@@ -78,8 +249,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               <span style={{
                 fontSize: '15px',
                 fontWeight: 'bold',
-                color: turn === 'sente' ? 'var(--neon-cyan)' : 'var(--neon-purple)',
-                textShadow: `0 0 5px ${turn === 'sente' ? 'rgba(0,243,255,0.4)' : 'rgba(189,0,255,0.4)'}`,
+                color: turn === 'sente' ? 'var(--color-shinku)' : 'var(--color-gold)',
                 fontFamily: 'var(--font-cyber)'
               }}>
                 {turn === 'sente'
@@ -90,12 +260,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             </div>
 
             {phase === 'placement' && (
-              <div style={{ padding: '8px', background: 'rgba(255,230,0,0.03)', border: '1px solid rgba(255,230,0,0.15)', borderRadius: '6px', fontSize: '11px' }}>
-                <p style={{ fontWeight: 'bold', color: 'var(--neon-yellow)', marginBottom: '3px' }}>
+              <div style={{ padding: '8px', background: 'rgba(212,175,55,0.03)', border: '1px solid rgba(212,175,55,0.15)', borderRadius: '2px', fontSize: '11px' }}>
+                <p style={{ fontWeight: 'bold', color: 'var(--color-gold)', marginBottom: '3px' }}>
                   配置ルール:
                 </p>
                 <p style={{ color: 'var(--text-secondary)' }}>
-                  手持ちのカスタム能力駒を、自陣の下3段（先手: 青枠）または上3段（後手: 紫枠）に配置してください。
+                  手持ちのカスタム能力駒を、自陣の下3段（先手）または上3段（後手）に配置してください。
                 </p>
                 <p style={{ color: 'var(--text-secondary)', marginTop: '3px' }}>
                   未配置の駒: <strong style={{ color: '#fff' }}>{customPiecesToPlace.length}枚</strong>
@@ -123,12 +293,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               <h3 className="cyber-title" style={{ fontSize: '15px', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 {hoveredPiece ? (
                   <>
-                    <span style={{ color: 'var(--neon-green)' }}>👁️</span>
+                    <span style={{ color: 'var(--color-matsuba)' }}>👁️</span>
                     <span>詳細プレビュー</span>
                   </>
                 ) : (
                   <>
-                    <span style={{ color: 'var(--neon-cyan)' }}>⚔️</span>
+                    <span style={{ color: 'var(--color-gold)' }}>⚔️</span>
                     <span>選択駒の戦術能力</span>
                   </>
                 )}
@@ -138,8 +308,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               
               {/* Tactical Actions for Selected Piece */}
               {selectedPiece && (!hoveredPiece || hoveredPiece.id === selectedPiece.id) && (
-                <div className="cyber-panel cyan-glow" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--neon-cyan)', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px' }}>
+                <div className="cyber-panel" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', borderColor: 'var(--color-gold)' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--color-gold)', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px' }}>
                     戦術オプション
                   </div>
                   
@@ -147,17 +317,17 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                   <div style={{
                     background: 'rgba(0,0,0,0.4)',
                     padding: '6px',
-                    borderRadius: '4px',
-                    border: '1.2px solid rgba(0, 243, 255, 0.2)',
+                    borderRadius: '2px',
+                    border: '1px solid var(--color-gold)',
                     fontFamily: 'monospace',
                     fontSize: '9px',
-                    color: 'var(--neon-cyan)'
+                    color: 'var(--color-gold)'
                   }}>
                     <div>状態: {selectedPiece.isPromoted ? '覚醒（成）' : '通常'}</div>
                     <div>属性: {selectedPiece.mechanics_type}</div>
                     <div>発動: "{triggerEvent === 'ON_MOVE' ? '移動完了時自動発動' : triggerEvent === 'TURN_START' ? 'ターン開始時自動発動' : triggerEvent === 'ON_TAKEN' ? '捕獲時発動（罠）' : triggerEvent === 'ON_APPROACH' ? '接近時発動（罠）' : '常時パッシブ'}"</div>
                     {selectedPiece.coolDownTurnsRemaining > 0 && (
-                      <div style={{ color: 'var(--neon-pink)', fontWeight: 'bold' }}>充填完了まであと: {selectedPiece.coolDownTurnsRemaining} 手番</div>
+                      <div style={{ color: 'var(--color-shinku)', fontWeight: 'bold' }}>充填完了まであと: {selectedPiece.coolDownTurnsRemaining} 手番</div>
                     )}
                   </div>
                 </div>
@@ -181,33 +351,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         
         {/* Gote Captured Hand */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          <div style={{ fontSize: '10px', color: 'var(--neon-purple)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold' }}>
+          <div style={{ fontSize: '10px', color: 'var(--color-gold)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold' }}>
             ▽ {playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')} 持ち駒
           </div>
-          <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', minHeight: '34px', padding: '6px', background: 'rgba(189,0,255,0.02)', border: '1px solid rgba(189,0,255,0.1)', borderRadius: '4px' }}>
-            {capturedPieces.gote.map((piece, idx) => {
-              const isSel = selectedCapturedPiece?.piece.id === piece.id && selectedCapturedPiece?.index === idx;
-              return (
-                <div
-                  key={piece.id}
-                  onClick={() => onCapturedPieceClick(piece, idx, 'gote')}
-                  onMouseEnter={() => onHoverPiece?.(piece)}
-                  onMouseLeave={() => onHoverPiece?.(null)}
-                  style={{
-                    padding: '3px 8px',
-                    borderRadius: '4px',
-                    border: `1px solid ${isSel ? 'var(--neon-purple)' : 'rgba(189,0,255,0.25)'}`,
-                    background: isSel ? 'rgba(189,0,255,0.2)' : 'rgba(189,0,255,0.05)',
-                    cursor: turn === 'gote' && phase === 'playing' ? 'pointer' : 'default',
-                    fontSize: '10px',
-                    color: '#fff',
-                    userSelect: 'none'
-                  }}
-                >
-                  {piece.word}
-                </div>
-              );
-            })}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', minHeight: '34px', padding: '6px', background: 'rgba(212,175,55,0.02)', border: '1px solid rgba(212,175,55,0.1)', borderRadius: '2px' }}>
+            {capturedPieces.gote.map((piece, idx) => renderCapturedPieceTile(piece, idx, 'gote', 'captured'))}
             {capturedPieces.gote.length === 0 && (
               <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic', alignSelf: 'center' }}>なし</span>
             )}
@@ -218,55 +366,27 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
           <div style={{
             fontSize: '10px',
-            color: isResurrectActive ? 'var(--neon-cyan)' : '#888',
+            color: isResurrectActive ? 'var(--color-gold)' : '#888',
             fontFamily: 'var(--font-cyber)',
             fontWeight: 'bold',
             display: 'flex',
             alignItems: 'center',
-            gap: '4px',
-            animation: isResurrectActive ? 'pulseGlow 1.5s infinite alternate' : 'none'
+            gap: '4px'
           }}>
-            🪦 墓場 (Graveyard) {isResurrectActive && <span style={{ color: 'var(--neon-yellow)' }}>[蘇生対象を選択]</span>}
+            🪦 墓場 (Graveyard) {isResurrectActive && <span style={{ color: 'var(--color-shinku)' }}>[蘇生対象を選択]</span>}
           </div>
           <div style={{
             display: 'flex',
-            gap: '5px',
+            gap: '8px',
             flexWrap: 'wrap',
             minHeight: '34px',
             padding: '6px',
-            background: isResurrectActive ? 'rgba(0,243,255,0.05)' : 'rgba(255,255,255,0.02)',
-            border: `1px solid ${isResurrectActive ? 'var(--neon-cyan)' : 'rgba(255,255,255,0.1)'}`,
-            borderRadius: '4px',
-            transition: 'all 0.3s ease',
-            boxShadow: isResurrectActive ? '0 0 10px rgba(0, 243, 255, 0.2)' : 'none'
+            background: isResurrectActive ? 'rgba(212,175,55,0.05)' : 'rgba(255,255,255,0.02)',
+            border: `1px solid ${isResurrectActive ? 'var(--color-gold)' : 'rgba(255,255,255,0.08)'}`,
+            borderRadius: '2px',
+            transition: 'all 0.3s ease'
           }}>
-            {sharedPieces.map((piece, idx) => {
-              const isSel = selectedSharedPiece?.piece.id === piece.id && selectedSharedPiece?.index === idx;
-              return (
-                <div
-                  key={piece.id}
-                  onClick={() => isResurrectActive && onSharedPieceClick(piece, idx)}
-                  onMouseEnter={() => onHoverPiece?.(piece)}
-                  onMouseLeave={() => onHoverPiece?.(null)}
-                  style={{
-                    padding: '3px 8px',
-                    borderRadius: '4px',
-                    border: `1px solid ${isSel ? 'var(--neon-cyan)' : (isResurrectActive ? 'rgba(0,243,255,0.3)' : 'rgba(255,255,255,0.15)')}`,
-                    background: isSel ? 'rgba(0,243,255,0.2)' : (isResurrectActive ? 'rgba(0,243,255,0.05)' : 'rgba(255,255,255,0.03)'),
-                    cursor: isResurrectActive ? 'pointer' : 'not-allowed',
-                    opacity: isResurrectActive ? 1 : 0.6,
-                    fontSize: '10px',
-                    color: isResurrectActive ? '#fff' : '#aaa',
-                    userSelect: 'none',
-                    transition: 'all 0.2s ease',
-                    boxShadow: isSel ? '0 0 8px rgba(0,243,255,0.5)' : 'none'
-                  }}
-                  title={`もとの所有者: ${piece.owner === 'sente' ? (playerNames.sente || 'プレイヤー1') : (playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2'))}`}
-                >
-                  {piece.word}
-                </div>
-              );
-            })}
+            {sharedPieces.map((piece, idx) => renderCapturedPieceTile(piece, idx, 'sente', 'shared'))}
             {sharedPieces.length === 0 && (
               <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic', alignSelf: 'center' }}>空</span>
             )}
@@ -275,33 +395,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
         {/* Sente Captured Hand */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          <div style={{ fontSize: '10px', color: 'var(--neon-cyan)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold' }}>
+          <div style={{ fontSize: '10px', color: 'var(--color-shinku)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold' }}>
             ▲ {playerNames.sente || 'プレイヤー1'} 持ち駒
           </div>
-          <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', minHeight: '34px', padding: '6px', background: 'rgba(0,243,255,0.02)', border: '1px solid rgba(0,243,255,0.1)', borderRadius: '4px' }}>
-            {capturedPieces.sente.map((piece, idx) => {
-              const isSel = selectedCapturedPiece?.piece.id === piece.id && selectedCapturedPiece?.index === idx;
-              return (
-                <div
-                  key={piece.id}
-                  onClick={() => onCapturedPieceClick(piece, idx, 'sente')}
-                  onMouseEnter={() => onHoverPiece?.(piece)}
-                  onMouseLeave={() => onHoverPiece?.(null)}
-                  style={{
-                    padding: '3px 8px',
-                    borderRadius: '4px',
-                    border: `1px solid ${isSel ? 'var(--neon-cyan)' : 'rgba(0,243,255,0.25)'}`,
-                    background: isSel ? 'rgba(0,243,255,0.2)' : 'rgba(0,243,255,0.05)',
-                    cursor: turn === 'sente' && phase === 'playing' ? 'pointer' : 'default',
-                    fontSize: '10px',
-                    color: '#fff',
-                    userSelect: 'none'
-                  }}
-                >
-                  {piece.word}
-                </div>
-              );
-            })}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', minHeight: '34px', padding: '6px', background: 'rgba(158,42,43,0.02)', border: '1px solid rgba(158,42,43,0.1)', borderRadius: '2px' }}>
+            {capturedPieces.sente.map((piece, idx) => renderCapturedPieceTile(piece, idx, 'sente', 'captured'))}
             {capturedPieces.sente.length === 0 && (
               <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic', alignSelf: 'center' }}>なし</span>
             )}

@@ -8,7 +8,7 @@ interface RangeGridProps {
 export const RangeGrid: React.FC<RangeGridProps> = ({ gridStr, size = 50 }) => {
   const chars = gridStr.split('');
   if (chars.length !== 25) {
-    return <div style={{ fontSize: '9px', color: 'var(--neon-purple)' }}>[無効な範囲幾何]</div>;
+    return <div style={{ fontSize: '9px', color: 'var(--color-murasaki)' }}>[無効な範囲幾何]</div>;
   }
 
   return (
@@ -18,27 +18,23 @@ export const RangeGrid: React.FC<RangeGridProps> = ({ gridStr, size = 50 }) => {
       gap: '1.5px',
       width: `${size}px`,
       height: `${size}px`,
-      background: 'rgba(0, 0, 0, 0.6)',
+      background: 'rgba(26, 26, 26, 0.4)',
       padding: '2.5px',
-      border: '1.2px solid rgba(219, 188, 98, 0.25)',
-      borderRadius: '3px',
-      boxShadow: 'inset 0 0 5px rgba(0,0,0,0.8)'
+      border: '1px solid rgba(130, 110, 89, 0.25)',
+      borderRadius: '2px',
     }}>
       {chars.map((char, index) => {
         let bg = 'rgba(255, 255, 255, 0.04)';
         let border = '0.5px solid rgba(255, 255, 255, 0.02)';
-        let shadow = '';
 
         if (char === '2') {
           // Self
-          bg = 'var(--neon-yellow)';
-          border = '0.8px solid rgba(219, 188, 98, 0.8)';
-          shadow = '0 0 5px rgba(219, 188, 98, 0.6)';
+          bg = 'var(--color-gold)';
+          border = 'none';
         } else if (char === '1') {
           // Range target
-          bg = 'var(--neon-cyan)';
-          border = '0.8px solid rgba(86, 166, 191, 0.8)';
-          shadow = '0 0 4px rgba(86, 166, 191, 0.6)';
+          bg = 'var(--color-shinku)';
+          border = 'none';
         }
 
         return (
@@ -47,8 +43,7 @@ export const RangeGrid: React.FC<RangeGridProps> = ({ gridStr, size = 50 }) => {
             style={{
               background: bg,
               border: border,
-              borderRadius: '1.5px',
-              boxShadow: shadow,
+              borderRadius: '1px',
             }}
           />
         );

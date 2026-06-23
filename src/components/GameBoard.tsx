@@ -54,9 +54,34 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   onlineMode = false,
   myRole = null,
 }) => {
+  const [localTurn, setLocalTurn] = useState<Player>(turn);
+  const [shojiState, setShojiState] = useState<'open' | 'closing' | 'opening'>('open');
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    
+    if (turn !== localTurn) {
+      setShojiState('closing');
+      const closeTimer = setTimeout(() => {
+        setLocalTurn(turn);
+        setShojiState('opening');
+        
+        const openTimer = setTimeout(() => {
+          setShojiState('open');
+        }, 350);
+        return () => clearTimeout(openTimer);
+      }, 350);
+      return () => clearTimeout(closeTimer);
+    }
+  }, [turn]);
+
   const shouldRotate = onlineMode
     ? (myRole === 'gote')
-    : (vsAiMode ? false : turn === 'gote');
+    : (vsAiMode ? false : localTurn === 'gote');
 
   const prevBoardRef = useRef<Board | null>(null);
   const [damageFlashCells, setDamageFlashCells] = useState<Record<string, boolean>>({});
@@ -127,7 +152,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     if (phase !== 'placement') return false;
     if (board[y][x] !== null) return false;
     // Sente places on bottom 3 ranks (y=6, 7, 8)
-    if (turn === 'sente') return y >= 6;
+    if (localTurn === 'sente') return y >= 6;
     // Gote places on top 3 ranks (y=0, 1, 2)
     return y <= 2;
   };
@@ -144,7 +169,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     let cellClassName = '';
     if (isActiveTarget) {
       if (piece) {
-        if (piece.owner !== turn) {
+        if (piece.owner !== localTurn) {
           cellClassName = 'ability-target-blue';
         } else {
           cellClassName = 'ability-target-yellow';
@@ -168,8 +193,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       transition: 'all 0.15s ease',
       borderWidth: '1px',
       borderStyle: 'solid',
-      borderColor: 'rgba(139, 101, 58, 0.25)',
-      background: 'rgba(240, 235, 215, 0.35)'
+      borderColor: 'rgba(244, 237, 226, 0.08)',
+      background: 'rgba(255, 255, 255, 0.02)'
     };
 
     if (isFlashActive) {
@@ -177,97 +202,58 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     }
 
     if (isSel) {
-      cellStyle.boxShadow = '0 0 10px rgba(86, 166, 191, 0.7), inset 0 0 8px rgba(86, 166, 191, 0.3)';
-      cellStyle.borderColor = 'var(--neon-cyan)';
-      cellStyle.background = 'rgba(86, 166, 191, 0.2)';
+      cellStyle.borderColor = 'var(--color-gold)';
+      cellStyle.background = 'rgba(212, 175, 55, 0.12)';
     } else if (isMove) {
-      cellStyle.boxShadow = '0 0 8px rgba(124, 168, 86, 0.5), inset 0 0 4px rgba(124, 168, 86, 0.2)';
-      cellStyle.borderColor = 'var(--neon-green)';
-      cellStyle.background = 'rgba(124, 168, 86, 0.15)';
+      cellStyle.borderColor = 'var(--color-gold)';
+      cellStyle.borderStyle = 'dashed';
+      cellStyle.background = 'rgba(212, 175, 55, 0.06)';
     } else if (isActiveTarget) {
-      const selectedPiece = selectedCell ? board[selectedCell[0]][selectedCell[1]] : null;
-      const isTeleport = selectedPiece 
-        ? ['random_move', 'teleport_anywhere', 'copy_and_teleport'].includes(getPieceLogicCode(selectedPiece))
-        : false;
-      
-      const glowColor = isTeleport ? 'var(--neon-purple)' : 'var(--neon-pink)';
-      const rgbaGlow = isTeleport ? 'rgba(209, 73, 73, 0.5)' : 'rgba(214, 108, 133, 0.5)';
-      const rgbaBg = isTeleport ? 'rgba(209, 73, 73, 0.25)' : 'rgba(214, 108, 133, 0.25)';
-
-      cellStyle.boxShadow = `0 0 8px ${rgbaGlow}, inset 0 0 6px ${rgbaGlow}`;
-      cellStyle.borderColor = glowColor;
-      cellStyle.background = rgbaBg;
+      cellStyle.borderColor = 'var(--color-murasaki)';
+      cellStyle.background = 'rgba(74, 21, 75, 0.15)';
     } else if (isSetupValid) {
-      cellStyle.borderColor = turn === 'sente' ? 'rgba(86, 166, 191, 0.4)' : 'rgba(209, 73, 73, 0.4)';
-      cellStyle.background = turn === 'sente' ? 'rgba(86, 166, 191, 0.08)' : 'rgba(209, 73, 73, 0.08)';
+      cellStyle.borderColor = 'var(--color-gold)';
+      cellStyle.background = 'rgba(244, 237, 226, 0.05)';
       cellStyle.borderStyle = 'dashed';
     }
 
     let pieceUI = null;
     if (piece) {
-      const viewer: Player = onlineMode ? (myRole || 'sente') : (vsAiMode ? 'sente' : turn);
+      const viewer: Player = onlineMode ? (myRole || 'sente') : (vsAiMode ? 'sente' : localTurn);
       const isMyPiece = piece.owner === viewer;
       const shouldHide = !isMyPiece && !piece.isRevealed;
 
       if (!shouldHide) {
         const isAutonomous = piece.trigger === 'ALWAYS' && (getPieceLogicCode(piece).includes('runaway') || piece.description.includes('操作不能'));
         const isCustom = !piece.isKing && !piece.isPawn && !piece.isHisha && !piece.isKaku;
-        const isGote = piece.owner === 'gote';
         
-        // 1. 敵味方の基本カラーテーマ（先手＝シアン/ブルー、後手＝ピンク/レッド）
-        let baseBg = isGote ? '#1c0c12' : '#0d1520'; 
-        let baseBorderColor = isGote ? 'rgba(255, 0, 85, 0.4)' : 'rgba(0, 243, 255, 0.4)';
-        let insetShadow = isGote ? 'inset 0 0 6px rgba(255, 0, 85, 0.25)' : 'inset 0 0 6px rgba(0, 243, 255, 0.25)';
+        // 1. 白木の縦長木札テーマ
+        let baseBg = 'var(--color-shiraki)'; 
+        let baseBorderColor = 'rgba(26, 26, 26, 0.15)';
+        let insetShadow = 'inset 0 1px 1px rgba(255, 255, 255, 0.6), inset 0 -1px 2px rgba(0, 0, 0, 0.08)';
 
         let borderWidthVal = '1px';
         let borderStyleVal = 'solid';
         let borderColorVal = baseBorderColor;
-        let boxShadowStyle = insetShadow;
-        let widthStyle = '92%';
+        let boxShadowStyle = `0 2px 4px rgba(0, 0, 0, 0.25), ${insetShadow}`;
+        let widthStyle = '86%';
         let heightStyle = '92%';
         let borderRadiusStyle = '2px';
 
         // 2. 駒の種類ごとの差別化（歩兵 vs 王将 vs カスタム駒）
         if (piece.isKing) {
-          borderWidthVal = '2px';
-          borderStyleVal = 'solid';
-          borderColorVal = 'var(--neon-yellow)';
-          boxShadowStyle = `0 0 12px rgba(219, 188, 98, 0.65), ${insetShadow}`;
-          borderRadiusStyle = '4px';
-          baseBg = isGote ? '#261a10' : '#1c1c15';
-        } else if (piece.isPawn) {
-          borderWidthVal = '1px';
-          borderStyleVal = 'dashed';
-          borderColorVal = 'rgba(255, 255, 255, 0.15)';
-          boxShadowStyle = 'none';
-          widthStyle = '78%';
-          heightStyle = '78%';
-          borderRadiusStyle = '1px';
-        } else if (piece.isHisha || piece.isKaku) {
           borderWidthVal = '1.5px';
-          borderStyleVal = 'solid';
-          borderColorVal = baseBorderColor;
-          boxShadowStyle = `0 0 8px ${isGote ? 'rgba(255, 0, 85, 0.35)' : 'rgba(0, 243, 255, 0.35)'}, ${insetShadow}`;
-          widthStyle = '90%';
+          borderColorVal = 'var(--color-gold)';
+          boxShadowStyle = `0 3px 6px rgba(0, 0, 0, 0.3), ${insetShadow}`;
+        } else if (piece.isPawn) {
+          widthStyle = '76%';
+          heightStyle = '82%';
+          borderColorVal = 'rgba(26, 26, 26, 0.12)';
+        } else if (piece.isHisha || piece.isKaku) {
+          widthStyle = '84%';
           heightStyle = '90%';
-          borderRadiusStyle = '3px';
         } else if (isCustom) {
-          borderWidthVal = '1px';
-          borderStyleVal = 'solid';
-          borderColorVal = '#e6d0af';
-          let glowColor = 'rgba(230, 208, 175, 0.2)';
-          if (piece.mechanics_type === 'STEALTH_TRAP') {
-            glowColor = 'rgba(168, 85, 247, 0.45)'; // 罠：紫
-          } else if (piece.mechanics_type === 'MOVEMENT_HACK') {
-            glowColor = 'rgba(34, 197, 94, 0.45)';  // 移動：緑
-          } else if (piece.mechanics_type === 'RULE_BREAK') {
-            glowColor = 'rgba(59, 130, 246, 0.45)';  // 環境：青
-          } else if (piece.mechanics_type === 'DYNAMICS_HACK') {
-            glowColor = 'rgba(236, 72, 153, 0.45)';  // 奇策：ピンク
-          } else if (piece.mechanics_type === 'AUTOMATIC_DRIVE') {
-            glowColor = 'rgba(249, 115, 22, 0.55)';   // 暴走：オレンジ
-          }
-          boxShadowStyle = `${insetShadow}, 0 0 8px ${glowColor}, 0 0 0 1px rgba(230, 208, 175, 0.25)`;
+          borderColorVal = 'rgba(26, 26, 26, 0.2)';
         }
         
         const pieceStyle: React.CSSProperties = {
@@ -298,35 +284,28 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 
         if (piece.coolDownTurnsRemaining > 0) {
           pieceStyle.borderStyle = 'dotted';
-          pieceStyle.borderColor = '#00f3ff';
-          pieceStyle.boxShadow = `${insetShadow}, 0 0 10px rgba(0, 243, 255, 0.4)`;
-          pieceStyle.opacity = 0.75;
+          pieceStyle.borderColor = 'var(--color-murasaki)';
+          pieceStyle.opacity = 0.85;
         }
 
         if (isAutonomous) {
           pieceStyle.borderStyle = 'dashed';
-          pieceStyle.borderColor = '#ff007f';
-          pieceStyle.boxShadow = '0 0 8px #ff007f';
+          pieceStyle.borderColor = 'var(--color-shinku)';
         }
 
         if (piece.isKing && ((piece.owner === 'sente' && isSenteChecked) || (piece.owner === 'gote' && isGoteChecked))) {
-          pieceStyle.animation = 'kingPulse 0.8s infinite alternate';
-          pieceStyle.borderColor = '#ff003c';
-          pieceStyle.boxShadow = '0 0 15px #ff003c, inset 0 0 8px rgba(255, 0, 60, 0.4)';
+          pieceStyle.borderColor = 'var(--color-shinku)';
+          pieceStyle.boxShadow = '0 0 10px var(--color-shinku), inset 0 0 4px rgba(158, 42, 43, 0.4)';
         }
 
         const triggerLetter = getPieceTrigger(piece).substring(0, 1);
         const isSpent = piece.coolDownTurnsRemaining > 0;
 
-        let textColor = '#a1a1aa';
-        if (piece.isKing) {
-          textColor = 'var(--neon-yellow)';
-        } else if (piece.isPawn) {
-          textColor = isGote ? '#c07a84' : '#7ba1b3';
-        } else if (piece.isPromoted) {
-          textColor = 'var(--neon-yellow)';
-        } else if (isCustom) {
-          textColor = isGote ? '#ff79c6' : '#8ae9fd';
+        let textColor = 'var(--color-kurogane)';
+        if (piece.isPromoted) {
+          textColor = 'var(--color-shinku)';
+        } else if (piece.isKing) {
+          textColor = '#1A1A1A';
         }
 
         // Inner text wrapper that cancels rotation for Gote pieces
@@ -353,8 +332,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                   position: 'absolute',
                   top: '2px',
                   fontSize: '8px',
-                  color: 'rgba(219, 188, 98, 0.4)',
-                  textShadow: '0 0 4px rgba(219, 188, 98, 0.5)',
+                  color: 'var(--color-gold)',
                   userSelect: 'none'
                 }}>
                   👑
@@ -368,8 +346,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                   left: '1px',
                   fontSize: '5px',
                   fontFamily: 'var(--font-cyber)',
-                  color: isSpent ? 'var(--text-muted)' : (isCustom ? 'var(--shogi-wood)' : 'var(--neon-cyan)'),
-                  border: `0.5px solid ${isSpent ? 'var(--text-muted)' : (isCustom ? 'var(--shogi-wood)' : 'var(--neon-cyan)')}`,
+                  color: isSpent ? 'var(--text-muted)' : 'var(--color-kurogane)',
+                  border: `0.5px solid ${isSpent ? 'var(--text-muted)' : 'rgba(26, 26, 26, 0.25)'}`,
                   borderRadius: '1px',
                   padding: '0 1px',
                   transform: 'scale(0.8)'
@@ -385,12 +363,12 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                   right: '1px',
                   fontSize: '5px',
                   fontFamily: 'var(--font-cyber)',
-                  color: '#ff007f',
-                  border: '0.5px solid #ff007f',
+                  color: 'var(--color-shinku)',
+                  border: '0.5px solid var(--color-shinku)',
                   borderRadius: '1px',
                   padding: '0 1px',
                   transform: 'scale(0.8)',
-                  background: 'rgba(255, 0, 127, 0.2)'
+                  background: 'rgba(158, 42, 43, 0.05)'
                 }}>
                   自律
                 </div>
@@ -404,14 +382,13 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                 whiteSpace: 'normal',
                 wordBreak: 'break-all',
                 lineHeight: 1.1,
-                textShadow: piece.isKing ? '0 0 8px rgba(219, 188, 98, 0.4)' : (isCustom ? `0 0 5px ${isGote ? 'rgba(255, 121, 198, 0.3)' : 'rgba(138, 233, 253, 0.3)'}` : 'none'),
-                marginTop: piece.isKing ? '6px' : '0' // Push down slightly for the crown icon
+                marginTop: piece.isKing ? '6px' : '0'
               }}>
                 {piece.isHisha && piece.isPromoted ? '竜王' : (piece.isKaku && piece.isPromoted ? '竜馬' : (piece.isPawn && piece.isPromoted ? 'と金' : piece.word))}
               </div>
               {/* Abbreviated logic label */}
               {!piece.isKing && !piece.isPawn && !piece.isHisha && !piece.isKaku && (
-                <div style={{ fontSize: '5px', color: piece.isPromoted ? 'rgba(255,255,255,0.6)' : 'var(--shogi-wood)', transform: 'scale(0.8)', maxWidth: '90%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--font-cyber)', marginTop: '1px' }}>
+                <div style={{ fontSize: '5px', color: 'rgba(26, 26, 26, 0.5)', transform: 'scale(0.8)', maxWidth: '90%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--font-cyber)', marginTop: '1px' }}>
                   {piece.isPromoted ? piece.promoted_effect.effect_name.substring(0, 4) : piece.effect_name.split('「').pop()?.replace('」', '').substring(0, 4)}
                 </div>
               )}
@@ -424,12 +401,12 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                   fontSize: '5px',
                   fontWeight: 'bold',
                   fontFamily: 'var(--font-cyber)',
-                  color: 'var(--neon-yellow)',
-                  border: '0.5px solid var(--neon-yellow)',
+                  color: 'var(--color-gold)',
+                  border: '0.5px solid var(--color-gold)',
                   borderRadius: '1px',
                   padding: '0 1px',
                   transform: 'scale(0.7)',
-                  background: 'rgba(0,0,0,0.8)'
+                  background: 'var(--color-washi)'
                 }}>
                   成
                 </div>
@@ -442,25 +419,25 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                   right: '1px',
                   fontSize: '5px',
                   fontFamily: 'var(--font-cyber)',
-                  color: 'var(--neon-pink)',
-                  border: '0.5px solid var(--neon-pink)',
+                  color: 'var(--color-murasaki)',
+                  border: '0.5px solid var(--color-murasaki)',
                   borderRadius: '1px',
                   padding: '0 1px',
                   transform: 'scale(0.7)',
-                  background: 'rgba(0,0,0,0.8)'
+                  background: 'var(--color-washi)'
                 }}>
                   充填:{piece.coolDownTurnsRemaining}
                 </div>
               )}
             </div>
-            {/* Camp Marker Line: rotated bottom:0 automatically becomes top:0 for Gote */}
+            {/* Camp Marker Line */}
             <div style={{
               position: 'absolute',
               bottom: 0,
               left: 0,
               width: '100%',
               height: '3px',
-              backgroundColor: piece.owner === 'gote' ? 'var(--shogi-gote)' : 'var(--shogi-sente)',
+              backgroundColor: piece.owner === 'gote' ? 'var(--color-kurogane)' : 'var(--color-shinku)',
               zIndex: 5,
             }} />
           </div>
@@ -480,7 +457,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         }}
         onMouseEnter={() => {
           if (piece) {
-            const viewer: Player = onlineMode ? (myRole || 'sente') : (vsAiMode ? 'sente' : turn);
+            const viewer: Player = onlineMode ? (myRole || 'sente') : (vsAiMode ? 'sente' : localTurn);
             const isMyPiece = piece.owner === viewer;
             if (isMyPiece) {
               onHoverPiece?.(piece);
@@ -543,17 +520,22 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         padding: '15px 15px 15px 5px',
         boxSizing: 'border-box'
       }}>
+        {/* Shoji Sliding Transition Overlay */}
+        <div className={`shoji-overlay ${shojiState !== 'open' ? shojiState : ''}`} style={{ display: shojiState === 'open' ? 'none' : 'flex' }}>
+          <div className="shoji-door-left" />
+          <div className="shoji-door-right" />
+        </div>
+
         <div style={{
           display: 'grid',
           gridTemplateColumns: `repeat(${BOARD_SIZE}, 1fr)`,
           gridTemplateRows: `repeat(${BOARD_SIZE}, 1fr)`,
-          gap: '2px',
-          background: '#d1a166',
-          backgroundImage: 'radial-gradient(circle, #e3b67b 0%, #bd8c50 100%)',
-          padding: '10px',
-          borderRadius: '4px',
-          border: '3px solid #6b4d2b',
-          boxShadow: '0 15px 35px rgba(0,0,0,0.55), inset 0 0 10px rgba(0,0,0,0.15)',
+          gap: '1px',
+          background: 'rgba(26, 26, 26, 0.85)',
+          padding: '8px',
+          borderRadius: '2px',
+          border: '1.5px solid var(--color-gold)',
+          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6)',
           aspectRatio: '1',
           width: '100%',
         }}>

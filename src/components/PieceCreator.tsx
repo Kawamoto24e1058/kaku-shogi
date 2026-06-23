@@ -117,22 +117,22 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
         style={{ 
           padding: '20px', 
           marginBottom: '20px', 
-          background: 'rgba(18, 14, 10, 0.95)',
-          border: '1px solid rgba(219, 188, 98, 0.35)',
-          borderRadius: '4px',
+          background: 'var(--bg-panel)',
+          border: '1px solid rgba(244, 237, 226, 0.15)',
+          borderRadius: '2px',
           fontFamily: 'var(--font-cyber)',
           boxShadow: '0 4px 20px rgba(0,0,0,0.5)'
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', borderBottom: '1px solid rgba(219, 188, 98, 0.15)', paddingBottom: '12px', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', borderBottom: '1px solid rgba(244, 237, 226, 0.12)', paddingBottom: '12px', marginBottom: '12px' }}>
           <div style={{ fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ color: 'var(--shogi-wood)' }}>⚔️</span>
+            <span style={{ color: 'var(--color-gold)' }}>⚔️</span>
             <span>対局接続方式:</span>
             <span style={{
               fontSize: '11px',
-              color: 'var(--neon-green)',
-              background: 'rgba(124, 168, 86, 0.1)',
-              border: '0.5px solid var(--neon-green)',
+              color: 'var(--color-matsuba)',
+              background: 'rgba(47, 82, 51, 0.1)',
+              border: '0.5px solid var(--color-matsuba)',
               padding: '2px 8px',
               borderRadius: '2px',
               fontWeight: 'bold'
@@ -142,29 +142,29 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
           </div>
           
           <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-            {onlineMode ? '※お互いのデバイスから同時に駒の作成が可能です' : !vsAiMode && '※1台 of デバイスを交互に操作して対戦します'}
+            {onlineMode ? '※お互いのデバイスから同時に駒の作成が可能です' : !vsAiMode && '※1台のデバイスを交互に操作して対戦します'}
           </div>
         </div>
 
         <div className="piece-creator-status-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
           {/* Left: Your Status */}
-          <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 15px', borderRadius: '3px', borderLeft: `3px solid ${leftRole === 'sente' ? 'var(--shogi-sente)' : 'var(--shogi-gote)'}` }}>
+          <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 15px', borderRadius: '2px', borderLeft: `3px solid ${leftRole === 'sente' ? 'var(--color-shinku)' : 'var(--color-gold)'}` }}>
             <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>あなたの構築ステータス</div>
             <div style={{ fontSize: '15px', fontWeight: 'bold', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>{leftLabel}</span>
-              <span style={{ color: (onlineMode ? onlineSelfReady : createdPieces.length === maxPieces) ? 'var(--neon-green)' : 'var(--neon-yellow)' }}>
+              <span style={{ color: (onlineMode ? onlineSelfReady : createdPieces.length === maxPieces) ? 'var(--color-matsuba)' : 'var(--color-gold)' }}>
                 {(onlineMode ? onlineSelfReady : createdPieces.length === maxPieces) ? '🟢 準備完了' : `構築中 (${createdPieces.length}/${maxPieces})`}
               </span>
             </div>
           </div>
 
           {/* Right: Opponent Status */}
-          <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 15px', borderRadius: '3px', borderLeft: `3px solid ${rightRole === 'sente' ? 'var(--shogi-sente)' : 'var(--shogi-gote)'}` }}>
+          <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 15px', borderRadius: '2px', borderLeft: `3px solid ${rightRole === 'sente' ? 'var(--color-shinku)' : 'var(--color-gold)'}` }}>
             <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>対戦相手の準備状況</div>
             <div style={{ fontSize: '15px', fontWeight: 'bold', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>{rightLabel}</span>
               <span style={{ 
-                color: onlineMode ? (onlineOpponentReady ? 'var(--neon-green)' : 'var(--neon-yellow)') : (vsAiMode ? 'var(--neon-cyan)' : (setupSubPhase === 'sente_create' ? 'var(--neon-yellow)' : 'var(--neon-green)'))
+                color: onlineMode ? (onlineOpponentReady ? 'var(--color-matsuba)' : 'var(--color-gold)') : (vsAiMode ? 'var(--color-gold)' : (setupSubPhase === 'sente_create' ? 'var(--color-gold)' : 'var(--color-matsuba)'))
               }}>
                 {onlineMode 
                   ? (onlineOpponentReady ? '🟢 準備完了 (3/3)' : '⏳ 未完了 (構築中)')
@@ -183,9 +183,9 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
           <div style={{ 
             marginTop: '12px', 
             fontSize: '11px', 
-            color: onlineSelfReady ? 'var(--neon-green)' : 'var(--neon-yellow)',
-            background: onlineSelfReady ? 'rgba(124, 168, 86, 0.05)' : 'rgba(219, 188, 98, 0.05)',
-            border: `1px solid ${onlineSelfReady ? 'rgba(124, 168, 86, 0.2)' : 'rgba(219, 188, 98, 0.2)'}`,
+            color: onlineSelfReady ? 'var(--color-matsuba)' : 'var(--color-gold)',
+            background: onlineSelfReady ? 'rgba(47, 82, 51, 0.05)' : 'rgba(212, 175, 55, 0.05)',
+            border: `1px solid ${onlineSelfReady ? 'rgba(47, 82, 51, 0.2)' : 'rgba(212, 175, 55, 0.2)'}`,
             padding: '8px 12px',
             borderRadius: '2px',
             display: 'flex',
@@ -203,9 +203,9 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
           <div style={{ 
             marginTop: '12px', 
             fontSize: '11px', 
-            color: setupSubPhase === 'sente_create' ? 'var(--neon-yellow)' : 'var(--neon-green)',
-            background: setupSubPhase === 'sente_create' ? 'rgba(219, 188, 98, 0.05)' : 'rgba(124, 168, 86, 0.05)',
-            border: `1px solid ${setupSubPhase === 'sente_create' ? 'rgba(219, 188, 98, 0.2)' : 'rgba(124, 168, 86, 0.2)'}`,
+            color: setupSubPhase === 'sente_create' ? 'var(--color-gold)' : 'var(--color-matsuba)',
+            background: setupSubPhase === 'sente_create' ? 'rgba(212, 175, 55, 0.05)' : 'rgba(47, 82, 51, 0.05)',
+            border: `1px solid ${setupSubPhase === 'sente_create' ? 'rgba(212, 175, 55, 0.2)' : 'rgba(47, 82, 51, 0.2)'}`,
             padding: '8px 12px',
             borderRadius: '2px',
             display: 'flex',
@@ -213,7 +213,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
             gap: '8px'
           }}>
             <span>💡</span>
-            <div style={{ fontSize: '12px', color: 'var(--neon-cyan)', border: '1px solid rgba(0,243,255,0.15)', padding: '10px 14px', borderRadius: '4px', background: 'rgba(0,243,255,0.02)' }}>
+            <div style={{ fontSize: '12px', color: 'var(--color-gold)', border: '1px solid rgba(212, 175, 55, 0.15)', padding: '10px 14px', borderRadius: '2px', background: 'rgba(212, 175, 55, 0.02)' }}>
               {setupSubPhase === 'sente_create' 
                 ? `${playerNames.sente || 'プレイヤー1'} が3枚のカスタム駒を作り終えると、${playerNames.gote || 'プレイヤー2'} の構築フェーズに切り替わります。` 
                 : `${playerNames.sente || 'プレイヤー1'} は準備完了しています！ ${playerNames.gote || 'プレイヤー2'} は残り駒を構築して「盤面へ」進んでください。`}
@@ -222,8 +222,8 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
         )}
       </div>
 
-      <div className="cyber-panel cyan-glow" style={{ padding: '30px', marginBottom: '30px' }}>
-        <h2 className="cyber-title" style={{ fontSize: '24px', marginBottom: '15px' }}>
+      <div className="cyber-panel" style={{ padding: '30px', marginBottom: '30px', borderColor: 'var(--color-gold)' }}>
+        <h2 className="cyber-title" style={{ fontSize: '24px', marginBottom: '15px', color: 'var(--color-gold)', borderBottom: 'none' }}>
           {playerName} のカスタム能力駒生成
         </h2>
         <p style={{ color: 'var(--text-secondary)', marginBottom: '20px' }}>
@@ -232,13 +232,13 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
 
         {!geminiApiKey || geminiApiKey.trim() === '' ? (
           <div style={{
-            background: 'rgba(219, 188, 98, 0.08)',
-            border: '1px solid rgba(219, 188, 98, 0.3)',
-            borderRadius: '4px',
+            background: 'rgba(212, 175, 55, 0.05)',
+            border: '1px solid rgba(212, 175, 55, 0.2)',
+            borderRadius: '2px',
             padding: '12px 16px',
             marginBottom: '20px',
             fontSize: '13px',
-            color: 'var(--neon-yellow)',
+            color: 'var(--color-gold)',
             display: 'flex',
             alignItems: 'center',
             gap: '10px'
@@ -251,13 +251,13 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
           </div>
         ) : (
           <div style={{
-            background: 'rgba(86, 166, 191, 0.08)',
-            border: '1px solid rgba(86, 166, 191, 0.3)',
-            borderRadius: '4px',
+            background: 'rgba(47, 82, 51, 0.05)',
+            border: '1px solid rgba(47, 82, 51, 0.2)',
+            borderRadius: '2px',
             padding: '12px 16px',
             marginBottom: '20px',
             fontSize: '13px',
-            color: 'var(--neon-cyan)',
+            color: 'var(--color-matsuba)',
             display: 'flex',
             alignItems: 'center',
             gap: '10px'
@@ -295,10 +295,10 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
         {/* Dynamic Compile Status Card */}
         <div style={{
           width: '100%',
-          border: '1px solid rgba(219, 188, 98, 0.25)',
-          background: 'rgba(26, 25, 23, 0.55)',
+          border: '1px solid rgba(130, 110, 89, 0.25)',
+          background: 'rgba(26, 25, 23, 0.35)',
           padding: '24px',
-          borderRadius: '4px',
+          borderRadius: '2px',
           textAlign: 'center',
           fontFamily: 'var(--font-cyber)',
           minHeight: '100px',
@@ -315,21 +315,21 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
             </p>
           ) : loading ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-              <p style={{ fontSize: '11px', fontFamily: 'monospace', color: 'rgba(219, 188, 98, 0.6)', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+              <p style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--color-gold)', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
                 Dynamic Runtime Compile...
               </p>
-              <p style={{ fontSize: '14px', color: 'var(--neon-yellow)', letterSpacing: '0.15em', animation: 'pulse 2s infinite' }}>
+              <p style={{ fontSize: '14px', color: 'var(--color-gold)', letterSpacing: '0.15em' }}>
                 単語の本質を編纂し、独自の幾何学範囲を鋳造中…
               </p>
               <p style={{ fontSize: '12px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
                 ({scanStatus})
               </p>
-              <div style={{ width: '256px', height: '1px', background: 'rgba(219, 188, 98, 0.2)', overflow: 'hidden', position: 'relative', marginTop: '4px' }}>
+              <div style={{ width: '256px', height: '1px', background: 'rgba(244, 237, 226, 0.1)', overflow: 'hidden', position: 'relative', marginTop: '4px' }}>
                 <div style={{
                   position: 'absolute',
                   top: 0,
                   bottom: 0,
-                  background: 'var(--neon-yellow)',
+                  background: 'var(--color-gold)',
                   width: '33.3%',
                   animation: 'shogi-loading 1.5s infinite ease-in-out'
                 }}></div>
@@ -337,10 +337,10 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
             </div>
           ) : (
             <div>
-              <p style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--neon-cyan)', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '4px' }}>
+              <p style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--color-gold)', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '4px' }}>
                 Dynamic Runtime Compile...
               </p>
-              <p style={{ fontSize: '14px', color: 'var(--neon-cyan)', fontWeight: 'bold', letterSpacing: '0.15em' }}>
+              <p style={{ fontSize: '14px', color: 'var(--color-gold)', fontWeight: 'bold', letterSpacing: '0.15em' }}>
                 ダイナミック・コンパイル完了！ ({createdPieces.length} / {maxPieces})
               </p>
             </div>
@@ -348,7 +348,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
         </div>
       </div>
 
-      <h3 className="cyber-title" style={{ fontSize: '18px', marginBottom: '15px', color: 'var(--neon-purple)' }}>
+      <h3 className="cyber-title" style={{ fontSize: '18px', marginBottom: '15px', color: 'var(--color-murasaki)' }}>
         構築されたデッキ ({createdPieces.length} / {maxPieces})
       </h3>
 
@@ -364,7 +364,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
                   right: '12px',
                   background: 'transparent',
                   border: 'none',
-                  color: 'var(--neon-pink)',
+                  color: 'var(--color-shinku)',
                   cursor: 'pointer',
                   fontSize: '18px',
                   fontWeight: 'bold',

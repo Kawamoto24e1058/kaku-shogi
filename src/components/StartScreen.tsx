@@ -41,13 +41,13 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', width: '100%', padding: '12px', boxSizing: 'border-box' }}>
       <div 
-        className="cyber-panel yellow-glow" 
+        className="cyber-panel" 
         style={{
-          background: 'rgba(18, 14, 10, 0.96)',
-          border: '1px solid var(--shogi-wood)',
-          borderRadius: '4px',
+          background: 'var(--bg-panel)',
+          border: '1px solid rgba(244, 237, 226, 0.12)',
+          borderRadius: '2px',
           padding: 'clamp(20px, 5vw, 40px) clamp(16px, 4vw, 30px)',
-          boxShadow: '0 20px 50px rgba(0, 0, 0, 0.8), 0 0 15px rgba(230, 208, 175, 0.15)',
+          boxShadow: '0 20px 50px rgba(0, 0, 0, 0.8)',
           display: 'flex',
           flexDirection: 'column',
           gap: '24px',
@@ -55,24 +55,24 @@ export const StartScreen: React.FC<StartScreenProps> = ({
         }}
       >
         {/* Banner Title */}
-        <div style={{ textAlign: 'center', borderBottom: '1px solid rgba(230, 208, 175, 0.15)', paddingBottom: '20px' }}>
-          <h2 className="cyber-title" style={{ fontSize: 'clamp(20px, 5vw, 32px)', margin: '0 0 8px 0', letterSpacing: '0.08em' }}>
+        <div style={{ textAlign: 'center', borderBottom: '1.5px solid rgba(244, 237, 226, 0.1)', paddingBottom: '20px' }}>
+          <h2 className="cyber-title" style={{ fontSize: 'clamp(20px, 5vw, 32px)', margin: '0 0 8px 0', letterSpacing: '0.15em', borderBottom: 'none', paddingBottom: 0 }}>
             AI駆動・拡張将棋
           </h2>
-          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0, fontFamily: 'var(--font-ui)', letterSpacing: '0.05em' }}>
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0, fontFamily: 'var(--font-ui)', letterSpacing: '0.08em' }}>
             ― 言葉から能力を創造し、9×9の戦場をハックせよ ―
           </p>
         </div>
 
         {/* Player Name Setup */}
         <div>
-          <h3 style={{ fontSize: '16px', color: 'var(--shogi-wood)', marginBottom: '12px' }}>
+          <h3 style={{ fontSize: '15px', color: 'var(--color-gold)', marginBottom: '12px', fontWeight: 'bold', letterSpacing: '0.1em' }}>
             ■ プレイヤー名設定
           </h3>
           <div style={{
             background: 'rgba(255,255,255,0.02)',
-            border: '1px solid rgba(230, 208, 175, 0.12)',
-            borderRadius: '4px',
+            border: '1px solid rgba(244, 237, 226, 0.08)',
+            borderRadius: '2px',
             padding: '16px',
             display: 'flex',
             flexDirection: 'column',
@@ -82,7 +82,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
               <label style={{
                 fontSize: '13px',
-                color: 'var(--neon-cyan)',
+                color: 'var(--color-shinku)',
                 fontFamily: 'var(--font-cyber)',
                 minWidth: '110px',
                 flexShrink: 0,
@@ -105,26 +105,26 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 style={{
                   flex: 1,
                   minWidth: '160px',
-                  background: 'rgba(0,243,255,0.04)',
-                  border: '1px solid rgba(0,243,255,0.3)',
+                  background: 'rgba(26, 26, 26, 0.4)',
+                  border: '1px solid rgba(244, 237, 226, 0.15)',
                   color: '#fff',
                   padding: '8px 14px',
-                  borderRadius: '3px',
+                  borderRadius: '2px',
                   fontSize: '14px',
                   fontFamily: 'var(--font-ui)',
                   outline: 'none',
                   transition: 'border-color 0.2s',
                 }}
-                onFocus={e => (e.target.style.borderColor = 'var(--neon-cyan)')}
-                onBlur={e => (e.target.style.borderColor = 'rgba(0,243,255,0.3)')}
+                onFocus={e => (e.target.style.borderColor = 'var(--color-shinku)')}
+                onBlur={e => (e.target.style.borderColor = 'rgba(244, 237, 226, 0.15)')}
               />
             </div>
-            {/* Gote name (hidden in online mode - opponent fills their own) */}
+            {/* Gote name (hidden in online mode) */}
             {!onlineMode && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <label style={{
                   fontSize: '13px',
-                  color: 'var(--neon-purple)',
+                  color: 'var(--color-gold)',
                   fontFamily: 'var(--font-cyber)',
                   minWidth: '110px',
                   flexShrink: 0,
@@ -145,18 +145,18 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                     style={{
                       flex: 1,
                       minWidth: '160px',
-                      background: 'rgba(189,0,255,0.04)',
-                      border: '1px solid rgba(189,0,255,0.3)',
+                      background: 'rgba(26, 26, 26, 0.4)',
+                      border: '1px solid rgba(244, 237, 226, 0.15)',
                       color: '#fff',
                       padding: '8px 14px',
-                      borderRadius: '3px',
+                      borderRadius: '2px',
                       fontSize: '14px',
                       fontFamily: 'var(--font-ui)',
                       outline: 'none',
                       transition: 'border-color 0.2s',
                     }}
-                    onFocus={e => (e.target.style.borderColor = 'var(--neon-purple)')}
-                    onBlur={e => (e.target.style.borderColor = 'rgba(189,0,255,0.3)')}
+                    onFocus={e => (e.target.style.borderColor = 'var(--color-gold)')}
+                    onBlur={e => (e.target.style.borderColor = 'rgba(244, 237, 226, 0.15)')}
                   />
                 )}
               </div>
@@ -171,8 +171,8 @@ export const StartScreen: React.FC<StartScreenProps> = ({
 
         {/* Mode Selector */}
         <div>
-          <h3 style={{ fontSize: '16px', color: 'var(--shogi-wood)', marginBottom: '12px' }}>
-            ■ 对局モード選択
+          <h3 style={{ fontSize: '15px', color: 'var(--color-gold)', marginBottom: '12px', fontWeight: 'bold', letterSpacing: '0.1em' }}>
+            ■ 対局モード選択
           </h3>
           <div className="start-screen-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
             {/* VS AI Mode */}
@@ -182,10 +182,9 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               style={{
                 padding: '20px',
                 cursor: 'pointer',
-                borderRadius: '3px',
-                border: (vsAiMode && !onlineMode) ? '2px solid var(--neon-cyan)' : '1px solid rgba(219, 188, 98, 0.15)',
-                background: (vsAiMode && !onlineMode) ? 'rgba(86, 166, 191, 0.08)' : 'rgba(0, 0, 0, 0.4)',
-                boxShadow: (vsAiMode && !onlineMode) ? '0 0 10px rgba(86, 166, 191, 0.15)' : 'none',
+                borderRadius: '2px',
+                border: (vsAiMode && !onlineMode) ? '1.5px solid var(--color-gold)' : '1px solid rgba(244, 237, 226, 0.08)',
+                background: (vsAiMode && !onlineMode) ? 'rgba(244, 237, 226, 0.05)' : 'rgba(0, 0, 0, 0.2)',
                 transition: 'all 0.3s ease',
                 display: 'flex',
                 flexDirection: 'column',
@@ -193,7 +192,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 userSelect: 'none'
               }}
             >
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: (vsAiMode && !onlineMode) ? 'var(--neon-cyan)' : '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ fontSize: '17px', fontWeight: 'bold', color: (vsAiMode && !onlineMode) ? 'var(--color-gold)' : '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span>🤖</span> VS AI (1人対戦)
               </div>
               <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.4', fontFamily: 'var(--font-ui)' }}>
@@ -208,10 +207,9 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               style={{
                 padding: '20px',
                 cursor: 'pointer',
-                borderRadius: '3px',
-                border: (!vsAiMode && !onlineMode) ? '2px solid var(--neon-purple)' : '1px solid rgba(219, 188, 98, 0.15)',
-                background: (!vsAiMode && !onlineMode) ? 'rgba(219, 92, 92, 0.08)' : 'rgba(0, 0, 0, 0.4)',
-                boxShadow: (!vsAiMode && !onlineMode) ? '0 0 10px rgba(219, 92, 92, 0.15)' : 'none',
+                borderRadius: '2px',
+                border: (!vsAiMode && !onlineMode) ? '1.5px solid var(--color-gold)' : '1px solid rgba(244, 237, 226, 0.08)',
+                background: (!vsAiMode && !onlineMode) ? 'rgba(244, 237, 226, 0.05)' : 'rgba(0, 0, 0, 0.2)',
                 transition: 'all 0.3s ease',
                 display: 'flex',
                 flexDirection: 'column',
@@ -219,7 +217,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 userSelect: 'none'
               }}
             >
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: (!vsAiMode && !onlineMode) ? 'var(--neon-purple)' : '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ fontSize: '17px', fontWeight: 'bold', color: (!vsAiMode && !onlineMode) ? 'var(--color-gold)' : '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span>⚔️</span> VS PLAYER (2人対戦)
               </div>
               <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.4', fontFamily: 'var(--font-ui)' }}>
@@ -234,10 +232,9 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               style={{
                 padding: '20px',
                 cursor: 'pointer',
-                borderRadius: '3px',
-                border: onlineMode ? '2px solid var(--neon-green)' : '1px solid rgba(219, 188, 98, 0.15)',
-                background: onlineMode ? 'rgba(124, 168, 86, 0.08)' : 'rgba(0, 0, 0, 0.4)',
-                boxShadow: onlineMode ? '0 0 10px rgba(124, 168, 86, 0.15)' : 'none',
+                borderRadius: '2px',
+                border: onlineMode ? '1.5px solid var(--color-gold)' : '1px solid rgba(244, 237, 226, 0.08)',
+                background: onlineMode ? 'rgba(244, 237, 226, 0.05)' : 'rgba(0, 0, 0, 0.2)',
                 transition: 'all 0.3s ease',
                 display: 'flex',
                 flexDirection: 'column',
@@ -245,7 +242,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 userSelect: 'none'
               }}
             >
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: onlineMode ? 'var(--neon-green)' : '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ fontSize: '17px', fontWeight: 'bold', color: onlineMode ? 'var(--color-gold)' : '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span>🌐</span> ONLINE (オンライン)
               </div>
               <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.4', fontFamily: 'var(--font-ui)' }}>
@@ -257,28 +254,26 @@ export const StartScreen: React.FC<StartScreenProps> = ({
 
         {onlineMode && (
           <div 
-            className="cyber-panel green-glow"
+            className="cyber-panel"
             style={{
               padding: '24px',
-              background: 'rgba(124, 168, 86, 0.05)',
-              border: '1px solid rgba(124, 168, 86, 0.3)',
-              borderRadius: '4px',
+              background: 'rgba(255, 255, 255, 0.01)',
+              border: '1px solid rgba(244, 237, 226, 0.15)',
+              borderRadius: '2px',
               marginTop: '10px'
             }}
           >
-            <h4 style={{ color: 'var(--neon-green)', margin: '0 0 16px 0', fontSize: '15px', fontFamily: 'var(--font-cyber)' }}>
+            <h4 style={{ color: 'var(--color-gold)', margin: '0 0 16px 0', fontSize: '14px', fontFamily: 'var(--font-cyber)', fontWeight: 'bold' }}>
               ■ オンライン対局室の選択
             </h4>
             
             {isSearchingMatch ? (
               <div style={{ textAlign: 'center', padding: '20px 0' }}>
                 <div style={{
-                  fontSize: '20px',
+                  fontSize: '18px',
                   fontWeight: 'bold',
-                  color: 'var(--neon-green)',
+                  color: 'var(--color-gold)',
                   margin: '12px 0',
-                  textShadow: '0 0 10px rgba(124, 168, 86, 0.5)',
-                  animation: 'pulse 1.5s infinite'
                 }}>
                   🔍 対戦相手を探しています…
                 </div>
@@ -288,9 +283,9 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                   className="cyber-btn"
                   style={{
                     padding: '8px 20px',
-                    borderColor: 'var(--neon-pink)',
-                    color: 'var(--neon-pink)',
-                    background: 'rgba(244,63,94,0.1)',
+                    borderColor: 'var(--color-shinku)',
+                    color: 'var(--color-shinku)',
+                    background: 'rgba(158, 42, 43, 0.05)',
                     marginTop: '15px'
                   }}
                 >
@@ -301,7 +296,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               <div style={{ textAlign: 'center', padding: '10px 0' }}>
                 {isRandomMatch ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ fontSize: '15px', color: 'var(--neon-green)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+                    <div style={{ fontSize: '14px', color: 'var(--color-gold)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
                       🌐 対戦相手を探しています… (自動マッチング)
                     </div>
                     {/* Dots pulse animation */}
@@ -311,9 +306,9 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                       justifyContent: 'center',
                       margin: '15px 0'
                     }}>
-                      <span className="dot-pulse-1" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--neon-green)', animation: 'pulse 1s infinite alternate' }}></span>
-                      <span className="dot-pulse-2" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--neon-green)', animation: 'pulse 1s infinite alternate 0.2s' }}></span>
-                      <span className="dot-pulse-3" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--neon-green)', animation: 'pulse 1s infinite alternate 0.4s' }}></span>
+                      <span className="dot-pulse-1" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-gold)' }}></span>
+                      <span className="dot-pulse-2" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-gold)' }}></span>
+                      <span className="dot-pulse-3" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-gold)' }}></span>
                     </div>
                     {roomCode && (
                       <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
@@ -329,17 +324,15 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                     <div style={{
                       fontSize: '36px',
                       fontWeight: 'bold',
-                      color: 'var(--neon-green)',
+                      color: 'var(--color-gold)',
                       letterSpacing: '0.2em',
                       margin: '12px 0',
-                      textShadow: '0 0 10px rgba(124, 168, 86, 0.5)',
-                      animation: 'pulse 1.5s infinite'
                     }}>
                       {roomCode}
                     </div>
                   </>
                 )}
-                <div style={{ fontSize: '13px', color: 'var(--neon-yellow)', marginBottom: '15px' }}>
+                <div style={{ fontSize: '13px', color: 'var(--color-gold)', marginBottom: '15px' }}>
                   {isRandomMatch 
                     ? '⏳ 他のプレイヤーが「誰でもランダム対戦」を開始すると自動で対局が開始されます。'
                     : '⏳ 接続を待機中… (対戦相手が参加すると自動で対局室に入ります)'
@@ -351,9 +344,9 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                   className="cyber-btn"
                   style={{
                     padding: '8px 20px',
-                    borderColor: 'var(--neon-pink)',
-                    color: 'var(--neon-pink)',
-                    background: 'rgba(244,63,94,0.1)'
+                    borderColor: 'var(--color-shinku)',
+                    color: 'var(--color-shinku)',
+                    background: 'rgba(158, 42, 43, 0.05)'
                   }}
                 >
                   {isRandomMatch ? 'マッチングをキャンセル' : '待機をキャンセル'}
@@ -362,7 +355,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 {/* Option 0: Random Matchmaking */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '3px', borderLeft: '3px solid var(--neon-yellow)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '2px', borderLeft: '3px solid var(--color-gold)' }}>
                   <div style={{ textAlign: 'left', flex: 1, marginRight: '20px' }}>
                     <div style={{ fontSize: '14px', fontWeight: 'bold' }}>誰でもランダム対戦</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>待機中の他のプレイヤーと自動的にマッチングして対戦します。</div>
@@ -371,14 +364,14 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                     type="button"
                     onClick={onRandomMatch}
                     className="cyber-btn"
-                    style={{ padding: '8px 20px', borderColor: 'var(--neon-yellow)', color: 'var(--neon-yellow)', background: 'rgba(219,188,98,0.1)' }}
+                    style={{ padding: '8px 20px', borderColor: 'var(--color-gold)', color: 'var(--color-gold)', background: 'rgba(212,175,55,0.05)' }}
                   >
                     対戦相手を探す
                   </button>
                 </div>
 
                 {/* Option 1: Create Room */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '3px', borderLeft: '3px solid var(--neon-green)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '2px', borderLeft: '3px solid var(--color-shinku)' }}>
                   <div style={{ textAlign: 'left', flex: 1, marginRight: '20px' }}>
                     <div style={{ fontSize: '14px', fontWeight: 'bold' }}>合言葉対局室を作成する (プライベート)</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>新しい対局部屋を作成し、発行される6桁のコードを対戦相手に教えます。</div>
@@ -387,14 +380,14 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                     type="button"
                     onClick={onCreateRoom}
                     className="cyber-btn"
-                    style={{ padding: '8px 20px', borderColor: 'var(--neon-green)', color: 'var(--neon-green)', background: 'rgba(124,168,86,0.1)' }}
+                    style={{ padding: '8px 20px', borderColor: 'var(--color-shinku)', color: 'var(--color-shinku)', background: 'rgba(158, 42, 43, 0.05)' }}
                   >
                     部屋を作る
                   </button>
                 </div>
 
                 {/* Option 2: Join Room */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '3px', borderLeft: '3px solid var(--neon-cyan)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '2px', borderLeft: '3px solid var(--color-gold)' }}>
                   <div style={{ flex: 1, marginRight: '20px', textAlign: 'left' }}>
                     <div style={{ fontSize: '14px', fontWeight: 'bold' }}>合言葉対局室に入る (プライベート)</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>対戦相手が作成した6桁の部屋コードを入力して接続します。</div>
@@ -408,10 +401,10 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                       style={{
                         width: '120px',
                         background: 'rgba(0,0,0,0.5)',
-                        border: '1px solid rgba(86,166,191,0.4)',
+                        border: '1px solid rgba(244, 237, 226, 0.2)',
                         color: '#fff',
                         padding: '8px 12px',
-                        borderRadius: '3px',
+                        borderRadius: '2px',
                         fontSize: '14px',
                         textAlign: 'center',
                         fontFamily: 'monospace',
@@ -425,9 +418,9 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                       className="cyber-btn"
                       style={{
                         padding: '8px 20px',
-                        borderColor: inputCode.length === 6 ? 'var(--neon-cyan)' : 'var(--text-muted)',
-                        color: inputCode.length === 6 ? 'var(--neon-cyan)' : 'var(--text-muted)',
-                        background: inputCode.length === 6 ? 'rgba(86,166,191,0.1)' : 'transparent',
+                        borderColor: inputCode.length === 6 ? 'var(--color-gold)' : 'var(--text-muted)',
+                        color: inputCode.length === 6 ? 'var(--color-gold)' : 'var(--text-muted)',
+                        background: inputCode.length === 6 ? 'rgba(212,175,55,0.05)' : 'transparent',
                         cursor: inputCode.length === 6 ? 'pointer' : 'not-allowed'
                       }}
                     >
@@ -439,7 +432,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
             )}
 
             {matchmakingError && (
-              <div style={{ color: 'var(--neon-pink)', fontSize: '12px', marginTop: '12px', textAlign: 'center' }}>
+              <div style={{ color: 'var(--color-shinku)', fontSize: '12px', marginTop: '12px', textAlign: 'center' }}>
                 ⚠️ エラー: {matchmakingError}
               </div>
             )}
@@ -447,8 +440,8 @@ export const StartScreen: React.FC<StartScreenProps> = ({
         )}
 
         {/* Shogi Rules and Instructions */}
-        <div style={{ borderTop: '1px solid rgba(230, 208, 175, 0.1)', paddingTop: '20px' }}>
-          <h3 style={{ fontSize: '15px', color: 'var(--shogi-wood)', marginBottom: '8px' }}>
+        <div style={{ borderTop: '1.5px solid rgba(244, 237, 226, 0.1)', paddingTop: '20px' }}>
+          <h3 style={{ fontSize: '15px', color: 'var(--color-gold)', marginBottom: '12px', fontWeight: 'bold', letterSpacing: '0.1em' }}>
             ■ 拡張ルール説明
           </h3>
           <div 
@@ -460,13 +453,14 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               display: 'flex', 
               flexDirection: 'column', 
               gap: '6px',
-              backgroundColor: 'rgba(0,0,0,0.3)',
+              backgroundColor: 'rgba(0,0,0,0.2)',
               padding: '12px',
-              borderRadius: '3px'
+              borderRadius: '2px',
+              border: '1px solid rgba(244, 237, 226, 0.05)'
             }}
           >
             <div><strong>1. 概念創造:</strong> 対局前に任意の単語を入力します。AIがその意味を分析し、オリジナルの移動力・HP・攻撃力・秘奥義を持つ「カスタム駒」をゼロから構築します（2人対戦時はプレイヤー1が作り終えた後、デバイスをプレイヤー2に渡してプレイヤー2が駒を作成します）。</div>
-            <div><strong>2. 盤面配置:</strong> 作成された3枚 of カスタム駒は、自陣に自動的に配置されます（歩兵と王将も最初から配置済み）。</div>
+            <div><strong>2. 盤面配置:</strong> 作成された3枚のカスタム駒は、自陣に自動的に配置されます（歩兵と王将も最初から配置済み）。</div>
             <div><strong>3. 戦術オプション:</strong> 対局中、駒の持つ「一度限りの秘奥義」（タイムリープ、洗脳、コピー等）を使用できます。発動には手番開始時に蓄積される「気力（MP）」を消費します。</div>
             <div><strong>4. ダメージと撃破:</strong> 各駒にはHPが設定されており、攻撃されるとHPが減少します。HPが0になると撃破され、相手の持ち駒となります。</div>
           </div>
@@ -474,7 +468,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
 
         {/* Start Game Action */}
         {!onlineMode && (
-          <div style={{ textAlign: 'center', borderTop: '1px solid rgba(230, 208, 175, 0.1)', paddingTop: '25px', marginTop: '10px' }}>
+          <div style={{ textAlign: 'center', borderTop: '1.5px solid rgba(244, 237, 226, 0.1)', paddingTop: '25px', marginTop: '10px' }}>
             <button
               type="button"
               onClick={onStartGame}
@@ -483,7 +477,6 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 padding: '15px 50px', 
                 fontSize: '18px', 
                 fontWeight: 'bold',
-                boxShadow: '0 0 15px rgba(219, 188, 98, 0.25)'
               }}
             >
               戦場へ挙兵する

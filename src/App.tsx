@@ -2725,22 +2725,21 @@ export const App: React.FC = () => {
               <div className="board-wrapper">
                 {state.activeAbilityMode && suspendedAbility && (
                   <div style={{
-                    background: 'rgba(0, 243, 255, 0.15)',
-                    border: '1px solid var(--neon-cyan)',
-                    boxShadow: '0 0 10px rgba(0, 243, 255, 0.4)',
+                    background: 'rgba(212, 175, 55, 0.08)',
+                    border: '1.5px solid var(--color-gold)',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
                     color: '#fff',
                     padding: '8px 15px',
-                    borderRadius: '4px',
+                    borderRadius: '2px',
                     marginBottom: '10px',
                     fontSize: '12px',
                     textAlign: 'center',
                     fontWeight: 'bold',
-                    fontFamily: 'var(--font-cyber)',
-                    animation: 'pulseGlow 1.5s infinite alternate'
+                    fontFamily: 'var(--font-cyber)'
                   }}>
                     {suspendedAbility.type === 'resurrect'
-                      ? '⚡ 【死者蘇生】墓場から蘇生する駒を選択し、配置する隣接マス（青く光るマス）を選択してください。'
-                      : '⚡ 【能力対象選択】効果を適用する対象の駒を盤上から選択してください（青く光るマス）。'}
+                      ? '⚡ 【死者蘇生】墓場から蘇生する駒を選択し、配置する隣接マスを選択してください。'
+                      : '⚡ 【能力対象選択】効果を適用する対象の駒を盤上から選択してください。'}
                   </div>
                 )}
                 <GameBoard
@@ -2806,20 +2805,20 @@ export const App: React.FC = () => {
                     left: '50%',
                     transform: 'translate(-50%, -50%)',
                     zIndex: 200,
-                    background: 'rgba(18, 12, 5, 0.97)',
-                    border: '1.5px solid var(--neon-yellow)',
-                    boxShadow: '0 0 30px rgba(255, 215, 0, 0.5)',
-                    borderRadius: '6px',
+                    background: 'var(--color-washi)',
+                    border: '1.5px solid var(--color-gold)',
+                    boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6)',
+                    borderRadius: '2px',
                     padding: '20px 28px',
                     textAlign: 'center',
                     minWidth: '200px',
                   }}>
-                    <h3 style={{ color: 'var(--neon-yellow)', fontFamily: 'var(--font-cyber)', fontSize: '14px', marginBottom: '6px', textTransform: 'uppercase' }}>
+                    <h3 style={{ color: 'var(--color-shinku)', fontFamily: 'var(--font-cyber)', fontSize: '14px', marginBottom: '6px', textTransform: 'uppercase' }}>
                       ▲ 覚醒（成る）の選択 ▲
                     </h3>
-                    <p style={{ fontSize: '12px', color: '#fff', marginBottom: '14px' }}>
+                    <p style={{ fontSize: '12px', color: 'var(--color-kurogane)', marginBottom: '14px' }}>
                       <strong>{state.promotionPending.piece.word}</strong> を成りますか？<br/>
-                      <span style={{ fontSize: '10px', color: '#ccc' }}>覚醒能力「{state.promotionPending.piece.isPawn ? 'と金' : state.promotionPending.piece.promoted_effect?.effect_name}」が解放されます。</span>
+                      <span style={{ fontSize: '10px', color: '#555' }}>覚醒能力「{state.promotionPending.piece.isPawn ? 'と金' : state.promotionPending.piece.promoted_effect?.effect_name}」が解放されます。</span>
                     </p>
                     <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
                       <button
