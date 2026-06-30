@@ -1,9 +1,19 @@
 export type Player = 'sente' | 'gote';
 
+export interface VisualEffect {
+  trajectory_type: 'PARABOLA' | 'BEAM' | 'STRIKE' | 'SPIRAL' | 'BURST';
+  particle_color: string;
+  particle_count: number;
+  particle_speed: number;
+  screen_shake: number;
+}
+
 export interface PromotedEffect {
   effect_name: string;
   description: string;
   logic_code?: string;
+  ability_spec?: AbilitySpec;
+  visual_effect?: VisualEffect;
 }
 
 export interface RangeGeometry {
@@ -23,12 +33,24 @@ export interface SpawnConfig {
   spawn_range_geometry: string | null;        // どの範囲に生み出すかの5x5グリッドデータ（不要ならnull）
 }
 
+// ─── 動的インタープリター型能力システム（AbilitySpec） ────────────────────────
+// AIが出力する数値パラメータを元に、ゲームロジックが動的に射程・範囲・効果を計算する
+export interface AbilitySpec {
+  activation_trigger: 'ON_MOVE' | 'TURN_START' | 'ON_TAKEN' | 'ON_APPROACH' | 'ALWAYS';
+  range: number;             // 射程。1〜9=通常, 99=全画面（全盤面）
+  target_selection: 'CLICK_ZONE' | 'AUTOMATIC' | 'SELF';
+  area_shape: 'POINT' | 'SQUARE_3X3' | 'SQUARE_5X5' | 'CROSS' | 'LINE_STRAIGHT';
+  effect_type: 'DESTROY' | 'CAPTURE' | 'IMMOBILIZE' | 'SWAP' | 'PULL' | 'PUSH' | 'STEALTH' | 'SPAWN' | 'TRANSFORM' | 'RESURRECT';
+  affects_who: 'ENEMY_ONLY' | 'ALL_PIECES' | 'ALLY_ONLY' | 'EMPTY_ONLY';
+  cooldown_turns: number;
+}
+
 export interface PieceData {
   word: string;
   effect_name: string;
   mechanics_type: 'MOVEMENT_HACK' | 'STEALTH_TRAP' | 'RULE_BREAK' | 'DYNAMICS_HACK' | 'AUTOMATIC_DRIVE';
   ability_genre: string; // Display-only Japanese genre name
-  visual_theme?: 'WARRIOR_IRON' | 'MYSTIC_MIST' | 'SHADOW_NIGHT' | 'NATURE_STONE';
+  visual_theme?: 'WARRIOR_IRON' | 'MYSTIC_MIST' | 'SHADOW_NIGHT' | 'NATURE_STONE' | 'SPACE_NATURE' | 'UNIQUE';
   trigger: 'ALWAYS' | 'ON_MOVE' | 'TURN_START' | 'ON_TAKEN' | 'ON_APPROACH';
   cool_down_turns: number; // Cooldown (charging) turns required. 99 = once-per-game (永続歩兵化)
   is_once_per_game?: boolean; // 1ゲームに1回限りの必殺技フラグ（発動後は永続歩兵化）
@@ -39,7 +61,10 @@ export interface PieceData {
   promoted_effect: PromotedEffect;
   deep_search_analysis: string;
   logic_code?: string;
+  ability_spec?: AbilitySpec; // 動的インタープリター用パラメータ（新システム）
+  visual_effect?: VisualEffect; // AIデザインのビジュアルエフェクト仕様
 }
+
 
 export interface Piece extends PieceData {
   id: string;

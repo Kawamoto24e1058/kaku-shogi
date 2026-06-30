@@ -1,21 +1,23 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import type { GameState, Piece, Player, Board, GameLog, HistoryState, AbilityEvent } from './types';
+import type { GameState, Piece, Player, Board, GameLog, HistoryState, AbilityEvent, VisualEffect } from './types';
 import {
   initializeBoard,
   getValidMoves,
   executeMove,
   applyAutomatedEffect,
+  interpretAbilitySpec,
   executeDrop,
   BOARD_SIZE,
   getCellLabel,
   getPieceLogicCode,
+  getPieceAbilitySpec,
   getPieceTrigger,
   isTriggerMatching,
   generateId,
   getValidDropCells,
   isKingInCheck,
   getAbilityTargets,
-  placeCustomPiecesRandomly,
+  getPieceDescription,
   isStealthPiece
 } from './gameLogic';
 import { PieceCreator } from './components/PieceCreator';
@@ -23,6 +25,7 @@ import { GameBoard } from './components/GameBoard';
 import { ControlPanel } from './components/ControlPanel';
 import { getRandomCachedPieces } from './aiGenerator';
 import { StartScreen } from './components/StartScreen';
+import { SakuraShower } from './components/SakuraShower';
 import { db } from './firebase';
 import { doc, getDoc, setDoc, updateDoc, onSnapshot, arrayUnion, collection, query, where, orderBy, limit, getDocs, deleteDoc } from 'firebase/firestore';
 
@@ -45,10 +48,28 @@ const k2 = 'IgROzcO0hWqYuoeB9Olf';
 const k3 = 'R-sjK6i76fvZomSfj2mvmDzw';
 const geminiDefaultKey = k1 + k2 + k3;
 
+export interface AbilityAnimationState {
+  source: [number, number] | null;
+  targets: [number, number][];
+  theme: string | null;
+  active: boolean;
+  effectType?: string;
+  visualEffect?: VisualEffect;
+}
+
 export const App: React.FC = () => {
   // ユーザー名の読み込み（localStorage から）
   const savedSenteName = typeof window !== 'undefined' ? (localStorage.getItem('shogi_player_name_sente') || '') : '';
   const savedGoteName  = typeof window !== 'undefined' ? (localStorage.getItem('shogi_player_name_gote')  || '') : '';
+
+  const [activeAbilityAnimation, setActiveAbilityAnimation] = useState<AbilityAnimationState>({
+    source: null,
+    targets: [],
+    theme: null,
+    active: false,
+    effectType: 'DEFAULT',
+    visualEffect: undefined
+  });
 
   const [playerNames, setPlayerNames] = useState<{ sente: string; gote: string }>({
     sente: savedSenteName,
@@ -147,7 +168,26 @@ export const App: React.FC = () => {
     currentLogs: GameLog[],
     currentDestroyed: Piece[]
   ) => {
-    eventQueue.sort((a, b) => a.priority - b.priority);
+    // Sort events: (1) ON_TAKEN (priority 1), (2) ON_MOVE (priority 2), (3) others (priority 3)
+    eventQueue.sort((a, b) => {
+      const getPriority = (trigger: string) => {
+        if (trigger === 'ON_TAKEN') return 1;
+        if (trigger === 'ON_MOVE') return 2;
+        return 3;
+      };
+      return getPriority(a.triggerType) - getPriority(b.triggerType);
+    });
+
+    const isPieceAlive = (board: Board, id: string): [number, number] | null => {
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          if (board[r][c]?.id === id) {
+            return [r, c];
+          }
+        }
+      }
+      return null;
+    };
 
     // Scan original king positions before processing for explosion effects
     let prevSenteKingPos: [number, number] | null = null;
@@ -168,7 +208,53 @@ export const App: React.FC = () => {
     let logsState = [...currentLogs];
     let destroyedState = [...currentDestroyed];
 
-    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    const delayVal = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    const triggerAnimationsBackground = async (
+      list: {
+        source: [number, number] | null;
+        targets: [number, number][];
+        theme: string | null;
+        effectType?: string;
+        visualEffect?: VisualEffect;
+      }[]
+    ) => {
+      for (const anim of list) {
+        setActiveAbilityAnimation({
+          source: anim.source,
+          targets: anim.targets,
+          theme: anim.theme,
+          active: true,
+          effectType: anim.effectType || 'DEFAULT',
+          visualEffect: anim.visualEffect
+        });
+        const shakePower = anim.visualEffect ? anim.visualEffect.screen_shake : 0;
+        if (shakePower > 0) {
+          setScreenShakeIntensity(shakePower * 2.5);
+          setScreenShake(true);
+          setTimeout(() => setScreenShake(false), 400);
+        }
+        await delayVal(500);
+      }
+      setActiveAbilityAnimation({
+        source: null,
+        targets: [],
+        theme: null,
+        active: false,
+        effectType: 'DEFAULT',
+        visualEffect: undefined
+      });
+    };
+
+    const animationsToPlay: {
+      source: [number, number] | null;
+      targets: [number, number][];
+      theme: string | null;
+      effectType?: string;
+      visualEffect?: VisualEffect;
+    }[] = [];
+
+    let suspended = false;
 
     for (let i = 0; i < eventQueue.length; i++) {
       const event = eventQueue[i];
@@ -195,12 +281,61 @@ export const App: React.FC = () => {
           continue;
         }
       } else {
-        const [py, px] = event.position;
-        const pieceOnBoard = boardState[py][px];
-        if (!pieceOnBoard || pieceOnBoard.id !== event.pieceId) {
-          console.log(`Skipping ${event.triggerType} event ${event.id}: Piece is no longer at position.`);
+        const livePos = isPieceAlive(boardState, event.pieceId);
+        if (!livePos) {
+          console.log(`Skipping ${event.triggerType} event ${event.id}: Piece is no longer alive on board (dead).`);
           continue;
         }
+        // Update coordinates in case it was relocated by a previous ability
+        event.position = livePos;
+      }
+
+      // 1.5 Collect animation details
+      const animPos = event.triggerType === 'ON_TAKEN' ? event.position : (event.triggerType === 'ON_APPROACH' ? event.position : isPieceAlive(boardState, event.pieceId));
+      const animPiece = animPos ? boardState[animPos[0]][animPos[1]] : null;
+      let animTargets: [number, number][] = [];
+
+      const isCustomAnimStart = animPiece && !animPiece.isKing && !animPiece.isPawn && !animPiece.isHisha && !animPiece.isKaku;
+      if (animPiece && isCustomAnimStart) {
+        if (event.triggerType === 'ON_TAKEN') {
+          animTargets = [event.position];
+        } else if (event.triggerType === 'ON_APPROACH') {
+          animTargets = [event.position];
+        } else if (animPos) {
+          const targetsInfo = getAbilityTargets(boardState, animPos, event.owner, sharedState);
+          if (targetsInfo) {
+            animTargets = targetsInfo.targets;
+          }
+        }
+        
+        let effectType = 'DEFAULT';
+        const spec = getPieceAbilitySpec(animPiece);
+        if (spec) {
+          effectType = spec.effect_type;
+        } else {
+          const logic = getPieceLogicCode(animPiece);
+          const desc = getPieceDescription(animPiece);
+          if (logic.includes('blast') || logic.includes('explode') || desc.includes('爆発') || desc.includes('爆破') || desc.includes('自爆')) {
+            effectType = 'DESTROY';
+          } else if (logic.includes('stun') || desc.includes('スタン') || desc.includes('封印') || desc.includes('行動封印') || desc.includes('呪縛')) {
+            effectType = 'IMMOBILIZE';
+          } else if (logic.includes('swap') || desc.includes('交代') || desc.includes('入替') || desc.includes('瞬間移動')) {
+            effectType = 'SWAP';
+          } else if (logic.includes('pull') || desc.includes('引き寄せ')) {
+            effectType = 'PULL';
+          } else if (logic.includes('push') || desc.includes('押し出し') || logic.includes('charge')) {
+            effectType = 'PUSH';
+          }
+        }
+        
+        const visualEffect = animPiece.isPromoted ? animPiece.promoted_effect?.visual_effect : animPiece.visual_effect;
+        animationsToPlay.push({
+          source: animPos,
+          targets: animTargets,
+          theme: animPiece.visual_theme || null,
+          effectType,
+          visualEffect
+        });
       }
 
       // 2. Check if the ability is interactive (needs human target selection)
@@ -236,7 +371,12 @@ export const App: React.FC = () => {
             activeAbilityTargets: targetsInfo.targets,
             logs: logsState
           }));
-          return; // Stop queue execution, wait for user click!
+
+          // Trigger animation queue built up to this point in the background
+          triggerAnimationsBackground(animationsToPlay);
+
+          suspended = true;
+          break; // Stop queue execution, wait for user click!
         }
       }
 
@@ -273,28 +413,41 @@ export const App: React.FC = () => {
             timestamp: new Date().toLocaleTimeString()
           })));
 
-          // Remove the captured trap from hands (because it successfully triggered and exploded)
+          // Remove the captured trap from hands
           capturedState[event.owner] = capturedState[event.owner].filter(p => p.id !== event.pieceId);
           capturedState[event.owner === 'sente' ? 'gote' : 'sente'] = capturedState[event.owner === 'sente' ? 'gote' : 'sente'].filter(p => p.id !== event.pieceId);
-        } else {
+        } else if (
+          trapPiece.logic_code === 'self_destruct_trap' ||
+          trapPiece.logic_code === 'curse_retaliation' ||
+          (trapPiece.description || '').includes('道連れ') ||
+          (trapPiece.description || '').includes('自爆') ||
+          (trapPiece.description || '').includes('爆発') ||
+          (trapPiece.description || '').includes('爆破') ||
+          (trapPiece.description || '').includes('爆砕') ||
+          (trapPiece.description || '').includes('激突') ||
+          trapPiece.ability_spec?.effect_type === 'DESTROY'
+        ) {
           // Default self-destruct if no custom effect triggered:
-          // Both the trap piece and the intruder (attacker) at [ty][tx] are destroyed.
           const attackerOnBoard = boardState[ty][tx];
           if (attackerOnBoard) {
             destroyedState.push({ ...attackerOnBoard });
             sharedState.push({
               ...attackerOnBoard,
-              isPromoted: false,
+              isPromoted: attackerOnBoard.isPromoted,
               coolDownTurnsRemaining: 0,
-              isRevealed: true
+              isRevealed: true,
+              stunTurnsRemaining: 0,
+              deathCountdown: 0
             });
           }
           destroyedState.push({ ...trapPiece });
           sharedState.push({
             ...trapPiece,
-            isPromoted: false,
+            isPromoted: trapPiece.isPromoted,
             coolDownTurnsRemaining: 0,
-            isRevealed: true
+            isRevealed: true,
+            stunTurnsRemaining: 0,
+            deathCountdown: 0
           });
 
           boardState[ty][tx] = null;
@@ -313,9 +466,10 @@ export const App: React.FC = () => {
           // Remove the captured trap from hands
           capturedState[event.owner] = capturedState[event.owner].filter(p => p.id !== event.pieceId);
           capturedState[event.owner === 'sente' ? 'gote' : 'sente'] = capturedState[event.owner === 'sente' ? 'gote' : 'sente'].filter(p => p.id !== event.pieceId);
+
+          setScreenShake(true);
+          setTimeout(() => setScreenShake(false), 300);
         }
-        setScreenShake(true);
-        setTimeout(() => setScreenShake(false), 300);
 
       } else if (event.triggerType === 'ON_APPROACH') {
         const [ny, nx] = event.position;
@@ -399,19 +553,14 @@ export const App: React.FC = () => {
           })));
         }
       }
-
-      // Update React state after this event resolves, then wait for animation
-      setState(prev => ({
-        ...prev,
-        board: boardState,
-        capturedPieces: capturedState,
-        sharedPieces: sharedState,
-        logs: logsState,
-        destroyedPieces: destroyedState
-      }));
-
-      await delay(150); // Pause for rendering synchronization!
     }
+
+    if (suspended) {
+      return;
+    }
+
+    // Trigger all collected background animations (fire-and-forget)
+    triggerAnimationsBackground(animationsToPlay);
 
     // 4. Finalize the turn once all events have processed
     const senteKing = boardState.some(row => row.some(p => p?.isKing && p.owner === 'sente'));
@@ -698,9 +847,11 @@ export const App: React.FC = () => {
           if (!nextShared.some(s => s.id === p.id)) {
             nextShared.push({
               ...p,
-              isPromoted: false,
+              isPromoted: p.isPromoted,
               coolDownTurnsRemaining: 0,
-              isRevealed: true
+              isRevealed: true,
+              stunTurnsRemaining: 0,
+              deathCountdown: 0
             });
           }
         }
@@ -746,6 +897,7 @@ export const App: React.FC = () => {
 
   // FX visual states
   const [screenShake, setScreenShake] = useState(false);
+  const [screenShakeIntensity, setScreenShakeIntensity] = useState(4);
   const [laserEffect] = useState<{ from: [number, number]; to: [number, number] } | null>(null);
   const [explosionEffects, setExplosionEffects] = useState<[number, number][]>([]);
   const [showCheckOverlay, setShowCheckOverlay] = useState<boolean>(false);
@@ -1124,23 +1276,61 @@ export const App: React.FC = () => {
       const sentePieces: Piece[] = matchDoc.sentePieces;
       const gotePieces: Piece[] = matchDoc.gotePieces;
       
-      const initializedSente = sentePieces.map(piece => ({
-        ...piece,
-        coolDownTurnsRemaining: 0,
-        isRevealed: isStealthPiece(piece) ? false : true,
-      }));
-      const initializedGote = gotePieces.map(piece => ({
-        ...piece,
-        coolDownTurnsRemaining: 0,
-        isRevealed: isStealthPiece(piece) ? false : true,
-      }));
+      const nextBoard = initializeBoard();
 
-      const nextBoard = placeCustomPiecesRandomly(initializeBoard(), initializedSente, initializedGote);
+      // 1. Auto-place Sente pieces on Sente's territory (ranks 6, 7, 8)
+      const senteAvailable: [number, number][] = [];
+      for (let y = 6; y <= 8; y++) {
+        for (let x = 0; x < BOARD_SIZE; x++) {
+          if (nextBoard[y][x] === null) {
+            senteAvailable.push([y, x]);
+          }
+        }
+      }
+      senteAvailable.sort(() => Math.random() - 0.5);
+
+      const initializedSente = sentePieces.map((piece, index) => {
+        const position = index < senteAvailable.length ? senteAvailable[index] : null;
+        const initializedPiece = {
+          ...piece,
+          originalPosition: position,
+          coolDownTurnsRemaining: 0,
+          isRevealed: isStealthPiece(piece) ? false : true,
+        };
+        if (position) {
+          nextBoard[position[0]][position[1]] = initializedPiece;
+        }
+        return initializedPiece;
+      });
+
+      // 2. Auto-place Gote pieces on Gote's territory (ranks 0, 1, 2)
+      const goteAvailable: [number, number][] = [];
+      for (let y = 0; y <= 2; y++) {
+        for (let x = 0; x < BOARD_SIZE; x++) {
+          if (nextBoard[y][x] === null) {
+            goteAvailable.push([y, x]);
+          }
+        }
+      }
+      goteAvailable.sort(() => Math.random() - 0.5);
+
+      const initializedGote = gotePieces.map((piece, index) => {
+        const position = index < goteAvailable.length ? goteAvailable[index] : null;
+        const initializedPiece = {
+          ...piece,
+          originalPosition: position,
+          coolDownTurnsRemaining: 0,
+          isRevealed: isStealthPiece(piece) ? false : true,
+        };
+        if (position) {
+          nextBoard[position[0]][position[1]] = initializedPiece;
+        }
+        return initializedPiece;
+      });
 
       const nextLogs = [
         ...matchDoc.logs,
-        { player: 'system', message: `${matchDoc.senteName || 'プレイヤー1'} の能力駒を自陣に配置しました。`, type: 'system' },
-        { player: 'system', message: `${matchDoc.goteName || 'プレイヤー2'} の能力駒を自陣に配置しました。`, type: 'system' },
+        { player: 'system', message: '能力駒が自陣地にランダム配置されました。', type: 'system' },
         { player: 'system', message: '対局を開始します！', type: 'system' }
       ];
 
@@ -1300,9 +1490,11 @@ export const App: React.FC = () => {
               if (!currentShared.some(s => s.id === p.id)) {
                 currentShared.push({
                   ...p,
-                  isPromoted: false,
+                  isPromoted: p.isPromoted,
                   coolDownTurnsRemaining: 0,
-                  isRevealed: true
+                  isRevealed: true,
+                  stunTurnsRemaining: 0,
+                  deathCountdown: 0
                 });
               }
             }
@@ -1448,9 +1640,11 @@ export const App: React.FC = () => {
               currentDestroyedPieces.push(updated);
               currentShared.push({
                 ...updated,
-                isPromoted: false,
+                isPromoted: updated.isPromoted,
                 coolDownTurnsRemaining: 0,
-                isRevealed: true
+                isRevealed: true,
+                stunTurnsRemaining: 0,
+                deathCountdown: 0
               });
               updatedLogsList.push({
                 id: generateId(),
@@ -1655,22 +1849,115 @@ export const App: React.FC = () => {
       }
     }
 
-    const effectRes = applyAutomatedEffect(
-      finalBoard,
-      source,
-      triggerType,
-      activePlayer,
-      capturedPieces[activePlayer],
-      fromPosition,
-      [ty, tx],
-      undefined,
-      state.sharedPieces,
-      selectedSharedPiece?.piece
-    );
+    const sourcePiece = board[sy][sx];
+    const isCustomSource = sourcePiece && !sourcePiece.isKing && !sourcePiece.isPawn && !sourcePiece.isHisha && !sourcePiece.isKaku;
+    if (sourcePiece && isCustomSource) {
+      let effectType = 'DEFAULT';
+      const spec = getPieceAbilitySpec(sourcePiece);
+      if (spec) {
+        effectType = spec.effect_type;
+      } else {
+        const logic = getPieceLogicCode(sourcePiece);
+        const desc = getPieceDescription(sourcePiece);
+        if (logic.includes('blast') || logic.includes('explode') || desc.includes('爆発') || desc.includes('爆破') || desc.includes('自爆')) {
+          effectType = 'DESTROY';
+        } else if (logic.includes('stun') || desc.includes('スタン') || desc.includes('封印') || desc.includes('行動封印') || desc.includes('呪縛')) {
+          effectType = 'IMMOBILIZE';
+        } else if (logic.includes('swap') || desc.includes('交代') || desc.includes('入替') || desc.includes('瞬間移動')) {
+          effectType = 'SWAP';
+        } else if (logic.includes('pull') || desc.includes('引き寄せ')) {
+          effectType = 'PULL';
+        } else if (logic.includes('push') || desc.includes('押し出し') || logic.includes('charge')) {
+          effectType = 'PUSH';
+        }
+      }
+      const visualEffect = sourcePiece.isPromoted ? sourcePiece.promoted_effect?.visual_effect : sourcePiece.visual_effect;
+      setActiveAbilityAnimation({
+        source: source,
+        targets: [[ty, tx]],
+        theme: sourcePiece.visual_theme || null,
+        active: true,
+        effectType,
+        visualEffect
+      });
+      const shakePower = visualEffect ? visualEffect.screen_shake : 0;
+      if (shakePower > 0) {
+        setScreenShakeIntensity(shakePower * 2.5);
+        setScreenShake(true);
+        setTimeout(() => setScreenShake(false), 400);
+      }
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    // ── [動的インタープリーター優先ルート]
+    // ability_spec が設定されている駒は「interpretAbilitySpec」で実行
+    // それ以外の旧駒は従来の applyAutomatedEffect でフォールバック
+    const sourcePieceForEffect = finalBoard[sy][sx];
+    let effectRes: {
+      board: Board;
+      capturedPieces: Piece[];
+      graveyard?: Piece[];
+      logs: Omit<import('./types').GameLog, 'id' | 'timestamp'>[];
+      triggered: boolean;
+    };
+
+    const spec = sourcePieceForEffect ? getPieceAbilitySpec(sourcePieceForEffect) : undefined;
+    if (spec) {
+      const specResult = interpretAbilitySpec(
+        finalBoard,
+        source,
+        spec,
+        activePlayer,
+        capturedPieces[activePlayer],
+        state.sharedPieces,
+        [ty, tx],
+        selectedSharedPiece?.piece
+      );
+      effectRes = {
+        board: specResult.board,
+        capturedPieces: specResult.capturedPieces,
+        graveyard: specResult.graveyard,
+        logs: specResult.logs,
+        triggered: specResult.triggered
+      };
+    } else {
+      effectRes = applyAutomatedEffect(
+        finalBoard,
+        source,
+        triggerType,
+        activePlayer,
+        capturedPieces[activePlayer],
+        fromPosition,
+        [ty, tx],
+        undefined,
+        state.sharedPieces,
+        selectedSharedPiece?.piece
+      );
+    }
 
     if (effectRes.triggered || effectRes.logs.length > 0) {
       if (effectRes.triggered) {
         finalBoard = effectRes.board;
+        if (sourcePiece) {
+          const sourceSpec = getPieceAbilitySpec(sourcePiece);
+          const specCooldown = sourceSpec?.cooldown_turns;
+          const normalCooldown = sourcePiece.cool_down_turns;
+          const cd = specCooldown !== undefined ? specCooldown : normalCooldown;
+          const isOnce = sourcePiece.is_once_per_game || sourcePiece.cool_down_turns === 99;
+          const targetCooldown = isOnce ? 99 : (cd > 0 ? cd : 0);
+          
+          finalBoard = finalBoard.map(row => 
+            row.map(p => {
+              if (p && p.id === sourcePiece.id) {
+                return {
+                  ...p,
+                  coolDownTurnsRemaining: targetCooldown
+                };
+              }
+              return p;
+            })
+          );
+        }
         nextCaptured[activePlayer] = effectRes.capturedPieces;
         if (effectRes.graveyard) {
           nextShared = effectRes.graveyard;
@@ -1739,6 +2026,17 @@ export const App: React.FC = () => {
           activeAbilityTargets: []
         }));
 
+        const isCustomSource = sourcePiece && !sourcePiece.isKing && !sourcePiece.isPawn && !sourcePiece.isHisha && !sourcePiece.isKaku;
+        if (sourcePiece && isCustomSource) {
+          await new Promise(resolve => setTimeout(resolve, 600));
+          setActiveAbilityAnimation({
+            source: null,
+            targets: [],
+            theme: null,
+            active: false
+          });
+        }
+
         setTimeout(() => {
           setState(prev => ({
             ...prev,
@@ -1758,6 +2056,18 @@ export const App: React.FC = () => {
           );
         }, 1200);
       } else {
+        const isCustomSource = sourcePiece && !sourcePiece.isKing && !sourcePiece.isPawn && !sourcePiece.isHisha && !sourcePiece.isKaku;
+        if (sourcePiece && isCustomSource) {
+          setTimeout(() => {
+            setActiveAbilityAnimation({
+              source: null,
+              targets: [],
+              theme: null,
+              active: false
+            });
+          }, 600);
+        }
+
         if (remainingEvents && remainingEvents.length > 0) {
           // Resume queue!
           await processAbilityEventsQueue(
@@ -1961,18 +2271,57 @@ export const App: React.FC = () => {
   }, [state.phase]);
 
   const autoPlacePieces = (sentePieces: Piece[], gotePieces: Piece[]) => {
-    const initializedSente = sentePieces.map(piece => ({
-      ...piece,
-      coolDownTurnsRemaining: 0,
-      isRevealed: isStealthPiece(piece) ? false : true,
-    }));
-    const initializedGote = gotePieces.map(piece => ({
-      ...piece,
-      coolDownTurnsRemaining: 0,
-      isRevealed: isStealthPiece(piece) ? false : true,
-    }));
+    let nextBoard = initializeBoard();
 
-    const nextBoard = placeCustomPiecesRandomly(initializeBoard(), initializedSente, initializedGote);
+    // 1. Auto-place Sente pieces on Sente's territory (ranks 6, 7, 8)
+    const senteAvailable: [number, number][] = [];
+    for (let y = 6; y <= 8; y++) {
+      for (let x = 0; x < BOARD_SIZE; x++) {
+        if (nextBoard[y][x] === null) {
+          senteAvailable.push([y, x]);
+        }
+      }
+    }
+    senteAvailable.sort(() => Math.random() - 0.5);
+
+    const initializedSente = sentePieces.map((piece, index) => {
+      const position = index < senteAvailable.length ? senteAvailable[index] : null;
+      const initializedPiece = {
+        ...piece,
+        originalPosition: position,
+        coolDownTurnsRemaining: 0,
+        isRevealed: isStealthPiece(piece) ? false : true,
+      };
+      if (position) {
+        nextBoard[position[0]][position[1]] = initializedPiece;
+      }
+      return initializedPiece;
+    });
+
+    // 2. Auto-place Gote pieces on Gote's territory (ranks 0, 1, 2)
+    const goteAvailable: [number, number][] = [];
+    for (let y = 0; y <= 2; y++) {
+      for (let x = 0; x < BOARD_SIZE; x++) {
+        if (nextBoard[y][x] === null) {
+          goteAvailable.push([y, x]);
+        }
+      }
+    }
+    goteAvailable.sort(() => Math.random() - 0.5);
+
+    const initializedGote = gotePieces.map((piece, index) => {
+      const position = index < goteAvailable.length ? goteAvailable[index] : null;
+      const initializedPiece = {
+        ...piece,
+        originalPosition: position,
+        coolDownTurnsRemaining: 0,
+        isRevealed: isStealthPiece(piece) ? false : true,
+      };
+      if (position) {
+        nextBoard[position[0]][position[1]] = initializedPiece;
+      }
+      return initializedPiece;
+    });
 
     setState(prev => ({
       ...prev,
@@ -1986,8 +2335,7 @@ export const App: React.FC = () => {
 
     setPiecesToPlace({ sente: [], gote: [] });
 
-    addLog(`${playerNames.sente || 'プレイヤー1'} の能力駒を自陣に配置しました。`, 'system', 'sente');
-    addLog(`${playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')} の能力駒を自陣に配置しました。`, 'system', 'gote');
+    addLog('能力駒が自陣地にランダム配置されました。', 'system', 'sente');
     addLog('対局を開始します！', 'system', 'sente');
   };
 
@@ -2520,9 +2868,11 @@ export const App: React.FC = () => {
               if (!nextShared.some(s => s.id === p.id)) {
                 nextShared.push({
                   ...p,
-                  isPromoted: false,
+                  isPromoted: p.isPromoted,
                   coolDownTurnsRemaining: 0,
-                  isRevealed: true
+                  isRevealed: true,
+                  stunTurnsRemaining: 0,
+                  deathCountdown: 0
                 });
               }
             }
@@ -2638,30 +2988,35 @@ export const App: React.FC = () => {
   const selectedPieceObject = state.selectedCell ? state.board[state.selectedCell[0]][state.selectedCell[1]] : null;
 
   return (
-    <div className={`app-container ${screenShake ? 'screen-shake' : ''} phase-${state.phase}`}>
+    <div
+      className={`app-container ${screenShake ? 'screen-shake' : ''} phase-${state.phase}`}
+      style={{ '--shake-intensity': screenShakeIntensity } as React.CSSProperties}
+    >
+      
+      {/* Background Sakura Shower */}
+      <SakuraShower />
       
       {/* ターン交代サイバーアラート */}
       {turnChangeAlert && (
         <div className={`turn-change-overlay ${turnChangeAlert === 'sente' ? 'sente-turn-alert' : 'gote-turn-alert'}`}>
           <div className="turn-change-content">
-            <div className="turn-change-scanline" />
-            <div className="turn-change-subtitle">SYSTEM STATUS UPDATE</div>
-            <div className="turn-change-title">
+            <div className="turn-change-subtitle" style={{ color: 'var(--color-gold)' }}>SYSTEM STATUS UPDATE</div>
+            <div className="turn-change-title" style={{ color: '#1A1A1A' }}>
               {turnChangeAlert === 'sente'
                 ? `▲ ${playerNames.sente || 'プレイヤー1'} の手番`
                 : `▽ ${playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')} の手番`}
             </div>
-            <div className="turn-change-bar" />
+            <div className="turn-change-bar" style={{ backgroundColor: 'var(--color-gold)' }} />
           </div>
         </div>
       )}
 
       {/* Header */}
-      <header className="cyber-panel cyan-glow" style={{ padding: '10px 20px', margin: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(10, 5, 28, 0.9)' }}>
-        <h1 className="cyber-title app-header-title" style={{ fontSize: '22px' }}>
-          AI駆動・拡張将棋
+      <header className="cyber-panel" style={{ padding: '12px 24px', margin: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
+        <h1 className="cyber-title app-header-title" style={{ fontSize: '20px', borderBottom: 'none', paddingBottom: 0 }}>
+          拡張将棋
         </h1>
-        <div className="app-header-subtitle" style={{ fontSize: '10px', color: 'var(--text-secondary)', fontFamily: 'var(--font-cyber)' }}>
+        <div className="app-header-subtitle" style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-cyber)' }}>
           SAPIENS RUNTIME v3.0.0
         </div>
       </header>
@@ -2769,6 +3124,8 @@ export const App: React.FC = () => {
                   onlineMode={onlineMode}
                   myRole={myRole}
                   playerNames={playerNames}
+                  activeAbilityAnimation={activeAbilityAnimation}
+                  explosionEffects={explosionEffects}
                 />
 
                 {/* Tactical Laser Beam */}
@@ -2857,6 +3214,9 @@ export const App: React.FC = () => {
                   capturedPieces={state.capturedPieces}
                   selectedCapturedPiece={selectedCapturedPiece}
                   onCapturedPieceClick={handleCapturedPieceClick}
+                  customDecks={state.customDecks}
+                  selectedCustomDeckPiece={selectedCustomDeckPiece}
+                  onCustomDeckPieceClick={handleCustomDeckPieceClick}
                   sharedPieces={state.sharedPieces}
                   selectedSharedPiece={selectedSharedPiece}
                   onSharedPieceClick={handleSharedPieceClick}

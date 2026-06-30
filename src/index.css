@@ -2,27 +2,27 @@
 @import "tailwindcss";
 
 :root {
-  --bg-main: #1A1A1A; /* Sumi matte black background */
-  --bg-panel: rgba(26, 26, 26, 0.95); /* Deep dark Sumi panel */
-  --border-wood-sente: rgba(244, 237, 226, 0.15); /* Delicate Sente white-wood frame border */
-  --border-wood-gote: rgba(244, 237, 226, 0.1);
+  --bg-main: #F7F5F0; /* Hand-made Washi paper white */
+  --bg-panel: rgba(255, 255, 255, 0.7); /* Shoji white translucent */
+  --border-wood-sente: rgba(139, 92, 26, 0.15); /* delicate white wood frame border */
+  --border-wood-gote: rgba(139, 92, 26, 0.1);
   
-  /* Traditional Japanese Colors (Matte lacquer & plant tones, no glows) */
-  --color-shinku: #9E2A2B; /* Vermilion red (Sente stamp) */
-  --color-kurogane: #303030; /* Dark charcoal (Gote stamp) */
-  --color-murasaki: #4A154B; /* Deep purple (Rule break stamp) */
-  --color-matsuba: #2F5233; /* Deep pine needle green (Dynamics stamp) */
-  --color-gold: #D4AF37; /* Hairline gold */
-  --color-shiraki: #ECE6DA; /* Light white wood tone */
-  --color-washi: #F4EDE2; /* Warm paper off-white */
+  /* Traditional Japanese Colors */
+  --color-shinku: #9E2A2B; /* vermilion red */
+  --color-kurogane: #1A1A1A; /* Sumi black */
+  --color-murasaki: #4A154B; /* deep purple */
+  --color-matsuba: #2F5233; /* pine needle green */
+  --color-gold: #D4AF37; /* hairline gold */
+  --color-shiraki: #FAF6EE; /* Shiraki white wood card base */
+  --color-washi: #F7F5F0;
   
   --shogi-sente: var(--color-shinku);
   --shogi-gote: var(--color-kurogane);
   --shogi-wood: var(--color-gold);
 
-  --text-primary: #F4EDE2; /* Washi white */
-  --text-secondary: #C8C5B9; /* Aged paper grey */
-  --text-muted: #6E6C63; /* Wet stone grey */
+  --text-primary: #1A1A1A; /* Sumi kuro */
+  --text-secondary: #4A4A4A; /* Charcoal grey */
+  --text-muted: #8A8A8A; /* Light grey */
   
   --font-cyber: 'Noto Serif JP', serif;
   --font-ui: 'Noto Serif JP', serif;
@@ -36,13 +36,7 @@
 
 body {
   background-color: var(--bg-main);
-  background-image: 
-    radial-gradient(at 0% 0%, rgba(244, 237, 226, 0.02) 0px, transparent 50%),
-    radial-gradient(at 100% 0%, rgba(20, 20, 20, 0.9) 0px, transparent 50%),
-    /* Washi Paper texture-like subtle lines */
-    linear-gradient(rgba(255,255,255,0.01) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.01) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.035'/%3E%3C/svg%3E");
   color: var(--text-primary);
   font-family: var(--font-ui);
   min-height: 100vh;
@@ -51,39 +45,67 @@ body {
   letter-spacing: 0.08em; /* spacious typography */
 }
 
+/* Sakura Falling Animations */
+@keyframes sakura-fall {
+  0% {
+    transform: translateY(-5vh) rotate(0deg) skewX(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.8;
+  }
+  90% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(105vh) rotate(540deg) skewX(20deg);
+    opacity: 0;
+  }
+}
+
+@keyframes sakura-sway {
+  0%, 100% {
+    margin-left: 0px;
+  }
+  50% {
+    margin-left: 50px;
+  }
+}
+
 /* Wa-Modern Lacquered Panels (No glows) */
 .cyber-panel {
   background: var(--bg-panel);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(244, 237, 226, 0.08); /* Delicate hairline border */
-  border-radius: 2px; /* Sharp rectangular frames */
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  border: 1px solid rgba(139, 92, 26, 0.15); /* border-amber-900/10 style */
+  border-radius: 16px; /* rounded-2xl */
+  box-shadow: 0 10px 30px rgba(139, 92, 26, 0.03);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .cyber-panel:hover {
-  border-color: rgba(212, 175, 55, 0.2); /* Gold hint on hover */
+  border-color: rgba(139, 92, 26, 0.25);
+  box-shadow: 0 12px 35px rgba(139, 92, 26, 0.06);
 }
 
 .cyan-glow {
-  border-color: rgba(244, 237, 226, 0.15);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  border-color: rgba(139, 92, 26, 0.2);
+  box-shadow: 0 4px 20px rgba(139, 92, 26, 0.05);
 }
 
 .purple-glow {
-  border-color: rgba(244, 237, 226, 0.12);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  border-color: rgba(139, 92, 26, 0.18);
+  box-shadow: 0 4px 20px rgba(139, 92, 26, 0.05);
 }
 
 .yellow-glow {
-  border-color: rgba(212, 175, 55, 0.3);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  border-color: var(--color-gold);
+  box-shadow: 0 4px 20px rgba(139, 92, 26, 0.06);
 }
 
 .pink-glow {
-  border-color: rgba(244, 237, 226, 0.15);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  border-color: rgba(139, 92, 26, 0.2);
+  box-shadow: 0 4px 20px rgba(139, 92, 26, 0.05);
 }
 
 /* Titles and Typography (Calligraphy brush style) */
@@ -92,31 +114,50 @@ body {
   font-weight: 700;
   letter-spacing: 4px;
   color: var(--text-primary);
-  border-bottom: 1.5px solid rgba(244, 237, 226, 0.12);
+  border-bottom: 1px solid rgba(139, 92, 26, 0.12);
   padding-bottom: 6px;
   text-transform: uppercase;
 }
 
+/* Wood cards with spring-like easing */
+.wood-card-hand {
+  background: var(--color-shiraki);
+  border: 1px solid rgba(139, 92, 26, 0.15);
+  border-radius: 12px; /* rounded-xl */
+  box-shadow: 0 4px 12px rgba(139, 92, 26, 0.05), inset 0 1px 1px rgba(255, 255, 255, 0.8);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.wood-card-hand:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 12px 28px rgba(139, 92, 26, 0.12), 0 8px 10px rgba(0, 0, 0, 0.03);
+  border-color: var(--color-gold);
+}
+
 /* Wa-Modern Matte Buttons */
 .cyber-btn {
-  background: #24221f;
-  border: 1px solid rgba(244, 237, 226, 0.2);
-  border-radius: 2px;
+  background: #FAF8F5; /* soft cream */
+  border: 1px solid rgba(139, 92, 26, 0.25);
+  border-radius: 9999px; /* rounded-full */
   color: var(--text-primary);
   cursor: pointer;
   font-family: var(--font-cyber);
   font-weight: 500;
   letter-spacing: 3px;
-  padding: 10px 20px;
-  transition: all 0.25s ease;
+  padding: 10px 24px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  box-shadow: 0 2px 6px rgba(139, 92, 26, 0.05);
 }
 
 .cyber-btn:hover {
-  background: rgba(244, 237, 226, 0.06);
+  background: #FFFFFF;
   border-color: var(--color-gold);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 12px rgba(139, 92, 26, 0.12);
   transform: translateY(-1px);
 }
 
@@ -125,60 +166,63 @@ body {
 }
 
 .cyber-btn-purple {
-  background: #201e1c;
-  border-color: rgba(244, 237, 226, 0.15);
+  background: #FAF5FC; /* hint of purple */
+  border-color: rgba(74, 21, 75, 0.2);
 }
 
 .cyber-btn-purple:hover {
-  background: rgba(244, 237, 226, 0.08);
-  border-color: rgba(244, 237, 226, 0.3);
+  background: #FFFFFF;
+  border-color: var(--color-murasaki);
+  box-shadow: 0 4px 12px rgba(74, 21, 75, 0.1);
 }
 
 .cyber-btn-yellow {
-  background: #24221f;
+  background: #FCFAF2;
   border-color: var(--color-gold);
-  color: var(--color-gold);
 }
 
 .cyber-btn-yellow:hover {
-  background: rgba(212, 175, 55, 0.05);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  background: #FFFFFF;
+  box-shadow: 0 4px 12px rgba(212, 175, 55, 0.15);
 }
 
 .cyber-btn-disabled {
   border-color: var(--text-muted) !important;
   color: var(--text-muted) !important;
-  background: rgba(40, 40, 40, 0.3) !important;
+  background: rgba(220, 220, 220, 0.4) !important;
   cursor: not-allowed;
   box-shadow: none !important;
   transform: none !important;
 }
 
 .cyber-btn-danger {
-  background: #24221f;
-  border-color: rgba(244, 237, 226, 0.15);
-  color: #bf6565;
+  background: #FCF4F4; /* hint of red */
+  border-color: rgba(158, 42, 43, 0.2);
+  color: var(--color-shinku);
 }
 
 .cyber-btn-danger:hover {
-  background: rgba(191, 101, 101, 0.05);
-  border-color: #bf6565;
+  background: #FFFFFF;
+  border-color: var(--color-shinku);
+  box-shadow: 0 4px 12px rgba(158, 42, 43, 0.12);
 }
 
 /* Washi Paper Styled Input Fields */
 .cyber-input {
-  background: rgba(20, 20, 20, 0.8);
-  border: 1px solid rgba(244, 237, 226, 0.1);
-  border-radius: 2px;
+  background: #FAF8F5;
+  border: 1px solid rgba(139, 92, 26, 0.2);
+  border-radius: 9999px; /* rounded-full */
   color: var(--text-primary);
   font-family: var(--font-ui);
-  padding: 12px 16px;
+  padding: 12px 24px;
   outline: none;
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .cyber-input:focus {
   border-color: var(--color-gold);
+  background: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.1);
 }
 
 /* Animations */
@@ -186,6 +230,11 @@ body {
   0% { transform: scale(0); opacity: 1; }
   50% { opacity: 0.6; }
   100% { transform: scale(2.5); opacity: 0; }
+}
+
+@keyframes fadeOut {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 @keyframes laser-beam {
@@ -197,8 +246,8 @@ body {
 
 @keyframes shake {
   0%, 100% { transform: translate(0, 0); }
-  10%, 30%, 50%, 70%, 90% { transform: translate(-4px, 2px); }
-  20%, 40%, 60%, 80% { transform: translate(4px, -2px); }
+  10%, 30%, 50%, 70%, 90% { transform: translate(calc(-1.2px * var(--shake-intensity, 4)), calc(0.6px * var(--shake-intensity, 4))); }
+  20%, 40%, 60%, 80% { transform: translate(calc(1.2px * var(--shake-intensity, 4)), calc(-0.6px * var(--shake-intensity, 4))); }
 }
 
 /* Calligraphy Sumi Ink Bleed Animation */
@@ -497,6 +546,19 @@ body {
   animation: inkBleed 0.5s ease-out forwards;
 }
 
+@keyframes checkInkBleed {
+  0% {
+    opacity: 0;
+    filter: blur(6px) contrast(0.5);
+    transform: translate(-50%, -50%) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0) contrast(1);
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
 .check-stamp {
   position: absolute;
   top: 45%;
@@ -504,7 +566,7 @@ body {
   transform: translate(-50%, -50%);
   text-align: center;
   pointer-events: none;
-  animation: inkBleed 0.4s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
+  animation: checkInkBleed 0.4s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
 }
 
 .check-text {
@@ -1064,8 +1126,25 @@ button, input, [role="button"] {
   }
 }
 
+@keyframes targetPulseRed {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(239, 68, 68, 0.4), inset 0 0 4px rgba(239, 68, 68, 0.2) !important;
+    border-color: rgba(239, 68, 68, 0.6) !important;
+    background-color: rgba(239, 68, 68, 0.1) !important;
+  }
+  50% {
+    box-shadow: 0 0 16px #ef4444, inset 0 0 8px rgba(239, 68, 68, 0.6) !important;
+    border-color: #ef4444 !important;
+    background-color: rgba(239, 68, 68, 0.25) !important;
+  }
+}
+
 .ability-target-blue {
   animation: targetPulseBlue 1s infinite alternate ease-in-out !important;
+}
+
+.ability-target-red {
+  animation: targetPulseRed 1s infinite alternate ease-in-out !important;
 }
 
 .ability-target-yellow {
@@ -1114,3 +1193,274 @@ button, input, [role="button"] {
   box-shadow: 0 0 12px rgba(189, 0, 255, 0.25), 0 4px 12px rgba(189, 0, 255, 0.1);
   background: rgba(189, 0, 255, 0.05);
 }
+
+/* 手漉き和紙の質感を100%再現するSVGノイズインラインベイク */
+.washi-background {
+  background-color: #F7F5F0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.035'/%3E%3C/svg%3E");
+}
+
+/* 立体将棋駒のステージ設定 */
+.koma-stage {
+  perspective: 1000px;
+}
+
+/* 3D立体回転用コンテナ */
+.koma-model {
+  width: 160px;
+  height: 200px;
+  position: relative;
+  transform-style: preserve-3d;
+  animation: spinY 12s linear infinite;
+}
+
+/* 将棋の五角形 ✕ 白木調グラデーションの表現 */
+.koma-face {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #FFFDF9 0%, #F5F1E6 100%);
+  border: 2px solid rgba(139, 92, 26, 0.25);
+  box-shadow: 0 25px 45px rgba(139, 92, 26, 0.15), inset 0 0 20px rgba(255,255,255,1);
+  border-top-left-radius: 30% 50%;
+  border-top-right-radius: 30% 50%;
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+  backface-visibility: visible;
+}
+
+/* Y軸をゆっくり回すキーフレーム */
+@keyframes spinY {
+  0% { transform: rotateY(0deg); }
+  100% { transform: rotateY(360deg); }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ========================================
+   和風能力演出アニメーション
+   ======================================== */
+
+/* 墨フェードアウト (破壊時) */
+@keyframes inkFadeOut {
+  0% {
+    opacity: 1;
+    filter: brightness(0.2) contrast(1.5) grayscale(1) blur(0px);
+  }
+  100% {
+    opacity: 0;
+    filter: brightness(0) contrast(2) grayscale(1) blur(6px);
+    transform: scale(0.92);
+  }
+}
+
+.animate-ink-fadeout {
+  animation: inkFadeOut 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards !important;
+}
+
+/* 墨の一閃ライン (WARRIOR_IRON) */
+@keyframes drawInkLine {
+  0% {
+    transform: rotate(var(--rot)) scaleX(0);
+    opacity: 0.9;
+  }
+  40% {
+    transform: rotate(var(--rot)) scaleX(1);
+    opacity: 0.9;
+  }
+  100% {
+    transform: rotate(var(--rot)) scaleX(1);
+    opacity: 0;
+  }
+}
+
+/* 川霧エフェクト (MYSTIC_MIST / SHADOW_NIGHT) */
+@keyframes mistFade {
+  0% {
+    opacity: 0.25;
+    transform: scale(0.85);
+    filter: blur(6px);
+  }
+  100% {
+    opacity: 0.75;
+    transform: scale(1.15);
+    filter: blur(10px);
+  }
+}
+
+/* 駒内部の一閃 (WARRIOR_IRON発動中) */
+@keyframes inkSlash {
+  0% {
+    width: 0%;
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.8;
+  }
+  80% {
+    opacity: 0.8;
+  }
+  100% {
+    width: 100%;
+    opacity: 0;
+  }
+}
+
+/* 駒内部の霧パルス (MYSTIC_MIST / SHADOW_NIGHT発動中) */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+/* Custom Genre/Effect Animations */
+.cell-shake {
+  animation: shake 0.3s ease-in-out forwards;
+}
+
+.effect-destroy-flare {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(to bottom right, #dc2626, #f97316, #facc15);
+  border-radius: 8px;
+  opacity: 0.9;
+  animation: destroy-flare-anim 0.5s ease-in-out forwards;
+  box-shadow: 0 0 40px #ea580c;
+  z-index: 50;
+}
+
+.effect-destroy-flash {
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  opacity: 1;
+  animation: fadeOut 0.4s ease-out forwards;
+  z-index: 51;
+}
+
+@keyframes destroy-flare-anim {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.3);
+    opacity: 0;
+  }
+}
+
+.effect-immobilize-ice {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(207, 250, 254, 0.4);
+  border: 4px solid #22d3ee;
+  backdrop-filter: blur(1px);
+  border-radius: 6px;
+  animation: pulse 1s ease-in-out infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.effect-immobilize-badge {
+  font-size: 10px;
+  color: #155e75;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  background-color: rgba(255, 255, 255, 0.85);
+  padding: 2px 6px;
+  border-radius: 2px;
+  border: 1px solid #67e8f9;
+}
+
+.effect-swap-portal {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(79, 70, 229, 0.25);
+  filter: blur(2px);
+  border-radius: 50%;
+  border: 2px dashed #818cf8;
+  animation: spin 0.6s linear infinite;
+  z-index: 50;
+}
+
+.effect-pull-push-wind {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 15px;
+  background: linear-gradient(to right, rgba(255, 255, 255, 0.8), transparent);
+  transform: skewX(-20deg);
+  animation: wind-slide 0.4s ease-out forwards;
+  z-index: 50;
+}
+
+@keyframes wind-slide {
+  0% {
+    left: -20%;
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    left: 120%;
+    opacity: 0;
+  }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Button Batou/Senkou (Shine) Effect */
+.button-shine-effect {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.button-shine-effect::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.25), transparent);
+  transform: skewX(-25deg);
+  pointer-events: none;
+}
+
+.button-shine-effect:hover {
+  transform: scale(1.02);
+  box-shadow: 0 10px 20px rgba(120, 53, 4, 0.25);
+}
+
+.button-shine-effect:hover::after {
+  animation: button-shine-anim 0.6s ease-in-out forwards;
+}
+
+@keyframes button-shine-anim {
+  0% {
+    left: -100%;
+  }
+  100% {
+    left: 150%;
+  }
+}
+

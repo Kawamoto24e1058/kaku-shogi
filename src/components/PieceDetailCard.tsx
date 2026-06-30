@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Piece } from '../types';
 import { RangeGrid } from './RangeGrid';
+import { getPieceDescription } from '../gameLogic';
 
 interface PieceDetailCardProps {
   piece: Partial<Piece>;
@@ -219,7 +220,7 @@ export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHover
         borderRadius: '2px',
         border: `1px solid ${boxBorder}`
       }}>
-        {piece.description}
+        {getPieceDescription(piece as Piece)}
       </div>
 
       {/* Range Geometry Mini Maps */}

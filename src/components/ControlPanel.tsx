@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import type { GameLog, Player, Piece, GamePhase } from '../types';
-import { getPieceTrigger } from '../gameLogic';
 import { PieceDetailCard } from './PieceDetailCard';
 
 interface ControlPanelProps {
@@ -16,10 +15,14 @@ interface ControlPanelProps {
   vsAiMode: boolean;
   playerNames: { sente: string; gote: string };
 
-  // New props
+  // Hand Decks & Captured pieces
   capturedPieces: { sente: Piece[]; gote: Piece[] };
   selectedCapturedPiece: { piece: Piece; index: number } | null;
   onCapturedPieceClick: (piece: Piece, index: number, owner: Player) => void;
+  customDecks: { sente: Piece[]; gote: Piece[] };
+  selectedCustomDeckPiece: { piece: Piece; index: number } | null;
+  onCustomDeckPieceClick: (piece: Piece, index: number, owner: Player) => void;
+
   sharedPieces: Piece[];
   selectedSharedPiece: { piece: Piece; index: number } | null;
   onSharedPieceClick: (piece: Piece, index: number) => void;
@@ -30,7 +33,6 @@ interface ControlPanelProps {
 export const ControlPanel: React.FC<ControlPanelProps> = ({
   turn,
   phase,
-  customPiecesToPlace,
   winner,
   selectedPiece,
   hoveredPiece,
@@ -41,6 +43,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   capturedPieces,
   selectedCapturedPiece,
   onCapturedPieceClick,
+  customDecks,
+  selectedCustomDeckPiece,
+  onCustomDeckPieceClick,
   sharedPieces,
   selectedSharedPiece,
   onSharedPieceClick,
@@ -85,25 +90,31 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             position: 'relative',
             width: '42px',
             height: '46px',
-            clipPath: 'polygon(50% 0%, 100% 30%, 85% 100%, 15% 100%, 0% 30%)',
+            borderTopLeftRadius: '30% 50%',
+            borderTopRightRadius: '30% 50%',
+            borderBottomLeftRadius: '6px',
+            borderBottomRightRadius: '6px',
             background: isSel ? 'var(--color-gold)' : 'rgba(26, 26, 26, 0.15)',
-            padding: '1px',
+            padding: '1.5px',
             boxSizing: 'border-box',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             cursor: isActive ? 'pointer' : 'default',
             opacity: isActive ? 1 : 0.6,
-            transition: 'all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1)',
+            transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
             transform: isHovered ? 'scale(1.08) translateY(-2px)' : 'none',
-            boxShadow: isHovered ? '0 8px 16px rgba(0, 0, 0, 0.4)' : 'none',
+            boxShadow: isHovered ? '0 8px 16px rgba(139, 92, 26, 0.12)' : 'none',
           }}
           title={type === 'shared' ? `もとの所有者: ${piece.owner === 'sente' ? (playerNames.sente || '先手') : (playerNames.gote || '後手')}` : undefined}
         >
           <div style={{
             width: '100%',
             height: '100%',
-            clipPath: 'polygon(50% 0%, 100% 30%, 85% 100%, 15% 100%, 0% 30%)',
+            borderTopLeftRadius: '28% 48%',
+            borderTopRightRadius: '28% 48%',
+            borderBottomLeftRadius: '5px',
+            borderBottomRightRadius: '5px',
             background: 'var(--color-shiraki)',
             display: 'flex',
             flexDirection: 'column',
@@ -168,29 +179,23 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             onHoverPiece?.(null);
             setHoveredIdx(null);
           }}
+          className="wood-card-hand"
           style={{
             position: 'relative',
             width: '50px',
             height: '66px',
-            background: 'var(--color-shiraki)',
-            border: `1px solid ${isSel ? 'var(--color-gold)' : 'rgba(26, 26, 26, 0.15)'}`,
-            borderRadius: '2px',
-            boxShadow: isHovered 
-              ? '0 10px 20px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255,255,255,0.6)' 
-              : '0 2px 4px rgba(0, 0, 0, 0.2), inset 0 1px 1px rgba(255,255,255,0.5)',
+            border: `1.5px solid ${isSel ? 'var(--color-gold)' : 'rgba(139, 92, 26, 0.15)'}`,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             cursor: isActive ? 'pointer' : 'default',
             opacity: isActive ? 1 : 0.6,
-            transition: 'all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1)',
-            transform: isHovered ? 'scale(1.08) translateY(-3px)' : 'none',
             userSelect: 'none',
             boxSizing: 'border-box',
             padding: '2px',
           }}
-          title={type === 'shared' ? `も元の所有者: ${piece.owner === 'sente' ? (playerNames.sente || '先手') : (playerNames.gote || '後手')}` : undefined}
+          title={type === 'shared' ? `もとの所有者: ${piece.owner === 'sente' ? (playerNames.sente || '先手') : (playerNames.gote || '後手')}` : undefined}
         >
           {/* Theme Accent Bottom Bar */}
           {themeColor !== 'transparent' && (
@@ -201,7 +206,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               width: '100%',
               height: '3px',
               backgroundColor: themeColor,
-              borderRadius: '0 0 2px 2px'
             }} />
           )}
 
@@ -212,28 +216,28 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             width: '12px',
             height: '12px',
             border: `1px solid ${stamp.color}`,
-            borderRadius: '1px',
+            borderRadius: '2px',
             color: stamp.color,
             fontSize: '8px',
             fontWeight: 'bold',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            lineHeight: 1,
-            fontFamily: 'var(--font-cyber)',
-            background: 'rgba(255, 255, 255, 0.3)'
+            transform: 'scale(0.85)'
           }}>
             {stamp.char}
           </div>
-          
+
           <div style={{
-            fontSize: '11px',
+            fontSize: piece.word.length > 5 ? '7px' : '9px',
             fontWeight: 'bold',
             color: 'var(--color-kurogane)',
             fontFamily: 'var(--font-ui)',
             textAlign: 'center',
-            marginTop: '8px',
-            lineHeight: 1.1
+            lineHeight: 1.1,
+            wordBreak: 'break-all',
+            marginTop: '6px',
+            padding: '0 2px'
           }}>
             {piece.word}
           </div>
@@ -242,200 +246,214 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     }
   };
 
-  const triggerEvent = selectedPiece ? getPieceTrigger(selectedPiece) : 'ALWAYS';
+  const renderCustomDeckPieceTile = (piece: Piece, idx: number, owner: Player) => {
+    const isSel = selectedCustomDeckPiece?.piece.id === piece.id && selectedCustomDeckPiece?.index === idx;
+    const isActive = turn === owner && phase === 'playing';
+
+    const getStampInfo = (genre: string) => {
+      switch (genre) {
+        case 'MOVEMENT_HACK':
+          return { char: '武', color: 'var(--color-shinku)' };
+        case 'STEALTH_TRAP':
+          return { char: '隠', color: 'var(--color-kurogane)' };
+        case 'RULE_BREAK':
+          return { char: '律', color: 'var(--color-murasaki)' };
+        case 'DYNAMICS_HACK':
+          return { char: '破', color: 'var(--color-matsuba)' };
+        default:
+          return { char: '印', color: 'var(--color-gold)' };
+      }
+    };
+
+    const stamp = getStampInfo(piece.mechanics_type);
+
+    const getThemeColor = (theme?: string) => {
+      switch (theme) {
+        case 'WARRIOR_IRON': return 'var(--color-shinku)';
+        case 'MYSTIC_MIST': return 'var(--color-murasaki)';
+        case 'SHADOW_NIGHT': return '#555555';
+        case 'NATURE_STONE': return 'var(--color-matsuba)';
+        default: return 'transparent';
+      }
+    };
+    const themeColor = getThemeColor(piece.visual_theme);
+
+    const hoverKey = `deck-${owner}-${idx}`;
+
+    return (
+      <div
+        key={piece.id}
+        onClick={() => {
+          if (isActive) onCustomDeckPieceClick(piece, idx, owner);
+        }}
+        onMouseEnter={() => {
+          onHoverPiece?.(piece);
+          setHoveredIdx(hoverKey);
+        }}
+        onMouseLeave={() => {
+          onHoverPiece?.(null);
+          setHoveredIdx(null);
+        }}
+        className="wood-card-hand"
+        style={{
+          position: 'relative',
+          width: '50px',
+          height: '66px',
+          border: `1.5px solid ${isSel ? 'var(--color-gold)' : 'rgba(139, 92, 26, 0.15)'}`,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: isActive ? 'pointer' : 'default',
+          opacity: isActive ? 1 : 0.6,
+          userSelect: 'none',
+          boxSizing: 'border-box',
+          padding: '2px',
+        }}
+      >
+        {/* Theme Accent Bottom Bar */}
+        {themeColor !== 'transparent' && (
+          <div style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            width: '100%',
+            height: '3px',
+            backgroundColor: themeColor,
+          }} />
+        )}
+
+        <div style={{
+          position: 'absolute',
+          top: '2px',
+          right: '2px',
+          width: '12px',
+          height: '12px',
+          border: `1px solid ${stamp.color}`,
+          borderRadius: '2px',
+          color: stamp.color,
+          fontSize: '8px',
+          fontWeight: 'bold',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transform: 'scale(0.85)'
+        }}>
+          {stamp.char}
+        </div>
+
+        <div style={{
+          fontSize: piece.word.length > 5 ? '7px' : '9px',
+          fontWeight: 'bold',
+          color: 'var(--color-kurogane)',
+          fontFamily: 'var(--font-ui)',
+          textAlign: 'center',
+          lineHeight: 1.1,
+          wordBreak: 'break-all',
+          marginTop: '6px',
+          padding: '0 2px'
+        }}>
+          {piece.word}
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
       
-      {/* Turn Info & Phase Panel */}
-      <div className="cyber-panel" style={{ padding: '15px', borderColor: turn === 'sente' ? 'var(--color-shinku)' : 'var(--color-gold)' }}>
-        <h3 className="cyber-title" style={{ fontSize: '16px', marginBottom: '8px' }}>
-          戦局ステータス (9x9)
+      {/* Tactical Info Panel (Shoji Style) */}
+      <div className="cyber-panel" style={{ padding: '20px', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
+        <h3 className="cyber-title" style={{ fontSize: '16px', marginBottom: '12px' }}>
+          情報
         </h3>
-
-        {winner ? (
-          <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--color-gold)', textAlign: 'center', margin: '10px 0', fontFamily: 'var(--font-cyber)' }}>
-            🏆 {winner === 'sente'
-              ? (playerNames.sente || '先手')
-              : (playerNames.gote || (vsAiMode ? 'AI' : '後手'))
-            } の勝利！
-          </div>
-        ) : (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontSize: '13px' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>フェーズ:</span>
-              <span style={{ fontWeight: 'bold', color: 'var(--color-gold)' }}>
-                {phase === 'placement' ? '初期配置フェーズ' : '対局中'}
-              </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', fontSize: '13px' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>現在の手番:</span>
-              <span style={{
-                fontSize: '15px',
-                fontWeight: 'bold',
-                color: turn === 'sente' ? 'var(--color-shinku)' : 'var(--color-gold)',
-                fontFamily: 'var(--font-cyber)'
-              }}>
-                {turn === 'sente'
-                  ? `▲ ${playerNames.sente || '先手'}`
-                  : `▽ ${playerNames.gote || (vsAiMode ? 'AI' : '後手')}`
-                }
-              </span>
-            </div>
-
-            {phase === 'placement' && (
-              <div style={{ padding: '8px', background: 'rgba(212,175,55,0.03)', border: '1px solid rgba(212,175,55,0.15)', borderRadius: '2px', fontSize: '11px' }}>
-                <p style={{ fontWeight: 'bold', color: 'var(--color-gold)', marginBottom: '3px' }}>
-                  配置ルール:
-                </p>
-                <p style={{ color: 'var(--text-secondary)' }}>
-                  手持ちのカスタム能力駒を、自陣の下3段（先手）または上3段（後手）に配置してください。
-                </p>
-                <p style={{ color: 'var(--text-secondary)', marginTop: '3px' }}>
-                  未配置の駒: <strong style={{ color: '#fff' }}>{customPiecesToPlace.length}枚</strong>
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Dynamic Special Ability Panel */}
-      {phase === 'playing' && !winner && (
-        <div style={{ 
-          display: 'flex', 
-          flexDirection: 'column', 
-          height: '360px', 
-          minHeight: '360px', 
-          maxHeight: '360px', 
-          overflowY: 'auto',
-          boxSizing: 'border-box',
-          paddingRight: '4px'
-        }}>
-          {(hoveredPiece || selectedPiece) ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <h3 className="cyber-title" style={{ fontSize: '15px', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                {hoveredPiece ? (
-                  <>
-                    <span style={{ color: 'var(--color-matsuba)' }}>👁️</span>
-                    <span>詳細プレビュー</span>
-                  </>
-                ) : (
-                  <>
-                    <span style={{ color: 'var(--color-gold)' }}>⚔️</span>
-                    <span>選択駒の戦術能力</span>
-                  </>
-                )}
-              </h3>
-              
-              <PieceDetailCard piece={hoveredPiece || selectedPiece || {}} />
-              
-              {/* Tactical Actions for Selected Piece */}
-              {selectedPiece && (!hoveredPiece || hoveredPiece.id === selectedPiece.id) && (
-                <div className="cyber-panel" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', borderColor: 'var(--color-gold)' }}>
-                  <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--color-gold)', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px' }}>
-                    戦術オプション
-                  </div>
-                  
-                  {/* Debug/Info box */}
-                  <div style={{
-                    background: 'rgba(0,0,0,0.4)',
-                    padding: '6px',
-                    borderRadius: '2px',
-                    border: '1px solid var(--color-gold)',
-                    fontFamily: 'monospace',
-                    fontSize: '9px',
-                    color: 'var(--color-gold)'
-                  }}>
-                    <div>状態: {selectedPiece.isPromoted ? '覚醒（成）' : '通常'}</div>
-                    <div>属性: {selectedPiece.mechanics_type}</div>
-                    <div>発動: "{triggerEvent === 'ON_MOVE' ? '移動完了時自動発動' : triggerEvent === 'TURN_START' ? 'ターン開始時自動発動' : triggerEvent === 'ON_TAKEN' ? '捕獲時発動（罠）' : triggerEvent === 'ON_APPROACH' ? '接近時発動（罠）' : '常時パッシブ'}"</div>
-                    {selectedPiece.coolDownTurnsRemaining > 0 && (
-                      <div style={{ color: 'var(--color-shinku)', fontWeight: 'bold' }}>充填完了まであと: {selectedPiece.coolDownTurnsRemaining} 手番</div>
-                    )}
-                  </div>
-                </div>
-              )}
+        
+        {/* Selected Piece Details */}
+        <div style={{ height: '380px', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+          {hoveredPiece || selectedPiece ? (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <PieceDetailCard piece={hoveredPiece || selectedPiece || {}} isHoverPreview={!!hoveredPiece} />
             </div>
           ) : (
-            <div className="cyber-panel" style={{ padding: '15px', textAlign: 'center', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-              <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>
-                自陣の駒を選択するか、盤面の駒にマウスを重ねると、その言葉に秘められた特殊能力が表示されます。
-              </p>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px dashed rgba(139, 92, 26, 0.15)', borderRadius: '12px', background: 'rgba(139, 92, 26, 0.01)' }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-cyber)' }}>駒を選択またはホバーして能力表示</span>
             </div>
           )}
         </div>
-      )}
+      </div>
 
       {/* Captured Pieces & Shared Pool Panel */}
-      <div className="cyber-panel" style={{ padding: '15px', flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', minHeight: '180px' }}>
-        <h3 className="cyber-title" style={{ fontSize: '15px', marginBottom: '4px' }}>
-          獲得した持ち駒
+      <div className="cyber-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', minHeight: '220px', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
+        <h3 className="cyber-title" style={{ fontSize: '16px', marginBottom: '4px' }}>
+          手札・持ち駒ストック
         </h3>
         
-        {/* Gote Captured Hand */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          <div style={{ fontSize: '10px', color: 'var(--color-gold)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold' }}>
-            ▽ {playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')} 持ち駒
+        {/* Gote Hand */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--color-gold)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold' }}>
+            ▽ {playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')} 手札・持ち駒
           </div>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', minHeight: '34px', padding: '6px', background: 'rgba(212,175,55,0.02)', border: '1px solid rgba(212,175,55,0.1)', borderRadius: '2px' }}>
+          
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', minHeight: '38px', padding: '8px', background: 'rgba(139, 92, 26, 0.02)', border: '1px solid rgba(139, 92, 26, 0.08)', borderRadius: '12px' }}>
             {capturedPieces.gote.map((piece, idx) => renderCapturedPieceTile(piece, idx, 'gote', 'captured'))}
-            {capturedPieces.gote.length === 0 && (
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic', alignSelf: 'center' }}>なし</span>
+            {customDecks.gote.map((piece, idx) => renderCustomDeckPieceTile(piece, idx, 'gote'))}
+            {capturedPieces.gote.length === 0 && customDecks.gote.length === 0 && (
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', alignSelf: 'center', paddingLeft: '4px' }}>なし</span>
             )}
           </div>
         </div>
 
-        {/* Graveyard (墓場) */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+        {/* Graveyard (墓所) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <div style={{
-            fontSize: '10px',
-            color: isResurrectActive ? 'var(--color-gold)' : '#888',
+            fontSize: '11px',
+            color: isResurrectActive ? 'var(--color-gold)' : '#555',
             fontFamily: 'var(--font-cyber)',
             fontWeight: 'bold',
             display: 'flex',
             alignItems: 'center',
             gap: '4px'
           }}>
-            🪦 墓場 (Graveyard) {isResurrectActive && <span style={{ color: 'var(--color-shinku)' }}>[蘇生対象を選択]</span>}
+            墓所 (Graveyard) {isResurrectActive && <span style={{ color: 'var(--color-shinku)' }}>[蘇生対象を選択してください]</span>}
           </div>
           <div style={{
             display: 'flex',
             gap: '8px',
             flexWrap: 'wrap',
-            minHeight: '34px',
-            padding: '6px',
-            background: isResurrectActive ? 'rgba(212,175,55,0.05)' : 'rgba(255,255,255,0.02)',
-            border: `1px solid ${isResurrectActive ? 'var(--color-gold)' : 'rgba(255,255,255,0.08)'}`,
-            borderRadius: '2px',
+            minHeight: '38px',
+            padding: '8px',
+            background: isResurrectActive ? 'rgba(212,175,55,0.06)' : 'rgba(139, 92, 26, 0.01)',
+            border: `1.5px ${isResurrectActive ? 'solid var(--color-gold)' : 'dashed rgba(139, 92, 26, 0.15)'}`,
+            borderRadius: '12px',
             transition: 'all 0.3s ease'
           }}>
             {sharedPieces.map((piece, idx) => renderCapturedPieceTile(piece, idx, 'sente', 'shared'))}
             {sharedPieces.length === 0 && (
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic', alignSelf: 'center' }}>空</span>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', alignSelf: 'center', paddingLeft: '4px' }}>空</span>
             )}
           </div>
         </div>
 
-        {/* Sente Captured Hand */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          <div style={{ fontSize: '10px', color: 'var(--color-shinku)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold' }}>
-            ▲ {playerNames.sente || 'プレイヤー1'} 持ち駒
+        {/* Sente Hand */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--color-shinku)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold' }}>
+            ▲ {playerNames.sente || 'プレイヤー1'} 手札・持ち駒
           </div>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', minHeight: '34px', padding: '6px', background: 'rgba(158,42,43,0.02)', border: '1px solid rgba(158,42,43,0.1)', borderRadius: '2px' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', minHeight: '38px', padding: '8px', background: 'rgba(139, 92, 26, 0.02)', border: '1px solid rgba(139, 92, 26, 0.08)', borderRadius: '12px' }}>
             {capturedPieces.sente.map((piece, idx) => renderCapturedPieceTile(piece, idx, 'sente', 'captured'))}
-            {capturedPieces.sente.length === 0 && (
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic', alignSelf: 'center' }}>なし</span>
+            {customDecks.sente.map((piece, idx) => renderCustomDeckPieceTile(piece, idx, 'sente'))}
+            {capturedPieces.sente.length === 0 && customDecks.sente.length === 0 && (
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', alignSelf: 'center', paddingLeft: '4px' }}>なし</span>
             )}
           </div>
         </div>
       </div>
 
       {/* Control Buttons */}
-      <div style={{ display: 'flex', gap: '10px' }}>
+      <div style={{ display: 'flex', gap: '12px' }}>
         <button
           className="cyber-btn cyber-btn-purple"
-          style={{ flex: 1, padding: '10px', fontSize: '12px' }}
+          style={{ flex: 1, padding: '12px', fontSize: '12px' }}
           onClick={onPassTurn}
           disabled={!!winner || phase === 'placement'}
         >
@@ -444,10 +462,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         
         <button
           className="cyber-btn cyber-btn-danger"
-          style={{ flex: 1, padding: '10px', fontSize: '12px' }}
+          style={{ flex: 1, padding: '12px', fontSize: '12px' }}
           onClick={onResetGame}
         >
-          リセット
+          対局リセット
         </button>
       </div>
 

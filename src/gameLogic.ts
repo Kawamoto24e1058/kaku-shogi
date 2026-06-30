@@ -1,4 +1,4 @@
-import type { Board, Piece, Player, GameLog, AbilityEvent } from './types';
+import type { Board, Piece, Player, GameLog, AbilityEvent, AbilitySpec } from './types';
 
 export const BOARD_SIZE = 9;
 
@@ -11,40 +11,158 @@ export function getPieceLogicCode(piece: Piece): string {
   if (piece.isPromoted && piece.promoted_effect) {
     return piece.promoted_effect.logic_code || '';
   }
-  return piece.logic_code || '';
+  
+  const rootLogic = piece.logic_code || '';
+  
+  // If the unpromoted state has no ability, filter out active logic codes
+  if (!hasNormalAbility(piece)) {
+    const activeLogics = ['teleport_move', 'random_teleport', 'blast', 'kill_linear', 'self_destruct_trap', 'spawn_trap', 'recycle_dead', 'stun_mist', 'remote_snipe', 'swap_move', 'mimic', 'mind_control'];
+    if (activeLogics.includes(rootLogic)) {
+      return 'normal';
+    }
+  }
+  
+  // Prevent unpromoted pieces from inheriting duplicate promoted logic_code
+  if (!piece.isPromoted && piece.promoted_effect?.logic_code) {
+    if (rootLogic === piece.promoted_effect.logic_code) {
+      return 'normal';
+    }
+  }
+  return rootLogic;
+}
+
+export function getPieceAbilitySpec(piece: Piece): AbilitySpec | undefined {
+  if (piece.isPromoted && piece.promoted_effect) {
+    return piece.promoted_effect.ability_spec;
+  }
+  // Check if the unpromoted piece should have NO ability based on description/name
+  if (!hasNormalAbility(piece)) {
+    return undefined;
+  }
+  // Prevent unpromoted pieces from inheriting duplicate promoted ability_spec
+  if (!piece.isPromoted && piece.promoted_effect?.ability_spec) {
+    const rootSpec = piece.ability_spec;
+    const promoSpec = piece.promoted_effect.ability_spec;
+    if (rootSpec && rootSpec.effect_type === promoSpec.effect_type && rootSpec.activation_trigger === promoSpec.activation_trigger) {
+      return undefined;
+    }
+  }
+  return piece.ability_spec;
 }
 
 export function getPieceDescription(piece: Piece): string {
   if (piece.isPromoted && piece.promoted_effect) {
     return piece.promoted_effect.description || '';
   }
-  return piece.description || '';
+  let desc = piece.description || '';
+  const promoIndex1 = desc.indexOf('【覚醒');
+  const promoIndex2 = desc.indexOf('【成');
+  const indices = [promoIndex1, promoIndex2].filter(idx => idx !== -1);
+  if (indices.length > 0) {
+    const minIndex = Math.min(...indices);
+    desc = desc.substring(0, minIndex).trim();
+  }
+  return desc;
+}
+
+export function hasNormalAbility(piece: {
+  isKing?: boolean;
+  isPawn?: boolean;
+  isHisha?: boolean;
+  isKaku?: boolean;
+  effect_name?: string;
+  description?: string;
+}): boolean {
+  if (piece.isKing || piece.isPawn || piece.isHisha || piece.isKaku) return false;
+  
+  const effectName = piece.effect_name || '';
+  const desc = piece.description || '';
+  
+  // Only disable if name is explicitly indicating none/empty/unawakened
+  if (effectName === 'なし' || effectName === '効果なし' || effectName === '未覚醒') {
+    return false;
+  }
+  
+  if (
+    desc.includes('能力はありません') || 
+    desc.includes('効果はありません') || 
+    desc.includes('通常能力はありません') || 
+    desc.includes('通常効果はありません') || 
+    desc.includes('能力はない') || 
+    desc.includes('効果はない') ||
+    desc.includes('成る前は通常移動のみ') ||
+    desc.includes('成る前は能力なし') ||
+    desc.includes('通常能力：なし') ||
+    desc.includes('通常効果：なし')
+  ) {
+    return false;
+  }
+  
+  return true;
+}
+
+export function hasNormalAutomatedAbility(piece: Piece): boolean {
+  if (!hasNormalAbility(piece)) return false;
+  
+  if (piece.ability_spec) return true;
+  if (piece.spawn_piece_name && piece.spawn_piece_name.trim() !== '') return true;
+  
+  const logic = (piece.logic_code || '').toLowerCase();
+  const standardLogics = [
+    'normal', 'move_like_rook', 'move_like_bishop', 'move_like_lance', 
+    'move_like_knight', 'leap_move', ''
+  ];
+  if (logic && !standardLogics.includes(logic)) return true;
+  if (piece.trigger === 'ON_TAKEN' || piece.trigger === 'ON_APPROACH') return true;
+  return false;
+}
+
+export function hasPromotedAutomatedAbility(piece: Piece): boolean {
+  if (!piece.promoted_effect) return false;
+  if (piece.promoted_effect.ability_spec) return true;
+  if (piece.spawn_config?.spawn_piece_name) return true;
+  
+  const logic = (piece.promoted_effect.logic_code || '').toLowerCase();
+  const standardLogics = [
+    'normal', 'move_like_rook', 'move_like_bishop', 'move_like_lance', 
+    'move_like_knight', 'leap_move', ''
+  ];
+  if (logic && !standardLogics.includes(logic)) return true;
+  return false;
 }
 
 export function getPieceTrigger(piece: Piece): 'ALWAYS' | 'ON_MOVE' | 'TURN_START' | 'ON_TAKEN' | 'ON_APPROACH' {
+  if (piece.isPromoted && piece.promoted_effect && piece.promoted_effect.ability_spec) {
+    return piece.promoted_effect.ability_spec.activation_trigger;
+  }
   return piece.trigger || 'ALWAYS';
 }
 
 export function isTriggerMatching(piece: Piece, triggerType: 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN'): boolean {
+  if (!piece.isPromoted && !hasNormalAutomatedAbility(piece)) {
+    return false;
+  }
+  if (piece.isPromoted && !hasPromotedAutomatedAbility(piece) && !hasNormalAutomatedAbility(piece)) {
+    return false;
+  }
   const trigger = getPieceTrigger(piece);
   return trigger === 'ALWAYS' || trigger === triggerType;
 }
 
-
 export function isStealthPiece(p: any): boolean {
   if (!p) return false;
-  const trigger = p.trigger || 'ALWAYS';
   const logic = (p.logic_code || (p.promoted_effect?.logic_code) || '').toLowerCase();
   const desc = ((p.isPromoted && p.promoted_effect ? p.promoted_effect.description : p.description) || '').toLowerCase();
   const word = p.word || '';
   return p.mechanics_type === 'STEALTH_TRAP' || 
-         trigger === 'ON_TAKEN' ||
-         trigger === 'ON_APPROACH' ||
          logic.includes('stealth') || 
+         logic === 'self_destruct_trap' ||
+         logic === 'stealth_decoy' ||
          desc.includes('透明') || 
          desc.includes('ステルス') || 
          desc.includes('潜伏') || 
          desc.includes('隠密') ||
+         desc.includes('裏向き') ||
          word.includes('透明') ||
          word.includes('ステルス') ||
          word.includes('潜伏') ||
@@ -960,9 +1078,10 @@ export function executeMove(
     : { ...piece, isRevealed: isStealthTrap ? piece.isRevealed : true };
   
   finalPiece.hasMovedManually = true;
-  if (finalPiece.is_once_per_game) {
-    if (getPieceTrigger(finalPiece) !== 'ON_MOVE') {
-      finalPiece.coolDownTurnsRemaining = 99; // Permanent debuff (restricted to charging_grid /十字1マス)
+  const isOnce = finalPiece.is_once_per_game || finalPiece.cool_down_turns === 99;
+  if (isOnce) {
+    if (getPieceTrigger(finalPiece) === 'ON_MOVE') {
+      finalPiece.coolDownTurnsRemaining = 99;
     }
   }
 
@@ -1056,8 +1175,19 @@ export function executeMove(
               winner = player;
             }
           } else {
-            const isTrapOrCurse = pathPiece.trigger === 'ON_TAKEN';
-            if (isTrapOrCurse) {
+            const isSelfDestruct = pathPiece.trigger === 'ON_TAKEN' && (
+              isStealthPiece(pathPiece) ||
+              pathPiece.logic_code === 'self_destruct_trap' ||
+              pathPiece.logic_code === 'curse_retaliation' ||
+              desc.includes('道連れ') ||
+              desc.includes('自爆') ||
+              desc.includes('爆発') ||
+              desc.includes('爆破') ||
+              desc.includes('爆砕') ||
+              desc.includes('激突') ||
+              pathPiece.ability_spec?.effect_type === 'DESTROY'
+            );
+            if (isSelfDestruct) {
               const logMsg = isStealthPiece(pathPiece)
                 ? `【罠衝突】突撃中の ${piece.word} が罠「${pathPiece.effect_name}」に激突！両者爆破・消滅しました！`
                 : `【呪詛衝突】突撃中の ${piece.word} が呪いの駒 ${pathPiece.word} に激突！呪い「${pathPiece.effect_name}」により、両者爆破・消滅しました！`;
@@ -1078,29 +1208,43 @@ export function executeMove(
                 shieldTriggered,
                 bombTriggered,
                 gameOver: pathPiece.isKing, // 玉将ならゲーム終了
-                winner: pathPiece.isKing ? player : null
+                winner: pathPiece.isKing ? player : null,
+                abilityEvents
               };
             } else {
-            logs.push({
-              player,
-              message: `【突撃撃破】${pathPiece.word} (${getCellLabel(cy, cx)}) が突撃によりなぎ倒されました！`,
-              type: 'capture'
-            });
-            const cap = {
-              ...pathPiece,
-              owner: player,
-              isPromoted: false,
-              isRevealed: true,
-              coolDownTurnsRemaining: 0
-            };
-            capturedPiecesList.push(cap);
-            nextBoard[cy][cx] = null;
-            if (pathPiece.isKing) {
-              gameOver = true;
-              winner = player;
+              logs.push({
+                player,
+                message: `【突撃撃破】${pathPiece.word} (${getCellLabel(cy, cx)}) が突撃によりなぎ倒されました！`,
+                type: 'capture'
+              });
+              const cap = {
+                ...pathPiece,
+                owner: player,
+                isPromoted: false,
+                isRevealed: true,
+                coolDownTurnsRemaining: 0
+              };
+              capturedPiecesList.push(cap);
+              nextBoard[cy][cx] = null;
+              if (pathPiece.isKing) {
+                gameOver = true;
+                winner = player;
+              }
+              if (pathPiece.trigger === 'ON_TAKEN') {
+                abilityEvents.push({
+                  id: generateId(),
+                  priority: 1,
+                  triggerType: 'ON_TAKEN',
+                  pieceId: pathPiece.id,
+                  position: [cy, cx],
+                  owner: pathPiece.owner,
+                  attackerPieceId: piece.id,
+                  attackerPiecePos: [cy, cx],
+                  targetCellPiece: pathPiece
+                });
+              }
             }
           }
-        }
       } else {
         // 味方の駒：押し出し
         nextBoard = pushPiece(nextBoard, cy, cx, dy, dx, player, logs, capturedPiecesList);
@@ -1471,6 +1615,338 @@ export function checkAndApplyNullification(
   return { board, nullified: false };
 }
 
+export function getSelectableRangeCells(
+  cy: number,
+  cx: number,
+  range: number,
+  affects_who: string,
+  board: Board,
+  player: Player
+): [number, number][] {
+  const results: [number, number][] = [];
+  const BOARD_SIZE = 9;
+  const maxDist = range > 0 ? range : 2;
+  
+  for (let y = 0; y < BOARD_SIZE; y++) {
+    for (let x = 0; x < BOARD_SIZE; x++) {
+      if (y === cy && x === cx) continue;
+      const dist = Math.max(Math.abs(y - cy), Math.abs(x - cx));
+      if (dist > maxDist) continue;
+      
+      const cell = board[y][x];
+      if (affects_who === 'ENEMY_ONLY') {
+        if (cell && cell.owner !== player && !cell.isKing) results.push([y, x]);
+      } else if (affects_who === 'ALLY_ONLY') {
+        if (cell && cell.owner === player) results.push([y, x]);
+      } else if (affects_who === 'EMPTY_ONLY') {
+        if (!cell) results.push([y, x]);
+      } else {
+        if (cell && !cell.isKing) results.push([y, x]);
+        if (!cell) results.push([y, x]);
+      }
+    }
+  }
+  return results;
+}
+
+export function getEffectCells(
+  cy: number,
+  cx: number,
+  shape: string,
+  sy?: number,
+  sx?: number
+): [number, number][] {
+  const cells: [number, number][] = [[cy, cx]];
+  const BOARD_SIZE = 9;
+
+  if (shape === 'POINT') {
+    return cells;
+  }
+  if (shape === 'SQUARE_3X3') {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dy === 0 && dx === 0) continue;
+        const ny = cy + dy;
+        const nx = cx + dx;
+        if (ny >= 0 && ny < BOARD_SIZE && nx >= 0 && nx < BOARD_SIZE) {
+          cells.push([ny, nx]);
+        }
+      }
+    }
+    return cells;
+  }
+  if (shape === 'SQUARE_5X5') {
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        if (dy === 0 && dx === 0) continue;
+        const ny = cy + dy;
+        const nx = cx + dx;
+        if (ny >= 0 && ny < BOARD_SIZE && nx >= 0 && nx < BOARD_SIZE) {
+          cells.push([ny, nx]);
+        }
+      }
+    }
+    return cells;
+  }
+  if (shape === 'CROSS') {
+    const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+    for (const [dy, dx] of dirs) {
+      let ny = cy + dy;
+      let nx = cx + dx;
+      while (ny >= 0 && ny < BOARD_SIZE && nx >= 0 && nx < BOARD_SIZE) {
+        cells.push([ny, nx]);
+        ny += dy;
+        nx += dx;
+      }
+    }
+    return cells;
+  }
+  if (shape === 'LINE_STRAIGHT') {
+    const targetX = sx !== undefined ? sx : cx;
+    const lineCells: [number, number][] = [];
+    for (let ny = 0; ny < BOARD_SIZE; ny++) {
+      if (sy !== undefined && ny === sy) continue;
+      lineCells.push([ny, targetX]);
+    }
+    return lineCells;
+  }
+  return cells;
+}
+
+export function interpretAbilitySpec(
+  board: Board,
+  position: [number, number],
+  spec: AbilitySpec,
+  player: Player,
+  capturedPieces: Piece[],
+  graveyard: Piece[],
+  targetPosition?: [number, number],
+  selectedGraveyardPiece?: Piece
+): {
+  board: Board;
+  capturedPieces: Piece[];
+  graveyard: Piece[];
+  logs: Omit<GameLog, 'id' | 'timestamp'>[];
+  triggered: boolean;
+} {
+  const [y, x] = position;
+  const piece = board[y][x];
+  if (!piece) return { board, capturedPieces, graveyard, logs: [], triggered: false };
+
+  let nextBoard = board.map(row => [...row]);
+  let nextCaptured = [...capturedPieces];
+  let nextGraveyard = [...graveyard];
+  const logs: Omit<GameLog, 'id' | 'timestamp'>[] = [];
+  let triggered = false;
+
+  const effectName = piece.isPromoted
+    ? (piece.promoted_effect?.effect_name || piece.effect_name)
+    : piece.effect_name;
+
+  let effectCenterCells: [number, number][] = [];
+
+  if (spec.effect_type === 'RESURRECT') {
+    const candidates = nextGraveyard.filter(p => p && !p.isKing);
+    let reviveTarget: Piece | null = null;
+    let reviveIdx = -1;
+
+    if (selectedGraveyardPiece) {
+      reviveTarget = selectedGraveyardPiece;
+      reviveIdx = nextGraveyard.findIndex(p => p.id === selectedGraveyardPiece.id);
+    } else if (candidates.length > 0) {
+      reviveTarget = candidates[Math.floor(Math.random() * candidates.length)];
+      reviveIdx = nextGraveyard.findIndex(p => p.id === reviveTarget!.id);
+    }
+
+    let spawnCell: [number, number] | null = null;
+    if (targetPosition && isWithinBounds(targetPosition[0], targetPosition[1]) && nextBoard[targetPosition[0]][targetPosition[1]] === null) {
+      spawnCell = targetPosition;
+    } else {
+      const adjacent: [number, number][] = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+      for (const [dy, dx] of adjacent) {
+        const ny = y + dy, nx = x + dx;
+        if (isWithinBounds(ny, nx) && nextBoard[ny][nx] === null) { spawnCell = [ny, nx]; break; }
+      }
+    }
+
+    if (reviveTarget && reviveIdx !== -1 && spawnCell) {
+      const [sy, sx] = spawnCell;
+      const revived: Piece = {
+        ...reviveTarget,
+        id: generateId(),
+        owner: player,
+        isPromoted: reviveTarget.isPromoted,
+        coolDownTurnsRemaining: 0,
+        originalPosition: [sy, sx],
+        stunTurnsRemaining: 0,
+        deathCountdown: 0,
+        isRevealed: true
+      };
+      nextBoard[sy][sx] = revived;
+      nextGraveyard.splice(reviveIdx, 1);
+      triggered = true;
+      logs.push({ player, message: `【死者蘇生・動的発動】${piece.word} の蘇生術が発動！墓地から「${reviveTarget.word}」を ${getCellLabel(sy, sx)} に召喚しました！`, type: 'ability' });
+    } else if (!reviveTarget) {
+      triggered = true;
+      logs.push({ player, message: `【自動発動制限】墓地に召喚可能な対象駒がないため、蘇生できませんでした。`, type: 'system' });
+    } else {
+      triggered = true;
+      logs.push({ player, message: `【自動発動制限】${piece.word} の周囲に空きマスがないため、召喚に失敗しました。`, type: 'system' });
+    }
+    return { board: nextBoard, capturedPieces: nextCaptured, graveyard: nextGraveyard, logs, triggered };
+  }
+
+  if (targetPosition && spec.target_selection === 'CLICK_ZONE') {
+    effectCenterCells = [targetPosition];
+  } else if (spec.target_selection === 'SELF') {
+    effectCenterCells = [[y, x]];
+  } else {
+    effectCenterCells = getSelectableRangeCells(y, x, spec.range, spec.affects_who, nextBoard, player);
+    if (effectCenterCells.length > 0) {
+      effectCenterCells = [effectCenterCells[0]];
+    }
+  }
+
+  if (effectCenterCells.length === 0) {
+    logs.push({ player, message: `【自動発動制限】${piece.word} の効果「${effectName}」の対象が見つかりませんでした。`, type: 'system' });
+    return { board: nextBoard, capturedPieces: nextCaptured, graveyard: nextGraveyard, logs, triggered: false };
+  }
+
+  const allEffectCells: [number, number][] = [];
+  const seen = new Set<string>();
+  for (const [cy, cx] of effectCenterCells) {
+    for (const cell of getEffectCells(cy, cx, spec.area_shape, y, x)) {
+      const key = `${cell[0]},${cell[1]}`;
+      if (!seen.has(key)) { seen.add(key); allEffectCells.push(cell); }
+    }
+  }
+
+  for (const [ey, ex] of allEffectCells) {
+    if (!isWithinBounds(ey, ex)) continue;
+    const victim = nextBoard[ey][ex];
+    const isAlly = victim && victim.owner === player;
+    const isEnemy = victim && victim.owner !== player;
+
+    if (spec.affects_who === 'ENEMY_ONLY' && (!victim || !isEnemy || victim.isKing)) continue;
+    if (spec.affects_who === 'ALLY_ONLY' && (!victim || !isAlly)) continue;
+    if (spec.affects_who === 'EMPTY_ONLY' && victim) continue;
+    if (spec.affects_who === 'ALL_PIECES' && (!victim || victim.isKing)) continue;
+
+    switch (spec.effect_type) {
+      case 'DESTROY':
+        if (victim) {
+          nextGraveyard.push({
+            ...victim,
+            owner: victim.owner,
+            isPromoted: victim.isPromoted,
+            coolDownTurnsRemaining: 0,
+            isRevealed: true,
+            stunTurnsRemaining: 0,
+            deathCountdown: 0
+          });
+          nextBoard[ey][ex] = null;
+          triggered = true;
+          logs.push({ player, message: `【${effectName}】${piece.word} の効果により ${victim.word} (${getCellLabel(ey, ex)}) を消滅（墓地送り）しました！`, type: 'system' });
+        }
+        break;
+
+      case 'CAPTURE':
+        if (victim && victim.owner !== player && !victim.isKing) {
+          nextCaptured.push({ ...victim, owner: player, isPromoted: false, isRevealed: true, coolDownTurnsRemaining: 0 });
+          nextBoard[ey][ex] = null;
+          triggered = true;
+          logs.push({ player, message: `【${effectName}】${piece.word} の効果により ${victim.word} (${getCellLabel(ey, ex)}) を捕獲しました！`, type: 'capture' });
+        }
+        break;
+
+      case 'IMMOBILIZE':
+        if (victim) {
+          nextBoard[ey][ex] = { ...victim, stunTurnsRemaining: 2 };
+          triggered = true;
+          logs.push({ player, message: `【${effectName}】${victim.word} (${getCellLabel(ey, ex)}) を2手番の間、行動封印しました！`, type: 'ability' });
+        }
+        break;
+
+      case 'STEALTH':
+        if (ey === y && ex === x) {
+          const p = nextBoard[ey][ex];
+          if (p) { nextBoard[ey][ex] = { ...p, isRevealed: false }; triggered = true; }
+          logs.push({ player, message: `【${effectName}】${piece.word} が潜伏状態に入りました。`, type: 'ability' });
+        }
+        break;
+
+      case 'SWAP': {
+        const swapPiece = nextBoard[ey][ex];
+        if (swapPiece && (ey !== y || ex !== x)) {
+          const currentSelf = nextBoard[y][x];
+          if (currentSelf) {
+            nextBoard[ey][ex] = { ...currentSelf, originalPosition: [ey, ex] };
+            nextBoard[y][x] = { ...swapPiece, originalPosition: [y, x] };
+            triggered = true;
+            logs.push({ player, message: `【${effectName}】${piece.word} が ${swapPiece.word} (${getCellLabel(ey, ex)}) と位置を入れ替えました！`, type: 'ability' });
+          }
+        }
+        break;
+      }
+
+      case 'PULL': {
+        if (victim && victim.owner !== player) {
+          const dy = Math.sign(y - ey);
+          const dx = Math.sign(x - ex);
+          const ny = ey + dy;
+          const nx = ex + dx;
+          if (isWithinBounds(ny, nx) && nextBoard[ny][nx] === null) {
+            nextBoard[ny][nx] = { ...victim, originalPosition: [ny, nx] };
+            nextBoard[ey][ex] = null;
+            triggered = true;
+            logs.push({ player, message: `【${effectName}】${victim.word} (${getCellLabel(ey, ex)}) を ${getCellLabel(ny, nx)} に引き寄せました！`, type: 'ability' });
+          }
+        }
+        break;
+      }
+
+      case 'PUSH': {
+        if (victim) {
+          const dy = Math.sign(ey - y);
+          const dx = Math.sign(ex - x);
+          nextBoard = pushPiece(nextBoard, ey, ex, dy, dx, player, logs, nextCaptured);
+          triggered = true;
+        }
+        break;
+      }
+
+      case 'TRANSFORM': {
+        if (victim && victim.owner !== player && !victim.isKing) {
+          const currentSelf = nextBoard[y][x];
+          if (currentSelf) {
+            nextBoard[y][x] = {
+              ...currentSelf,
+              word: victim.word,
+              effect_name: victim.effect_name,
+              mechanics_type: victim.mechanics_type,
+              ability_genre: victim.ability_genre,
+              trigger: victim.trigger,
+              cool_down_turns: victim.cool_down_turns,
+              range_geometry: { ...victim.range_geometry },
+              description: victim.description,
+              spawn_piece_name: victim.spawn_piece_name,
+              spawn_config: victim.spawn_config ? { ...victim.spawn_config } : undefined,
+              promoted_effect: { ...victim.promoted_effect },
+              logic_code: victim.logic_code,
+              ability_spec: victim.ability_spec ? { ...victim.ability_spec } : undefined
+            };
+            triggered = true;
+            logs.push({ player, message: `【${effectName}】${piece.word} が ${victim.word} の姿と能力に変化しました！`, type: 'ability' });
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  return { board: nextBoard, capturedPieces: nextCaptured, graveyard: nextGraveyard, logs, triggered };
+}
+
 function isAutonomousPiece(p: Piece | null): boolean {
   if (!p) return false;
   const logic = getPieceLogicCode(p);
@@ -1524,6 +2000,44 @@ export function applyAutomatedEffect(
   const logic = getPieceLogicCode(piece);
   const desc = getPieceDescription(piece);
   const effectName = piece.isPromoted ? (piece.promoted_effect?.effect_name || piece.effect_name) : piece.effect_name;
+
+  // ── 動的インタープリター優先ルート ──
+  const spec = getPieceAbilitySpec(piece);
+  if (spec) {
+    if (spec.activation_trigger === triggerType || spec.activation_trigger === 'ALWAYS') {
+      const specResult = interpretAbilitySpec(
+        nextBoard, position, spec, player,
+        nextCaptured, nextGraveyard,
+        targetPosition, selectedGraveyardPiece
+      );
+      if (specResult.triggered) {
+        const isOnce = piece.is_once_per_game || piece.cool_down_turns === 99;
+        const targetCd = isOnce ? 99 : (spec.cooldown_turns > 0 ? spec.cooldown_turns : 0);
+        if (targetCd > 0) {
+          for (let r = 0; r < 9; r++) {
+            for (let c = 0; c < 9; c++) {
+              const p = specResult.board[r][c];
+              if (p && p.id === piece.id) {
+                specResult.board[r][c] = {
+                  ...p,
+                  coolDownTurnsRemaining: targetCd
+                };
+                break;
+              }
+            }
+          }
+        }
+      }
+      return {
+        board: specResult.board,
+        capturedPieces: specResult.capturedPieces,
+        graveyard: specResult.graveyard,
+        logs: specResult.logs,
+        triggered: specResult.triggered
+      };
+    }
+    return { board, capturedPieces, graveyard, logs: [], triggered: false };
+  }
 
   // 1. Replication/Clone (spawn_piece_name is present)
   if (piece.spawn_piece_name && piece.spawn_piece_name.trim() !== '') {
@@ -1672,11 +2186,12 @@ export function applyAutomatedEffect(
                      desc.includes('縦横一直線') || desc.includes('縦横直線') || desc.includes('縦横の直線') ||
                      desc.includes('レーザー') || desc.includes('ビーム') || desc.includes('貫通') || desc.includes('狙撃') || desc.includes('スナイプ');
 
-    const isVerticalLinear = desc.includes('縦直線') || desc.includes('縦の直線') || 
+    const isVerticalLinear = desc.includes('縦直線') || desc.includes('縦の直線') || desc.includes('縦１列') || desc.includes('縦1列') || desc.includes('縦一列') || 
                              desc.includes('レーザー') || desc.includes('ビーム') ||
                              logic === 'kill_linear' || logic.includes('laser') || logic.includes('beam') ||
                              piece.word.includes('レーザー') || piece.word.includes('ビーム') ||
-                             effectName.includes('レーザー') || effectName.includes('ビーム');
+                             effectName.includes('レーザー') || effectName.includes('ビーム') ||
+                             (!desc.includes('横') && !desc.includes('斜め') && !desc.includes('全方向') && !desc.includes('周囲'));
 
     if (isFrontRow) {
       const dy = player === 'sente' ? -1 : 1;
@@ -1953,15 +2468,20 @@ export function applyAutomatedEffect(
           nextBoard[y][x] = null;
         } else {
           // Legacy trap or regular piece
-          const isTrapOrCurse = victim.trigger === 'ON_TAKEN' && (
+          const isSelfDestruct = victim.trigger === 'ON_TAKEN' && (
             isStealthPiece(victim) ||
-            victim.mechanics_type === 'DYNAMICS_HACK' ||
+            getPieceLogicCode(victim) === 'self_destruct_trap' ||
             getPieceLogicCode(victim) === 'curse_retaliation' ||
-            victim.description.includes('呪い') ||
-            victim.description.includes('道連れ')
+            vdesc.includes('道連れ') ||
+            vdesc.includes('自爆') ||
+            vdesc.includes('爆発') ||
+            vdesc.includes('爆破') ||
+            vdesc.includes('爆砕') ||
+            vdesc.includes('激突') ||
+            victim.ability_spec?.effect_type === 'DESTROY'
           );
 
-          if (isTrapOrCurse) {
+          if (isSelfDestruct) {
             const logMsg = isStealthPiece(victim)
               ? `【罠衝突】突進中の ${piece.word} が罠「${victim.effect_name}」に激突！両者爆破・消滅しました！`
               : `【呪詛衝突】突進中の ${piece.word} が呪いの駒 ${victim.word} に激突！呪い「${victim.effect_name}」により、両者爆破・消滅しました！`;
@@ -2580,7 +3100,8 @@ export function applyAutomatedEffect(
       if (foundPiece) break;
     }
     if (foundPiece) {
-      if (foundPiece.is_once_per_game) {
+      const isOnce = foundPiece.is_once_per_game || foundPiece.cool_down_turns === 99;
+      if (isOnce) {
         foundPiece.coolDownTurnsRemaining = 99;
       } else if (isAutonomousPiece(foundPiece)) {
         foundPiece.cool_down_turns = 0;
@@ -2592,7 +3113,8 @@ export function applyAutomatedEffect(
   }
 
   // Set once per game cooldown if evaluated on move
-  if (piece.is_once_per_game && triggerType === 'ON_MOVE') {
+  const isPieceOnce = piece.is_once_per_game || piece.cool_down_turns === 99;
+  if (isPieceOnce && triggerType === 'ON_MOVE') {
     let foundPiece: Piece | null = null;
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
@@ -2654,6 +3176,39 @@ export function getAbilityTargets(
 ): { targets: [number, number][]; type: 'transform' | 'mind_control' | 'swap' | 'resurrect' } | null {
   const [y, x] = position;
   const piece = board[y][x];
+
+  if (!piece) return null;
+
+  // ── 動的インタープリター優先ルート ──
+  const spec = getPieceAbilitySpec(piece);
+  if (spec) {
+    if (spec.target_selection === 'CLICK_ZONE') {
+      const typeMap: Record<string, 'transform' | 'mind_control' | 'swap' | 'resurrect'> = {
+        'TRANSFORM': 'transform',
+        'SWAP': 'swap',
+        'RESURRECT': 'resurrect',
+        'CAPTURE': 'mind_control'
+      };
+      const abilityType = typeMap[spec.effect_type] || 'mind_control';
+      
+      if (spec.effect_type === 'RESURRECT') {
+        const candidates = (graveyard || []).filter(p => p && !p.isKing);
+        if (candidates.length === 0) return null;
+        const targets: [number, number][] = [];
+        const adjacent = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+        for (const [dy, dx] of adjacent) {
+          const ny = y + dy, nx = x + dx;
+          if (isWithinBounds(ny, nx) && board[ny][nx] === null) targets.push([ny, nx]);
+        }
+        return targets.length > 0 ? { targets, type: 'resurrect' } : null;
+      }
+
+      const targets = getSelectableRangeCells(y, x, spec.range, spec.affects_who, board, player);
+      return targets.length > 0 ? { targets, type: abilityType } : null;
+    }
+    return null;
+  }
+
   if (!piece || piece.coolDownTurnsRemaining > 0) return null;
 
   const desc = getPieceDescription(piece);
