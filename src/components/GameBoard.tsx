@@ -86,6 +86,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     color: string;
     theme: string;
     effectType: string;
+    trajectoryType?: string;
     onArrive: () => void;
   }
 
@@ -353,7 +354,13 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       }
 
       proj.x = proj.startX + (proj.endX - proj.startX) * proj.progress;
-      proj.y = proj.startY + (proj.endY - proj.startY) * proj.progress;
+      let targetY = proj.startY + (proj.endY - proj.startY) * proj.progress;
+      if (proj.trajectoryType === 'PARABOLA') {
+        const dist = Math.sqrt((proj.endX - proj.startX) ** 2 + (proj.endY - proj.startY) ** 2);
+        const height = Math.min(120, dist * 0.35);
+        targetY -= Math.sin(proj.progress * Math.PI) * height;
+      }
+      proj.y = targetY;
 
       ctx.save();
       ctx.beginPath();
@@ -485,11 +492,15 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           const start = getCellCenterPixel(sx, sy);
           const end = getCellCenterPixel(tx, ty);
 
+          const isStrike = visualEffect?.trajectory_type === 'STRIKE';
+          const startX = isStrike ? end.x : start.x;
+          const startY = isStrike ? -50 : start.y;
+
           projectilesRef.current.push({
-            x: start.x,
-            y: start.y,
-            startX: start.x,
-            startY: start.y,
+            x: startX,
+            y: startY,
+            startX,
+            startY,
             endX: end.x,
             endY: end.y,
             progress: 0,
@@ -497,19 +508,20 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             color: projColor,
             theme,
             effectType,
+            trajectoryType: visualEffect?.trajectory_type,
             onArrive: () => {
               spawnExplosion(end, theme, effectType, visualEffect);
               
-              if (theme === 'WARRIOR_IRON' || visualEffect?.trajectory_type === 'BEAM') {
+              if (theme === 'WARRIOR_IRON' || visualEffect?.trajectory_type === 'BEAM' || isStrike) {
                 lasersRef.current.push({
-                  startX: start.x,
-                  startY: start.y,
+                  startX: isStrike ? end.x : start.x,
+                  startY: isStrike ? 0 : start.y,
                   endX: end.x,
                   endY: end.y,
                   life: 1.0,
                   color: projColor
                 });
-                spawnLaserParticles(start, end);
+                spawnLaserParticles(isStrike ? { x: end.x, y: 0 } : start, end);
               }
             }
           });

@@ -1653,8 +1653,8 @@ export function getEffectCells(
   cy: number,
   cx: number,
   shape: string,
-  sy?: number,
-  sx?: number
+  _sy?: number,
+  _sx?: number
 ): [number, number][] {
   const cells: [number, number][] = [[cy, cx]];
   const BOARD_SIZE = 9;
@@ -1702,11 +1702,9 @@ export function getEffectCells(
     return cells;
   }
   if (shape === 'LINE_STRAIGHT') {
-    const targetX = sx !== undefined ? sx : cx;
     const lineCells: [number, number][] = [];
     for (let ny = 0; ny < BOARD_SIZE; ny++) {
-      if (sy !== undefined && ny === sy) continue;
-      lineCells.push([ny, targetX]);
+      lineCells.push([ny, cx]);
     }
     return lineCells;
   }

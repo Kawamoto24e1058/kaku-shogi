@@ -18,7 +18,9 @@ import {
   isKingInCheck,
   getAbilityTargets,
   getPieceDescription,
-  isStealthPiece
+  isStealthPiece,
+  getEffectCells,
+  getSelectableRangeCells
 } from './gameLogic';
 import { PieceCreator } from './components/PieceCreator';
 import { GameBoard } from './components/GameBoard';
@@ -297,19 +299,41 @@ export const App: React.FC = () => {
 
       const isCustomAnimStart = animPiece && !animPiece.isKing && !animPiece.isPawn && !animPiece.isHisha && !animPiece.isKaku;
       if (animPiece && isCustomAnimStart) {
+        const spec = getPieceAbilitySpec(animPiece);
         if (event.triggerType === 'ON_TAKEN') {
-          animTargets = [event.position];
+          if (spec) {
+            animTargets = getEffectCells(event.position[0], event.position[1], spec.area_shape, event.position[0], event.position[1]);
+          } else {
+            animTargets = [event.position];
+          }
         } else if (event.triggerType === 'ON_APPROACH') {
-          animTargets = [event.position];
+          if (spec) {
+            animTargets = getEffectCells(event.position[0], event.position[1], spec.area_shape, event.position[0], event.position[1]);
+          } else {
+            animTargets = [event.position];
+          }
         } else if (animPos) {
           const targetsInfo = getAbilityTargets(boardState, animPos, event.owner, sharedState);
-          if (targetsInfo) {
-            animTargets = targetsInfo.targets;
+          const willSuspend = targetsInfo && isPieceOwnerHuman(event.owner);
+          if (willSuspend) {
+            animTargets = [];
+          } else if (spec) {
+            let cy = animPos[0], cx = animPos[1];
+            if (spec.target_selection !== 'SELF') {
+              const selectable = getSelectableRangeCells(animPos[0], animPos[1], spec.range, spec.affects_who, boardState, event.owner);
+              if (selectable.length > 0) {
+                [cy, cx] = selectable[0];
+              }
+            }
+            animTargets = getEffectCells(cy, cx, spec.area_shape, animPos[0], animPos[1]);
+          } else {
+            if (targetsInfo) {
+              animTargets = targetsInfo.targets;
+            }
           }
         }
         
         let effectType = 'DEFAULT';
-        const spec = getPieceAbilitySpec(animPiece);
         if (spec) {
           effectType = spec.effect_type;
         } else {
@@ -1872,9 +1896,13 @@ export const App: React.FC = () => {
         }
       }
       const visualEffect = sourcePiece.isPromoted ? sourcePiece.promoted_effect?.visual_effect : sourcePiece.visual_effect;
+      const animationTargets: [number, number][] = spec
+        ? getEffectCells(ty, tx, spec.area_shape, sy, sx)
+        : [[ty, tx]];
+
       setActiveAbilityAnimation({
         source: source,
-        targets: [[ty, tx]],
+        targets: animationTargets,
         theme: sourcePiece.visual_theme || null,
         active: true,
         effectType,
