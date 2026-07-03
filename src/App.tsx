@@ -209,6 +209,7 @@ export const App: React.FC = () => {
     let sharedState = [...currentShared];
     let logsState = [...currentLogs];
     let destroyedState = [...currentDestroyed];
+    let reActionTriggered = false;
 
     const delayVal = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -303,12 +304,34 @@ export const App: React.FC = () => {
         if (event.triggerType === 'ON_TAKEN') {
           if (spec) {
             animTargets = getEffectCells(event.position[0], event.position[1], spec.area_shape, event.position[0], event.position[1]);
+          } else if (animPiece.custom_ability) {
+            const affected: [number, number][] = [];
+            const seen = new Set<string>();
+            for (const shape of animPiece.custom_ability.targets) {
+              const cells = getEffectCells(event.position[0], event.position[1], shape, event.position[0], event.position[1]);
+              for (const cell of cells) {
+                const key = `${cell[0]},${cell[1]}`;
+                if (!seen.has(key)) { seen.add(key); affected.push(cell); }
+              }
+            }
+            animTargets = affected;
           } else {
             animTargets = [event.position];
           }
         } else if (event.triggerType === 'ON_APPROACH') {
           if (spec) {
             animTargets = getEffectCells(event.position[0], event.position[1], spec.area_shape, event.position[0], event.position[1]);
+          } else if (animPiece.custom_ability) {
+            const affected: [number, number][] = [];
+            const seen = new Set<string>();
+            for (const shape of animPiece.custom_ability.targets) {
+              const cells = getEffectCells(event.position[0], event.position[1], shape, event.position[0], event.position[1]);
+              for (const cell of cells) {
+                const key = `${cell[0]},${cell[1]}`;
+                if (!seen.has(key)) { seen.add(key); affected.push(cell); }
+              }
+            }
+            animTargets = affected;
           } else {
             animTargets = [event.position];
           }
@@ -326,6 +349,17 @@ export const App: React.FC = () => {
               }
             }
             animTargets = getEffectCells(cy, cx, spec.area_shape, animPos[0], animPos[1]);
+          } else if (animPiece.custom_ability) {
+            const affected: [number, number][] = [];
+            const seen = new Set<string>();
+            for (const shape of animPiece.custom_ability.targets) {
+              const cells = getEffectCells(animPos[0], animPos[1], shape, animPos[0], animPos[1]);
+              for (const cell of cells) {
+                const key = `${cell[0]},${cell[1]}`;
+                if (!seen.has(key)) { seen.add(key); affected.push(cell); }
+              }
+            }
+            animTargets = affected;
           } else {
             if (targetsInfo) {
               animTargets = targetsInfo.targets;
@@ -336,6 +370,21 @@ export const App: React.FC = () => {
         let effectType = 'DEFAULT';
         if (spec) {
           effectType = spec.effect_type;
+        } else if (animPiece.custom_ability) {
+          const actions = animPiece.custom_ability.actions;
+          if (actions.includes('DESTROY')) {
+            effectType = 'DESTROY';
+          } else if (actions.includes('FREEZE')) {
+            effectType = 'IMMOBILIZE';
+          } else if (actions.includes('KNOCKBACK') || actions.includes('KNOCKBACK_MAX')) {
+            effectType = 'PUSH';
+          } else if (actions.includes('SWAP_POSITION')) {
+            effectType = 'SWAP';
+          } else if (actions.includes('PULL_1')) {
+            effectType = 'PULL';
+          } else if (actions.includes('RE_ACTION')) {
+            effectType = 'RE_ACTION';
+          }
         } else {
           const logic = getPieceLogicCode(animPiece);
           const desc = getPieceDescription(animPiece);
@@ -567,6 +616,9 @@ export const App: React.FC = () => {
             if (effectRes.graveyard) {
               sharedState = effectRes.graveyard;
             }
+            if (effectRes.reAction) {
+              reActionTriggered = true;
+            }
             setScreenShake(true);
             setTimeout(() => setScreenShake(false), 300);
           }
@@ -690,6 +742,36 @@ export const App: React.FC = () => {
         syncOnlineState(
           boardState,
           activePlayer,
+          'playing',
+          null,
+          capturedState,
+          sharedState,
+          state.customDecks,
+          destroyedState,
+          logsState
+        );
+      } else if (reActionTriggered) {
+        // Skip switching players! Keep current player (state.turn)
+        setState(prev => {
+          const nextState = {
+            ...prev,
+            board: boardState,
+            capturedPieces: capturedState,
+            sharedPieces: sharedState,
+            destroyedPieces: destroyedState,
+            selectedCell: null,
+            activeAbilityMode: false,
+            activeAbilitySource: null,
+            activeAbilityTargets: [],
+            logs: logsState,
+          };
+          saveHistorySnapshot(boardState, capturedState, state.turn, logsState, state.customDecks, destroyedState);
+          return nextState;
+        });
+
+        syncOnlineState(
+          boardState,
+          state.turn,
           'playing',
           null,
           capturedState,
@@ -1625,33 +1707,51 @@ export const App: React.FC = () => {
       return;
     }
 
-    // 2. Decrement cooldowns and curses for nextPlayer's pieces on the board
+    // 2. Decrement cooldowns and curses for pieces on the board
     const updatedLogsList: GameLog[] = [];
     const finalBoard = currentBoard.map((row, r) =>
       row.map((piece, c) => {
         if (!piece) return null;
-        if (piece.owner === nextPlayer) {
-          const updated = { ...piece };
-          let died = false;
-          
+        
+        const updated = { ...piece };
+        let died = false;
+        
+        // Cooldowns are decremented when the player's turn starts (nextPlayer)
+        if (updated.owner === nextPlayer) {
           if (isAutonomous(updated)) {
             updated.cool_down_turns = 0;
             updated.coolDownTurnsRemaining = 0;
           } else if (updated.coolDownTurnsRemaining > 0) {
-            // Keep permanent debuff at 99
             if (updated.coolDownTurnsRemaining !== 99) {
               updated.coolDownTurnsRemaining -= 1;
             }
           }
-          
+        }
+        
+        // Stun, Freeze, and Death countdown are decremented when the player's turn ends (activePlayer)
+        if (updated.owner === activePlayer) {
           if (updated.stunTurnsRemaining && updated.stunTurnsRemaining > 0) {
             updated.stunTurnsRemaining -= 1;
             if (updated.stunTurnsRemaining === 0) {
               updatedLogsList.push({
                 id: generateId(),
                 timestamp: new Date().toLocaleTimeString(),
-                player: nextPlayer,
+                player: activePlayer,
                 message: `【呪縛解除】${piece.word} (${getCellLabel(r, c)}) の呪縛（行動封印）が解けました！`,
+                type: 'system'
+              });
+            }
+          }
+
+          if (updated.frozenDuration && updated.frozenDuration > 0) {
+            updated.frozenDuration -= 1;
+            if (updated.frozenDuration === 0) {
+              updated.isFrozen = false;
+              updatedLogsList.push({
+                id: generateId(),
+                timestamp: new Date().toLocaleTimeString(),
+                player: activePlayer,
+                message: `【凍結解除】${piece.word} (${getCellLabel(r, c)}) の凍結状態が解除されました！`,
                 type: 'system'
               });
             }
@@ -1673,7 +1773,7 @@ export const App: React.FC = () => {
               updatedLogsList.push({
                 id: generateId(),
                 timestamp: new Date().toLocaleTimeString(),
-                player: nextPlayer,
+                player: activePlayer,
                 message: `【死の宣告】${piece.word} (${getCellLabel(r, c)}) は死の宣告の刻限を迎え、塵となって消滅しました…`,
                 type: 'system'
               });
@@ -1681,16 +1781,15 @@ export const App: React.FC = () => {
               updatedLogsList.push({
                 id: generateId(),
                 timestamp: new Date().toLocaleTimeString(),
-                player: nextPlayer,
+                player: activePlayer,
                 message: `【死の宣告】${piece.word} (${getCellLabel(r, c)}) の消滅まであと ${updated.deathCountdown} 手番。`,
                 type: 'system'
               });
             }
           }
-          
-          return died ? null : updated;
         }
-        return piece;
+        
+        return died ? null : updated;
       })
     );
 
@@ -1880,6 +1979,21 @@ export const App: React.FC = () => {
       const spec = getPieceAbilitySpec(sourcePiece);
       if (spec) {
         effectType = spec.effect_type;
+      } else if (sourcePiece.custom_ability) {
+        const actions = sourcePiece.custom_ability.actions;
+        if (actions.includes('DESTROY')) {
+          effectType = 'DESTROY';
+        } else if (actions.includes('FREEZE')) {
+          effectType = 'IMMOBILIZE';
+        } else if (actions.includes('KNOCKBACK') || actions.includes('KNOCKBACK_MAX')) {
+          effectType = 'PUSH';
+        } else if (actions.includes('SWAP_POSITION')) {
+          effectType = 'SWAP';
+        } else if (actions.includes('PULL_1')) {
+          effectType = 'PULL';
+        } else if (actions.includes('RE_ACTION')) {
+          effectType = 'RE_ACTION';
+        }
       } else {
         const logic = getPieceLogicCode(sourcePiece);
         const desc = getPieceDescription(sourcePiece);
@@ -1927,6 +2041,7 @@ export const App: React.FC = () => {
       graveyard?: Piece[];
       logs: Omit<import('./types').GameLog, 'id' | 'timestamp'>[];
       triggered: boolean;
+      reAction?: boolean;
     };
 
     const spec = sourcePieceForEffect ? getPieceAbilitySpec(sourcePieceForEffect) : undefined;
@@ -2105,6 +2220,36 @@ export const App: React.FC = () => {
             nextShared,
             finalLogs,
             nextDestroyedPieces
+          );
+        } else if (effectRes.reAction) {
+          // Skip switching players! Keep current player (activePlayer)
+          setState(prev => {
+            const nextState = {
+              ...prev,
+              board: finalBoard,
+              capturedPieces: nextCaptured,
+              sharedPieces: nextShared,
+              destroyedPieces: nextDestroyedPieces,
+              selectedCell: null,
+              activeAbilityMode: false,
+              activeAbilitySource: null,
+              activeAbilityTargets: [],
+              logs: finalLogs.map(l => ({ ...l, id: generateId(), timestamp: new Date().toLocaleTimeString() })),
+            };
+            saveHistorySnapshot(finalBoard, nextCaptured, activePlayer, nextState.logs, state.customDecks, nextDestroyedPieces);
+            return nextState;
+          });
+          
+          syncOnlineState(
+            finalBoard,
+            activePlayer,
+            'playing',
+            null,
+            nextCaptured,
+            nextShared,
+            state.customDecks,
+            nextDestroyedPieces,
+            finalLogs.map(l => ({ ...l, id: generateId(), timestamp: new Date().toLocaleTimeString() }))
           );
         } else {
           finalizeTurn(
@@ -2725,7 +2870,6 @@ export const App: React.FC = () => {
   };
 
 
-
   const handleResetGame = () => {
     setState(prev => ({
       ...prev,
@@ -3224,6 +3368,7 @@ export const App: React.FC = () => {
                   </div>
                 )}
               </div>
+
 
               {/* Right Side: Tactical Controls */}
               <div className="control-wrapper">

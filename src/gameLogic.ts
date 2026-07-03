@@ -1,6 +1,26 @@
-import type { Board, Piece, Player, GameLog, AbilityEvent, AbilitySpec } from './types';
+import type { Board, Piece, Player, GameLog, AbilityEvent, AbilitySpec, CustomAbility, Position } from './types';
 
 export const BOARD_SIZE = 9;
+
+export const BoardManager = {
+  getPiece(board: Board, pos: Position): Piece | null {
+    if (pos.x < 0 || pos.x >= 9 || pos.y < 0 || pos.y >= 9) return null;
+    return board[pos.y][pos.x];
+  },
+  setPiece(board: Board, pos: Position, piece: Piece | null): void {
+    if (pos.x >= 0 && pos.x < 9 && pos.y >= 0 && pos.y < 9) {
+      board[pos.y][pos.x] = piece;
+    }
+  }
+};
+
+export function getBoardPiece(board: Board, pos: Position): Piece | null {
+  return BoardManager.getPiece(board, pos);
+}
+
+export function setBoardPiece(board: Board, pos: Position, piece: Piece | null): void {
+  BoardManager.setPiece(board, pos, piece);
+}
 
 // Helper to generate UUID
 export function generateId(): string {
@@ -139,6 +159,9 @@ export function getPieceTrigger(piece: Piece): 'ALWAYS' | 'ON_MOVE' | 'TURN_STAR
 }
 
 export function isTriggerMatching(piece: Piece, triggerType: 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN'): boolean {
+  if (piece.custom_ability && piece.custom_ability.triggers.includes(triggerType)) {
+    return true;
+  }
   if (!piece.isPromoted && !hasNormalAutomatedAbility(piece)) {
     return false;
   }
@@ -224,7 +247,7 @@ export function initializeBoard(): Board {
   const board: Board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
 
   // Place Sente (Player 1) King at (8, 4)
-  board[8][4] = {
+  setBoardPiece(board, { x: 4, y: 8 }, {
     id: generateId(),
     word: '玉将',
     effect_name: '王権 of 守護',
@@ -236,11 +259,11 @@ export function initializeBoard(): Board {
       normal_grid: '0000001110012100111000000',
       charging_grid: '0000000100012100010000000'
     },
-    description: 'このゲームの王。捕獲されると敗北する。',
+    description: 'このゲーム of 王。捕獲されると敗北する。',
     spawn_piece_name: null,
     promoted_effect: {
       effect_name: '王権 of 守護',
-      description: 'このゲームの王。捕獲されると敗北する。',
+      description: 'このゲーム of 王。捕獲されると敗北する。',
     },
     deep_search_analysis: '基本となる王駒。本質的な勝利条件を定義。',
     owner: 'sente',
@@ -250,10 +273,10 @@ export function initializeBoard(): Board {
     coolDownTurnsRemaining: 0,
     isRevealed: true,
     isPromoted: false
-  };
+  });
 
   // Place Gote (Player 2) King at (0, 4)
-  board[0][4] = {
+  setBoardPiece(board, { x: 4, y: 0 }, {
     id: generateId(),
     word: '玉将',
     effect_name: '王権 of 守護',
@@ -265,11 +288,11 @@ export function initializeBoard(): Board {
       normal_grid: '0000001110012100111000000',
       charging_grid: '0000000100012100010000000'
     },
-    description: 'このゲームの王。捕獲されると敗北する。',
+    description: 'このゲーム of 王。捕獲されると敗北する。',
     spawn_piece_name: null,
     promoted_effect: {
       effect_name: '王権 of 守護',
-      description: 'このゲームの王。捕獲されると敗北する。',
+      description: 'このゲーム of 王。捕獲されると敗北する。',
     },
     deep_search_analysis: '基本となる王駒。本質的な勝利条件を定義。',
     owner: 'gote',
@@ -279,11 +302,11 @@ export function initializeBoard(): Board {
     coolDownTurnsRemaining: 0,
     isRevealed: true,
     isPromoted: false
-  };
+  });
 
   // Place 9 Sente Pawns (歩) at row 6 (index 6, files 1-9)
   for (let x = 0; x < BOARD_SIZE; x++) {
-    board[6][x] = {
+    setBoardPiece(board, { x, y: 6 }, {
       id: generateId(),
       word: '歩兵',
       effect_name: '一歩の兵勢',
@@ -310,12 +333,12 @@ export function initializeBoard(): Board {
       coolDownTurnsRemaining: 0,
       isRevealed: true,
       isPromoted: false
-    };
+    });
   }
 
   // Place 9 Gote Pawns (歩) at row 2 (index 2, files 1-9)
   for (let x = 0; x < BOARD_SIZE; x++) {
-    board[2][x] = {
+    setBoardPiece(board, { x, y: 2 }, {
       id: generateId(),
       word: '歩兵',
       effect_name: '一歩の兵勢',
@@ -342,11 +365,11 @@ export function initializeBoard(): Board {
       coolDownTurnsRemaining: 0,
       isRevealed: true,
       isPromoted: false
-    };
+    });
   }
 
   // --- Place Sente Hisha (飛車) at Y=7, X=7 (2八) and Kaku (角) at Y=7, X=1 (8八) ---
-  board[7][7] = {
+  setBoardPiece(board, { x: 7, y: 7 }, {
     id: generateId(),
     word: '飛車',
     effect_name: '飛翔無限',
@@ -374,9 +397,9 @@ export function initializeBoard(): Board {
     coolDownTurnsRemaining: 0,
     isRevealed: true,
     isPromoted: false
-  };
+  });
 
-  board[7][1] = {
+  setBoardPiece(board, { x: 1, y: 7 }, {
     id: generateId(),
     word: '角',
     effect_name: '角行無限',
@@ -404,10 +427,10 @@ export function initializeBoard(): Board {
     coolDownTurnsRemaining: 0,
     isRevealed: true,
     isPromoted: false
-  };
+  });
 
   // --- Place Gote Hisha (飛車) at Y=1, X=1 (8二) and Kaku (角) at Y=1, X=7 (2二) ---
-  board[1][1] = {
+  setBoardPiece(board, { x: 1, y: 1 }, {
     id: generateId(),
     word: '飛車',
     effect_name: '飛翔無限',
@@ -435,9 +458,9 @@ export function initializeBoard(): Board {
     coolDownTurnsRemaining: 0,
     isRevealed: true,
     isPromoted: false
-  };
+  });
 
-  board[1][7] = {
+  setBoardPiece(board, { x: 7, y: 1 }, {
     id: generateId(),
     word: '角',
     effect_name: '角行無限',
@@ -465,7 +488,7 @@ export function initializeBoard(): Board {
     coolDownTurnsRemaining: 0,
     isRevealed: true,
     isPromoted: false
-  };
+  });
 
   return board;
 }
@@ -514,10 +537,10 @@ export function degradeToNormalPawn(piece: Piece): Piece {
 }
 
 export function getValidMoves(y: number, x: number, board: Board): [number, number][] {
-  const piece = board[y][x];
+  const piece = getBoardPiece(board, { x, y });
   if (!piece) return [];
 
-  if (piece.stunTurnsRemaining && piece.stunTurnsRemaining > 0) {
+  if ((piece.stunTurnsRemaining && piece.stunTurnsRemaining > 0) || (piece.frozenDuration && piece.frozenDuration > 0) || piece.isFrozen) {
     return [];
   }
 
@@ -536,7 +559,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
           const ny = y + dy;
           const nx = x + dx;
           if (isWithinBounds(ny, nx)) {
-            const target = board[ny][nx];
+            const target = getBoardPiece(board, { x: nx, y: ny });
             if (!target || target.owner !== piece.owner) {
               validMoves.push([ny, nx]);
             }
@@ -560,7 +583,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
       const ny = y + mdy;
       const nx = x + mdx;
       if (isWithinBounds(ny, nx)) {
-        const target = board[ny][nx];
+        const target = getBoardPiece(board, { x: nx, y: ny });
         if (!target || target.owner !== piece.owner) {
           validMoves.push([ny, nx]);
         }
@@ -578,7 +601,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
       const ny = y + dy;
       const nx = x + dx;
       if (isWithinBounds(ny, nx)) {
-        const target = board[ny][nx];
+        const target = getBoardPiece(board, { x: nx, y: ny });
         if (!target || target.owner !== piece.owner) {
           validMoves.push([ny, nx]);
         }
@@ -592,7 +615,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
       let ny = y + dy;
       let nx = x + dx;
       while (isWithinBounds(ny, nx)) {
-        const target = board[ny][nx];
+        const target = getBoardPiece(board, { x: nx, y: ny });
         if (!target) {
           validMoves.push([ny, nx]);
         } else {
@@ -612,7 +635,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
         const ny = y + dy;
         const nx = x + dx;
         if (isWithinBounds(ny, nx)) {
-          const target = board[ny][nx];
+          const target = getBoardPiece(board, { x: nx, y: ny });
           if (!target || target.owner !== piece.owner) {
             validMoves.push([ny, nx]);
           }
@@ -627,7 +650,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
       let ny = y + dy;
       let nx = x + dx;
       while (isWithinBounds(ny, nx)) {
-        const target = board[ny][nx];
+        const target = getBoardPiece(board, { x: nx, y: ny });
         if (!target) {
           validMoves.push([ny, nx]);
         } else {
@@ -647,7 +670,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
         const ny = y + dy;
         const nx = x + dx;
         if (isWithinBounds(ny, nx)) {
-          const target = board[ny][nx];
+          const target = getBoardPiece(board, { x: nx, y: ny });
           if (!target || target.owner !== piece.owner) {
             validMoves.push([ny, nx]);
           }
@@ -668,7 +691,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
         let ny = y + dy;
         let nx = x + dx;
         while (isWithinBounds(ny, nx)) {
-          const target = board[ny][nx];
+          const target = getBoardPiece(board, { x: nx, y: ny });
           if (!target) {
             validMoves.push([ny, nx]);
           } else {
@@ -688,7 +711,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
           const ny = y + dy;
           const nx = x + dx;
           if (isWithinBounds(ny, nx)) {
-            const target = board[ny][nx];
+            const target = getBoardPiece(board, { x: nx, y: ny });
             if (!target || target.owner !== piece.owner) {
               validMoves.push([ny, nx]);
             }
@@ -704,7 +727,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
         let ny = y + dy;
         let nx = x + dx;
         while (isWithinBounds(ny, nx)) {
-          const target = board[ny][nx];
+          const target = getBoardPiece(board, { x: nx, y: ny });
           if (!target) {
             validMoves.push([ny, nx]);
           } else {
@@ -724,7 +747,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
           const ny = y + dy;
           const nx = x + dx;
           if (isWithinBounds(ny, nx)) {
-            const target = board[ny][nx];
+            const target = getBoardPiece(board, { x: nx, y: ny });
             if (!target || target.owner !== piece.owner) {
               validMoves.push([ny, nx]);
             }
@@ -739,7 +762,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
       const dy = isSente ? -1 : 1;
       let ny = y + dy;
       while (isWithinBounds(ny, x)) {
-        const target = board[ny][x];
+        const target = getBoardPiece(board, { x, y: ny });
         if (!target) {
           validMoves.push([ny, x]);
         } else {
@@ -757,7 +780,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
           const ny = y + mdy;
           const nx = x + mdx;
           if (isWithinBounds(ny, nx)) {
-            const target = board[ny][nx];
+            const target = getBoardPiece(board, { x: nx, y: ny });
             if (!target || target.owner !== piece.owner) {
               validMoves.push([ny, nx]);
             }
@@ -775,7 +798,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
         const ny = y + mdy;
         const nx = x + mdx;
         if (isWithinBounds(ny, nx)) {
-          const target = board[ny][nx];
+          const target = getBoardPiece(board, { x: nx, y: ny });
           if (!target || target.owner !== piece.owner) {
             validMoves.push([ny, nx]);
           }
@@ -788,7 +811,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
           const ny = y + mdy;
           const nx = x + mdx;
           if (isWithinBounds(ny, nx)) {
-            const target = board[ny][nx];
+            const target = getBoardPiece(board, { x: nx, y: ny });
             if (!target || target.owner !== piece.owner) {
               validMoves.push([ny, nx]);
             }
@@ -810,7 +833,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
         const ny = y + mdy;
         const nx = x + mdx;
         if (isWithinBounds(ny, nx)) {
-          const target = board[ny][nx];
+          const target = getBoardPiece(board, { x: nx, y: ny });
           if (!target || target.owner !== piece.owner) {
             validMoves.push([ny, nx]);
           }
@@ -823,7 +846,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
           const ny = y + mdy;
           const nx = x + mdx;
           if (isWithinBounds(ny, nx)) {
-            const target = board[ny][nx];
+            const target = getBoardPiece(board, { x: nx, y: ny });
             if (!target || target.owner !== piece.owner) {
               validMoves.push([ny, nx]);
             }
@@ -844,7 +867,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
         let nx = x + dx;
         let stepCount = 0;
         while (isWithinBounds(ny, nx) && stepCount < limit) {
-          const target = board[ny][nx];
+          const target = getBoardPiece(board, { x: nx, y: ny });
           if (!target) {
             validMoves.push([ny, nx]);
           } else {
@@ -864,7 +887,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
       hasCustomMove = true;
       for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
-          if (board[r][c] === null) {
+          if (getBoardPiece(board, { x: c, y: r }) === null) {
             validMoves.push([r, c]);
           }
         }
@@ -879,7 +902,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
         let nx = x + dx;
         let screenPiece = false;
         while (isWithinBounds(ny, nx)) {
-          const target = board[ny][nx];
+          const target = getBoardPiece(board, { x: nx, y: ny });
           if (!screenPiece) {
             if (!target) {
               validMoves.push([ny, nx]); // Move to empty space before screen
@@ -905,7 +928,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
           const ny = y + dy;
           const nx = x + dx;
           if (isWithinBounds(ny, nx)) {
-            const target = board[ny][nx];
+            const target = getBoardPiece(board, { x: nx, y: ny });
             if (!target || target.owner !== piece.owner) {
               validMoves.push([ny, nx]);
             }
@@ -931,7 +954,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
               const ny = y + dy;
               const nx = x + dx;
               if (isWithinBounds(ny, nx)) {
-                const target = board[ny][nx];
+                const target = getBoardPiece(board, { x: nx, y: ny });
                 if (!target || target.owner !== piece.owner) {
                   validMoves.push([ny, nx]);
                 }
@@ -963,7 +986,7 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
       const ny = y + dy;
       const nx = x + dx;
       if (isWithinBounds(ny, nx)) {
-        const p = board[ny][nx];
+        const p = getBoardPiece(board, { x: nx, y: ny });
         if (p && p.owner !== piece.owner && p.mechanics_type === 'RULE_BREAK' && p.isRevealed !== false) {
           isStunnedByField = true;
         }
@@ -978,8 +1001,6 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
 
   return validMoves;
 }
-
-
 
 export interface MoveResult {
   board: Board;
@@ -1004,14 +1025,14 @@ function pushPiece(
   logs: Omit<GameLog, 'id' | 'timestamp'>[],
   capturedPieces: Piece[]
 ): Board {
-  const piece = board[y][x];
+  const piece = getBoardPiece(board, { x, y });
   if (!piece) return board;
 
   const ny = y + dy;
   const nx = x + dx;
 
   let nextBoard = board.map(row => [...row]);
-  nextBoard[y][x] = null;
+  setBoardPiece(nextBoard, { x, y }, null);
 
   if (!isWithinBounds(ny, nx)) {
     logs.push({
@@ -1028,11 +1049,11 @@ function pushPiece(
     };
     capturedPieces.push(captured);
   } else {
-    const target = board[ny][nx];
+    const target = getBoardPiece(board, { x: nx, y: ny });
     if (target) {
       nextBoard = pushPiece(nextBoard, ny, nx, dy, dx, player, logs, capturedPieces);
     }
-    nextBoard[ny][nx] = piece;
+    setBoardPiece(nextBoard, { x: nx, y: ny }, piece);
     logs.push({
       player,
       message: `${piece.word} が ${getCellLabel(ny, nx)} へ押し出されました。`,
@@ -1041,6 +1062,7 @@ function pushPiece(
   }
   return nextBoard;
 }
+
 export function executeMove(
   board: Board,
   from: [number, number],
@@ -1063,7 +1085,7 @@ export function executeMove(
 
   const [fy, fx] = from;
   const [ty, tx] = to;
-  const piece = board[fy][fx];
+  const piece = getBoardPiece(board, { x: fx, y: fy });
 
   if (!piece || piece.owner !== player) {
     throw new Error('Invalid move coordinates');
@@ -1078,15 +1100,9 @@ export function executeMove(
     : { ...piece, isRevealed: isStealthTrap ? piece.isRevealed : true };
   
   finalPiece.hasMovedManually = true;
-  const isOnce = finalPiece.is_once_per_game || finalPiece.cool_down_turns === 99;
-  if (isOnce) {
-    if (getPieceTrigger(finalPiece) === 'ON_MOVE') {
-      finalPiece.coolDownTurnsRemaining = 99;
-    }
-  }
 
   const logs: Omit<GameLog, 'id' | 'timestamp'>[] = [];
-  const targetCell = board[ty][tx];
+  const targetCell = getBoardPiece(board, { x: tx, y: ty });
   let shieldTriggered = false;
   let bombTriggered = false;
   let gameOver = false;
@@ -1121,7 +1137,7 @@ export function executeMove(
     });
 
     while (isWithinBounds(cy, cx)) {
-      const pathPiece = nextBoard[cy][cx];
+      const pathPiece = getBoardPiece(nextBoard, { x: cx, y: cy });
       if (pathPiece) {
         if (pathPiece.owner !== player) {
           // 敵の駒：一撃で破壊・捕獲
@@ -1169,7 +1185,7 @@ export function executeMove(
               coolDownTurnsRemaining: 0
             };
             capturedPiecesList.push(cap);
-            nextBoard[cy][cx] = null;
+            setBoardPiece(nextBoard, { x: cx, y: cy }, null);
             if (pathPiece.isKing) {
               gameOver = true;
               winner = player;
@@ -1196,8 +1212,8 @@ export function executeMove(
                 message: logMsg,
                 type: 'ability'
               });
-              nextBoard[cy][cx] = null;
-              nextBoard[fy][fx] = null;
+              setBoardPiece(nextBoard, { x: cx, y: cy }, null);
+              setBoardPiece(nextBoard, { x: fx, y: fy }, null);
               bombTriggered = true;
               // 突撃した本人が消滅したため、突撃処理を中断
               return {
@@ -1225,7 +1241,7 @@ export function executeMove(
                 coolDownTurnsRemaining: 0
               };
               capturedPiecesList.push(cap);
-              nextBoard[cy][cx] = null;
+              setBoardPiece(nextBoard, { x: cx, y: cy }, null);
               if (pathPiece.isKing) {
                 gameOver = true;
                 winner = player;
@@ -1245,10 +1261,10 @@ export function executeMove(
               }
             }
           }
-      } else {
-        // 味方の駒：押し出し
-        nextBoard = pushPiece(nextBoard, cy, cx, dy, dx, player, logs, capturedPiecesList);
-      }
+        } else {
+          // 味方の駒：押し出し
+          nextBoard = pushPiece(nextBoard, cy, cx, dy, dx, player, logs, capturedPiecesList);
+        }
       }
 
       if (cy === ty && cx === tx) break;
@@ -1256,8 +1272,8 @@ export function executeMove(
       cx += dx;
     }
 
-    nextBoard[ty][tx] = finalPiece;
-    nextBoard[fy][fx] = null;
+    setBoardPiece(nextBoard, { x: tx, y: ty }, finalPiece);
+    setBoardPiece(nextBoard, { x: fx, y: fy }, null);
 
     if (capturedPiecesList.length > 0) {
       capturedPiece = capturedPiecesList[0];
@@ -1272,8 +1288,8 @@ export function executeMove(
           message: `【偵察相殺】歩兵 (${getCellLabel(fy, fx)}) が裏向きの罠「${targetCell.effect_name}」を踏み抜きました！罠が大爆破し、歩兵と罠の両者が消滅しました！`,
           type: 'ability'
         });
-        nextBoard[ty][tx] = null;
-        nextBoard[fy][fx] = null;
+        setBoardPiece(nextBoard, { x: tx, y: ty }, null);
+        setBoardPiece(nextBoard, { x: fx, y: fy }, null);
         destroyedPieces.push(
           { ...piece, owner: player },
           { ...targetCell, isRevealed: true }
@@ -1351,8 +1367,8 @@ export function executeMove(
         coolDownTurnsRemaining: 0
       };
 
-      nextBoard[ty][tx] = finalPiece;
-      nextBoard[fy][fx] = null;
+      setBoardPiece(nextBoard, { x: tx, y: ty }, finalPiece);
+      setBoardPiece(nextBoard, { x: fx, y: fy }, null);
 
       if (targetCell.isKing) {
         gameOver = true;
@@ -1365,14 +1381,15 @@ export function executeMove(
       }
     } else {
       // 空きマスへの移動
-      nextBoard[ty][tx] = finalPiece;
-      nextBoard[fy][fx] = null;
+      setBoardPiece(nextBoard, { x: tx, y: ty }, finalPiece);
+      setBoardPiece(nextBoard, { x: fx, y: fy }, null);
     }
   }
 
   // 接近警報 (ON_APPROACH 罠の判定)
   // 移動が完了し、自駒が盤面 (ty, tx) に存在する場合のみ実行
-  if (nextBoard[ty][tx] && nextBoard[ty][tx] === finalPiece) {
+  const checkFinalPiece = getBoardPiece(nextBoard, { x: tx, y: ty });
+  if (checkFinalPiece && checkFinalPiece === finalPiece) {
     const adjacent = [
       [-1, -1], [-1, 0], [-1, 1],
       [0, -1],           [0, 1],
@@ -1382,7 +1399,7 @@ export function executeMove(
       const ny = ty + ady;
       const nx = tx + adx;
       if (isWithinBounds(ny, nx)) {
-        const adjacentPiece = nextBoard[ny][nx];
+        const adjacentPiece = getBoardPiece(nextBoard, { x: nx, y: ny });
         if (
           adjacentPiece &&
           adjacentPiece.owner !== undefined &&
@@ -1427,7 +1444,7 @@ export function executeMove(
     winner = 'sente';
   }
 
-  if (promote && nextBoard[ty][tx] === finalPiece) {
+  if (promote && getBoardPiece(nextBoard, { x: tx, y: ty }) === finalPiece) {
     const promotedName = piece.isHisha ? '竜王' : (piece.isKaku ? '竜馬' : (piece.isPawn ? 'と金' : piece.promoted_effect?.effect_name || '覚醒駒'));
     logs.push({
       player,
@@ -1461,7 +1478,7 @@ export function executeDrop(
 ): Board {
   const [ty, tx] = to;
 
-  if (board[ty][tx] !== null) {
+  if (getBoardPiece(board, { x: tx, y: ty }) !== null) {
     throw new Error('Occupied square');
   }
 
@@ -1481,7 +1498,7 @@ export function executeDrop(
     placedPiece.isRevealed = true;
   }
 
-  nextBoard[ty][tx] = placedPiece;
+  setBoardPiece(nextBoard, { x: tx, y: ty }, placedPiece);
   return nextBoard;
 }
 
@@ -1501,7 +1518,7 @@ export function getValidDropCells(board: Board, piece: Piece, player: Player): [
   let goteKingPos: [number, number] | null = null;
   for (let r = 0; r < BOARD_SIZE; r++) {
     for (let c = 0; c < BOARD_SIZE; c++) {
-      const p = board[r][c];
+      const p = getBoardPiece(board, { x: c, y: r });
       if (p?.isKing) {
         if (p.owner === 'sente') senteKingPos = [r, c];
         else goteKingPos = [r, c];
@@ -1514,7 +1531,7 @@ export function getValidDropCells(board: Board, piece: Piece, player: Player): [
   if (isPawn) {
     for (let x = 0; x < BOARD_SIZE; x++) {
       for (let y = 0; y < BOARD_SIZE; y++) {
-        const p = board[y][x];
+        const p = getBoardPiece(board, { x, y });
         if (p && p.owner === player && p.isPawn && !p.isPromoted) {
           pawnColumns.add(x);
           break;
@@ -1526,7 +1543,7 @@ export function getValidDropCells(board: Board, piece: Piece, player: Player): [
   // 3. Scan empty cells
   for (let y = 0; y < BOARD_SIZE; y++) {
     for (let x = 0; x < BOARD_SIZE; x++) {
-      if (board[y][x] !== null) continue;
+      if (getBoardPiece(board, { x, y }) !== null) continue;
 
       // Rule checks:
       // A. Nifu (二歩)
@@ -1582,7 +1599,7 @@ export function checkAndApplyNullification(
   // Find all active nullifiers on the board
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
-      const p = board[r][c];
+      const p = getBoardPiece(board, { x: c, y: r });
       if (
         p &&
         p.owner === defender &&
@@ -1599,7 +1616,7 @@ export function checkAndApplyNullification(
           const nextBoard = board.map(row => [...row]);
           const updatedNullifier = { ...p };
           updatedNullifier.coolDownTurnsRemaining = p.cool_down_turns > 0 ? p.cool_down_turns : 99;
-          nextBoard[r][c] = updatedNullifier;
+          setBoardPiece(nextBoard, { x: c, y: r }, updatedNullifier);
           
           logs.push({
             player: defender,
@@ -1633,7 +1650,7 @@ export function getSelectableRangeCells(
       const dist = Math.max(Math.abs(y - cy), Math.abs(x - cx));
       if (dist > maxDist) continue;
       
-      const cell = board[y][x];
+      const cell = getBoardPiece(board, { x, y });
       if (affects_who === 'ENEMY_ONLY') {
         if (cell && cell.owner !== player && !cell.isKing) results.push([y, x]);
       } else if (affects_who === 'ALLY_ONLY') {
@@ -1708,6 +1725,30 @@ export function getEffectCells(
     }
     return lineCells;
   }
+  if (shape === 'RANGE_2') {
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        const ny = cy + dy;
+        const nx = cx + dx;
+        if (ny >= 0 && ny < BOARD_SIZE && nx >= 0 && nx < BOARD_SIZE) {
+          cells.push([ny, nx]);
+        }
+      }
+    }
+    return cells;
+  }
+  if (shape === 'RANGE_3') {
+    for (let dy = -3; dy <= 3; dy++) {
+      for (let dx = -3; dx <= 3; dx++) {
+        const ny = cy + dy;
+        const nx = cx + dx;
+        if (ny >= 0 && ny < BOARD_SIZE && nx >= 0 && nx < BOARD_SIZE) {
+          cells.push([ny, nx]);
+        }
+      }
+    }
+    return cells;
+  }
   return cells;
 }
 
@@ -1728,7 +1769,7 @@ export function interpretAbilitySpec(
   triggered: boolean;
 } {
   const [y, x] = position;
-  const piece = board[y][x];
+  const piece = getBoardPiece(board, { x, y });
   if (!piece) return { board, capturedPieces, graveyard, logs: [], triggered: false };
 
   let nextBoard = board.map(row => [...row]);
@@ -1757,13 +1798,13 @@ export function interpretAbilitySpec(
     }
 
     let spawnCell: [number, number] | null = null;
-    if (targetPosition && isWithinBounds(targetPosition[0], targetPosition[1]) && nextBoard[targetPosition[0]][targetPosition[1]] === null) {
+    if (targetPosition && isWithinBounds(targetPosition[0], targetPosition[1]) && getBoardPiece(nextBoard, { x: targetPosition[1], y: targetPosition[0] }) === null) {
       spawnCell = targetPosition;
     } else {
       const adjacent: [number, number][] = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
       for (const [dy, dx] of adjacent) {
         const ny = y + dy, nx = x + dx;
-        if (isWithinBounds(ny, nx) && nextBoard[ny][nx] === null) { spawnCell = [ny, nx]; break; }
+        if (isWithinBounds(ny, nx) && getBoardPiece(nextBoard, { x: nx, y: ny }) === null) { spawnCell = [ny, nx]; break; }
       }
     }
 
@@ -1780,7 +1821,7 @@ export function interpretAbilitySpec(
         deathCountdown: 0,
         isRevealed: true
       };
-      nextBoard[sy][sx] = revived;
+      setBoardPiece(nextBoard, { x: sx, y: sy }, revived);
       nextGraveyard.splice(reviveIdx, 1);
       triggered = true;
       logs.push({ player, message: `【死者蘇生・動的発動】${piece.word} の蘇生術が発動！墓地から「${reviveTarget.word}」を ${getCellLabel(sy, sx)} に召喚しました！`, type: 'ability' });
@@ -1821,9 +1862,14 @@ export function interpretAbilitySpec(
 
   for (const [ey, ex] of allEffectCells) {
     if (!isWithinBounds(ey, ex)) continue;
-    const victim = nextBoard[ey][ex];
+    const victim = getBoardPiece(nextBoard, { x: ex, y: ey });
     const isAlly = victim && victim.owner === player;
     const isEnemy = victim && victim.owner !== player;
+
+    // LINE_STRAIGHT (縦1列) の破壊・効果は味方や玉将を巻き込まないようにする
+    if (spec.area_shape === 'LINE_STRAIGHT') {
+      if (victim && (victim.owner === player || victim.isKing)) continue;
+    }
 
     if (spec.affects_who === 'ENEMY_ONLY' && (!victim || !isEnemy || victim.isKing)) continue;
     if (spec.affects_who === 'ALLY_ONLY' && (!victim || !isAlly)) continue;
@@ -1842,7 +1888,7 @@ export function interpretAbilitySpec(
             stunTurnsRemaining: 0,
             deathCountdown: 0
           });
-          nextBoard[ey][ex] = null;
+          setBoardPiece(nextBoard, { x: ex, y: ey }, null);
           triggered = true;
           logs.push({ player, message: `【${effectName}】${piece.word} の効果により ${victim.word} (${getCellLabel(ey, ex)}) を消滅（墓地送り）しました！`, type: 'system' });
         }
@@ -1851,7 +1897,7 @@ export function interpretAbilitySpec(
       case 'CAPTURE':
         if (victim && victim.owner !== player && !victim.isKing) {
           nextCaptured.push({ ...victim, owner: player, isPromoted: false, isRevealed: true, coolDownTurnsRemaining: 0 });
-          nextBoard[ey][ex] = null;
+          setBoardPiece(nextBoard, { x: ex, y: ey }, null);
           triggered = true;
           logs.push({ player, message: `【${effectName}】${piece.word} の効果により ${victim.word} (${getCellLabel(ey, ex)}) を捕獲しました！`, type: 'capture' });
         }
@@ -1859,7 +1905,7 @@ export function interpretAbilitySpec(
 
       case 'IMMOBILIZE':
         if (victim) {
-          nextBoard[ey][ex] = { ...victim, stunTurnsRemaining: 2 };
+          setBoardPiece(nextBoard, { x: ex, y: ey }, { ...victim, stunTurnsRemaining: 2 });
           triggered = true;
           logs.push({ player, message: `【${effectName}】${victim.word} (${getCellLabel(ey, ex)}) を2手番の間、行動封印しました！`, type: 'ability' });
         }
@@ -1867,19 +1913,19 @@ export function interpretAbilitySpec(
 
       case 'STEALTH':
         if (ey === y && ex === x) {
-          const p = nextBoard[ey][ex];
-          if (p) { nextBoard[ey][ex] = { ...p, isRevealed: false }; triggered = true; }
+          const p = getBoardPiece(nextBoard, { x: ex, y: ey });
+          if (p) { setBoardPiece(nextBoard, { x: ex, y: ey }, { ...p, isRevealed: false }); triggered = true; }
           logs.push({ player, message: `【${effectName}】${piece.word} が潜伏状態に入りました。`, type: 'ability' });
         }
         break;
 
       case 'SWAP': {
-        const swapPiece = nextBoard[ey][ex];
+        const swapPiece = getBoardPiece(nextBoard, { x: ex, y: ey });
         if (swapPiece && (ey !== y || ex !== x)) {
-          const currentSelf = nextBoard[y][x];
+          const currentSelf = getBoardPiece(nextBoard, { x, y });
           if (currentSelf) {
-            nextBoard[ey][ex] = { ...currentSelf, originalPosition: [ey, ex] };
-            nextBoard[y][x] = { ...swapPiece, originalPosition: [y, x] };
+            setBoardPiece(nextBoard, { x: ex, y: ey }, { ...currentSelf, originalPosition: [ey, ex] });
+            setBoardPiece(nextBoard, { x, y }, { ...swapPiece, originalPosition: [y, x] });
             triggered = true;
             logs.push({ player, message: `【${effectName}】${piece.word} が ${swapPiece.word} (${getCellLabel(ey, ex)}) と位置を入れ替えました！`, type: 'ability' });
           }
@@ -1893,9 +1939,9 @@ export function interpretAbilitySpec(
           const dx = Math.sign(x - ex);
           const ny = ey + dy;
           const nx = ex + dx;
-          if (isWithinBounds(ny, nx) && nextBoard[ny][nx] === null) {
-            nextBoard[ny][nx] = { ...victim, originalPosition: [ny, nx] };
-            nextBoard[ey][ex] = null;
+          if (isWithinBounds(ny, nx) && getBoardPiece(nextBoard, { x: nx, y: ny }) === null) {
+            setBoardPiece(nextBoard, { x: nx, y: ny }, { ...victim, originalPosition: [ny, nx] });
+            setBoardPiece(nextBoard, { x: ex, y: ey }, null);
             triggered = true;
             logs.push({ player, message: `【${effectName}】${victim.word} (${getCellLabel(ey, ex)}) を ${getCellLabel(ny, nx)} に引き寄せました！`, type: 'ability' });
           }
@@ -1915,9 +1961,9 @@ export function interpretAbilitySpec(
 
       case 'TRANSFORM': {
         if (victim && victim.owner !== player && !victim.isKing) {
-          const currentSelf = nextBoard[y][x];
+          const currentSelf = getBoardPiece(nextBoard, { x, y });
           if (currentSelf) {
-            nextBoard[y][x] = {
+            setBoardPiece(nextBoard, { x, y }, {
               ...currentSelf,
               word: victim.word,
               effect_name: victim.effect_name,
@@ -1932,7 +1978,7 @@ export function interpretAbilitySpec(
               promoted_effect: { ...victim.promoted_effect },
               logic_code: victim.logic_code,
               ability_spec: victim.ability_spec ? { ...victim.ability_spec } : undefined
-            };
+            });
             triggered = true;
             logs.push({ player, message: `【${effectName}】${piece.word} が ${victim.word} の姿と能力に変化しました！`, type: 'ability' });
           }
@@ -1974,19 +2020,20 @@ export function applyAutomatedEffect(
   graveyard?: Piece[];
   logs: Omit<GameLog, 'id' | 'timestamp'>[];
   triggered: boolean;
+  reAction?: boolean;
 } {
   const [y, x] = position;
-  const piece = board[y][x];
+  const piece = getBoardPiece(board, { x, y });
   if (!piece || piece.owner !== player || !isTriggerMatching(piece, triggerType)) {
-    return { board, capturedPieces, graveyard, logs: [], triggered: false };
+    return { board, capturedPieces, graveyard, logs: [], triggered: false, reAction: false };
   }
   const trigger = getPieceTrigger(piece);
   const isTrap = trigger === 'ON_TAKEN' || trigger === 'ON_APPROACH';
   if (!isTrap && piece.hasMovedManually === false) {
-    return { board, capturedPieces, graveyard, logs: [], triggered: false };
+    return { board, capturedPieces, graveyard, logs: [], triggered: false, reAction: false };
   }
   if (!isAutonomousPiece(piece) && piece.coolDownTurnsRemaining > 0) {
-    return { board, capturedPieces, graveyard, logs: [], triggered: false };
+    return { board, capturedPieces, graveyard, logs: [], triggered: false, reAction: false };
   }
 
   let nextBoard = board.map(row => [...row]);
@@ -1998,6 +2045,21 @@ export function applyAutomatedEffect(
   const logic = getPieceLogicCode(piece);
   const desc = getPieceDescription(piece);
   const effectName = piece.isPromoted ? (piece.promoted_effect?.effect_name || piece.effect_name) : piece.effect_name;
+
+  // ── 汎用カスタム能力実行エンジン優先 ──
+  if (piece.custom_ability && piece.custom_ability.triggers.includes(triggerType)) {
+    const customRes = executeCustomAbility(
+      board, position, piece.custom_ability, player, fromPosition, targetPosition
+    );
+    return {
+      board: customRes.board,
+      capturedPieces: [...capturedPieces, ...customRes.capturedPieces],
+      graveyard: graveyard ? [...graveyard, ...customRes.graveyard] : customRes.graveyard,
+      logs: customRes.logs,
+      triggered: customRes.triggered,
+      reAction: customRes.reAction
+    };
+  }
 
   // ── 動的インタープリター優先ルート ──
   const spec = getPieceAbilitySpec(piece);
@@ -2014,12 +2076,12 @@ export function applyAutomatedEffect(
         if (targetCd > 0) {
           for (let r = 0; r < 9; r++) {
             for (let c = 0; c < 9; c++) {
-              const p = specResult.board[r][c];
+              const p = getBoardPiece(specResult.board, { x: c, y: r });
               if (p && p.id === piece.id) {
-                specResult.board[r][c] = {
+                setBoardPiece(specResult.board, { x: c, y: r }, {
                   ...p,
                   coolDownTurnsRemaining: targetCd
-                };
+                });
                 break;
               }
             }
@@ -2046,7 +2108,7 @@ export function applyAutomatedEffect(
     let minionCount = 0;
     for (let r = 0; r < 9; r++) {
       for (let c = 0; c < 9; c++) {
-        const p = board[r][c];
+        const p = getBoardPiece(board, { x: c, y: r });
         if (p && p.owner === player && p.word === spawnPieceName) {
           minionCount++;
         }
@@ -3138,7 +3200,7 @@ export function isKingInCheck(board: Board, player: Player): boolean {
   
   for (let y = 0; y < BOARD_SIZE; y++) {
     for (let x = 0; x < BOARD_SIZE; x++) {
-      const piece = board[y][x];
+      const piece = getBoardPiece(board, { x, y });
       if (piece && piece.isKing && piece.owner === player) {
         kingY = y;
         kingX = x;
@@ -3153,7 +3215,7 @@ export function isKingInCheck(board: Board, player: Player): boolean {
   const opponent = player === 'sente' ? 'gote' : 'sente';
   for (let y = 0; y < BOARD_SIZE; y++) {
     for (let x = 0; x < BOARD_SIZE; x++) {
-      const piece = board[y][x];
+      const piece = getBoardPiece(board, { x, y });
       if (piece && piece.owner === opponent) {
         const moves = getValidMoves(y, x, board);
         if (moves.some(([my, mx]) => my === kingY && mx === kingX)) {
@@ -3173,9 +3235,36 @@ export function getAbilityTargets(
   graveyard?: Piece[]
 ): { targets: [number, number][]; type: 'transform' | 'mind_control' | 'swap' | 'resurrect' } | null {
   const [y, x] = position;
-  const piece = board[y][x];
+  const piece = getBoardPiece(board, { x, y });
 
   if (!piece) return null;
+
+  // ── 新プラグイン型・遠隔選択ターゲット（RANGE_2 / RANGE_3 + POINT） ──
+  if (piece.custom_ability) {
+    const targets = piece.custom_ability.targets || [];
+    const hasRange2 = targets.includes('RANGE_2');
+    const hasRange3 = targets.includes('RANGE_3');
+    const hasPoint = targets.includes('POINT');
+
+    if ((hasRange2 || hasRange3) && hasPoint) {
+      if (piece.coolDownTurnsRemaining && piece.coolDownTurnsRemaining > 0) {
+        return null;
+      }
+      const rangeDist = hasRange3 ? 3 : 2;
+      const selectables: [number, number][] = [];
+      for (let dy = -rangeDist; dy <= rangeDist; dy++) {
+        for (let dx = -rangeDist; dx <= rangeDist; dx++) {
+          const ny = y + dy;
+          const nx = x + dx;
+          if (ny === y && nx === x) continue; // Skip acting piece itself
+          if (ny >= 0 && ny < 9 && nx >= 0 && nx < 9) {
+            selectables.push([ny, nx]);
+          }
+        }
+      }
+      return selectables.length > 0 ? { targets: selectables, type: 'mind_control' } : null;
+    }
+  }
 
   // ── 動的インタープリター優先ルート ──
   const spec = getPieceAbilitySpec(piece);
@@ -3196,7 +3285,7 @@ export function getAbilityTargets(
         const adjacent = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
         for (const [dy, dx] of adjacent) {
           const ny = y + dy, nx = x + dx;
-          if (isWithinBounds(ny, nx) && board[ny][nx] === null) targets.push([ny, nx]);
+          if (isWithinBounds(ny, nx) && getBoardPiece(board, { x: nx, y: ny }) === null) targets.push([ny, nx]);
         }
         return targets.length > 0 ? { targets, type: 'resurrect' } : null;
       }
@@ -3230,7 +3319,7 @@ export function getAbilityTargets(
     for (const [dy, dx] of adjacent) {
       const ny = y + dy;
       const nx = x + dx;
-      if (isWithinBounds(ny, nx) && board[ny][nx] === null) {
+      if (isWithinBounds(ny, nx) && getBoardPiece(board, { x: nx, y: ny }) === null) {
         targets.push([ny, nx]);
       }
     }
@@ -3250,7 +3339,7 @@ export function getAbilityTargets(
         const ny = y + dy;
         const nx = x + dx;
         if (isWithinBounds(ny, nx)) {
-          const p = board[ny][nx];
+          const p = getBoardPiece(board, { x: nx, y: ny });
           if (p && p.owner !== player && !p.isKing) {
             targets.push([ny, nx]);
           }
@@ -3259,7 +3348,7 @@ export function getAbilityTargets(
     } else {
       for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
-          const p = board[r][c];
+          const p = getBoardPiece(board, { x: c, y: r });
           if (p && (r !== y || c !== x) && !p.isKing) {
             targets.push([r, c]);
           }
@@ -3280,7 +3369,7 @@ export function getAbilityTargets(
       const ny = y + dy;
       const nx = x + dx;
       if (isWithinBounds(ny, nx)) {
-        const p = board[ny][nx];
+        const p = getBoardPiece(board, { x: nx, y: ny });
         if (p && p.owner !== player && !p.isKing) {
           targets.push([ny, nx]);
         }
@@ -3293,7 +3382,7 @@ export function getAbilityTargets(
     const targets: [number, number][] = [];
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
-        const p = board[r][c];
+        const p = getBoardPiece(board, { x: c, y: r });
         if (p && p.owner === player && p.isPawn && !p.isPromoted) {
           targets.push([r, c]);
         }
@@ -3312,7 +3401,8 @@ export function placeCustomPiecesRandomly(board: Board, sentePieces: Piece[], go
   let goteKingPos: [number, number] = [0, 4];
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
-      if (board[r][c]?.isKing && board[r][c]?.owner === 'gote') {
+      const p = getBoardPiece(board, { x: c, y: r });
+      if (p?.isKing && p?.owner === 'gote') {
         goteKingPos = [r, c];
       }
     }
@@ -3322,7 +3412,8 @@ export function placeCustomPiecesRandomly(board: Board, sentePieces: Piece[], go
   let senteKingPos: [number, number] = [8, 4];
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
-      if (board[r][c]?.isKing && board[r][c]?.owner === 'sente') {
+      const p = getBoardPiece(board, { x: c, y: r });
+      if (p?.isKing && p?.owner === 'sente') {
         senteKingPos = [r, c];
       }
     }
@@ -3371,7 +3462,7 @@ export function placeCustomPiecesRandomly(board: Board, sentePieces: Piece[], go
     let emptyCells: [number, number][] = [];
     for (const r of rows) {
       for (let c = 0; c < 9; c++) {
-        if (nextBoard[r][c] === null) {
+        if (getBoardPiece(nextBoard, { x: c, y: r }) === null) {
           emptyCells.push([r, c]);
         }
       }
@@ -3389,13 +3480,13 @@ export function placeCustomPiecesRandomly(board: Board, sentePieces: Piece[], go
       for (let idx = 0; idx < emptyCells.length; idx++) {
         const [py, px] = emptyCells[idx];
         if (!canAttackTarget(piece, py, px, opponentKingPos[0], opponentKingPos[1])) {
-          nextBoard[py][px] = {
+          setBoardPiece(nextBoard, { x: px, y: py }, {
             ...piece,
             originalPosition: [py, px],
             coolDownTurnsRemaining: 0,
             hasMovedManually: true, // starts on board, so active from start
             isRevealed: isStealthPiece(piece) ? false : true
-          };
+          });
           emptyCells.splice(idx, 1);
           placed = true;
           break;
@@ -3405,13 +3496,13 @@ export function placeCustomPiecesRandomly(board: Board, sentePieces: Piece[], go
       // Fallback
       if (!placed && emptyCells.length > 0) {
         const [py, px] = emptyCells[0];
-        nextBoard[py][px] = {
+        setBoardPiece(nextBoard, { x: px, y: py }, {
           ...piece,
           originalPosition: [py, px],
           coolDownTurnsRemaining: 0,
           hasMovedManually: true,
           isRevealed: isStealthPiece(piece) ? false : true
-        };
+        });
         emptyCells.shift();
       }
     }
@@ -3424,4 +3515,629 @@ export function placeCustomPiecesRandomly(board: Board, sentePieces: Piece[], go
   placeForPlayer(gotePieces, [0, 1], senteKingPos);
 
   return nextBoard;
+}
+
+export function ensurePosition(pos: Position | [number, number] | undefined): Position {
+  if (!pos) return { x: 0, y: 0 };
+  if (Array.isArray(pos)) {
+    return { x: pos[1], y: pos[0] };
+  }
+  return pos;
+}
+
+export type TargetFunction = (to: Position, board: Board, from: Position) => Position[];
+
+export const TargetRegistry: Record<string, TargetFunction> = {
+  POINT: (to) => [to],
+  SQUARE_3X3: (to) => {
+    const cells: Position[] = [];
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const ny = to.y + dy;
+        const nx = to.x + dx;
+        if (ny >= 0 && ny < 9 && nx >= 0 && nx < 9) {
+          cells.push({ x: nx, y: ny });
+        }
+      }
+    }
+    return cells;
+  },
+  SQUARE_5X5: (to) => {
+    const cells: Position[] = [];
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        const ny = to.y + dy;
+        const nx = to.x + dx;
+        if (ny >= 0 && ny < 9 && nx >= 0 && nx < 9) {
+          cells.push({ x: nx, y: ny });
+        }
+      }
+    }
+    return cells;
+  },
+  CROSS: (to) => {
+    const cells: Position[] = [];
+    cells.push({ x: to.x, y: to.y });
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const [dy, dx] of dirs) {
+      let ny = to.y + dy;
+      let nx = to.x + dx;
+      while (ny >= 0 && ny < 9 && nx >= 0 && nx < 9) {
+        cells.push({ x: nx, y: ny });
+        ny += dy;
+        nx += dx;
+      }
+    }
+    return cells;
+  },
+  LINE_STRAIGHT: (to) => {
+    const cells: Position[] = [];
+    for (let y = 0; y < 9; y++) {
+      cells.push({ x: to.x, y });
+    }
+    return cells;
+  },
+  RANGE_2: (to) => {
+    const cells: Position[] = [];
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        const ny = to.y + dy;
+        const nx = to.x + dx;
+        if (ny >= 0 && ny < 9 && nx >= 0 && nx < 9) {
+          cells.push({ x: nx, y: ny });
+        }
+      }
+    }
+    return cells;
+  },
+  RANGE_3: (to) => {
+    const cells: Position[] = [];
+    for (let dy = -3; dy <= 3; dy++) {
+      for (let dx = -3; dx <= 3; dx++) {
+        const ny = to.y + dy;
+        const nx = to.x + dx;
+        if (ny >= 0 && ny < 9 && nx >= 0 && nx < 9) {
+          cells.push({ x: nx, y: ny });
+        }
+      }
+    }
+    return cells;
+  }
+};
+
+export interface ActionContext {
+  piece: Piece;
+  player: Player;
+  from: Position;
+  to: Position;
+  graveyard: Piece[];
+  capturedPieces: Piece[];
+  logs: Omit<GameLog, 'id' | 'timestamp'>[];
+  triggeredRef: { value: boolean };
+  reActionRef: { value: boolean };
+  effectName: string;
+  currentActingPos: Position;
+  ability: CustomAbility;
+}
+
+export type ActionFunction = (
+  targetPos: Position,
+  board: Board,
+  to: Position,
+  context: ActionContext
+) => void;
+
+export const ActionRegistry: Record<string, ActionFunction> = {
+  DESTROY: (targetPos, board, _to, context) => {
+    // Skip acting piece itself
+    if (targetPos.x === context.to.x && targetPos.y === context.to.y) return;
+
+    const victim = BoardManager.getPiece(board, targetPos);
+    if (!victim) return;
+
+    const isMutualDamage = context.ability.constraints?.includes('MUTUAL_DAMAGE');
+
+    // Safety guard: LINE_STRAIGHT vertical column destruction bypasses allies and Kings (unless MUTUAL_DAMAGE)
+    if (context.ability.targets.includes('LINE_STRAIGHT')) {
+      if (!isMutualDamage && (victim.owner === context.player || victim.isKing)) {
+        return;
+      }
+    }
+
+    // Ally safety guard (unless MUTUAL_DAMAGE)
+    if (!isMutualDamage && victim.owner === context.player) {
+      return;
+    }
+
+    if (victim.isKing) return; // Never destroy King via DESTROY action
+
+    context.graveyard.push({
+      ...victim,
+      owner: victim.owner,
+      isPromoted: false,
+      isRevealed: true,
+      coolDownTurnsRemaining: 0,
+      stunTurnsRemaining: 0,
+      deathCountdown: 0
+    });
+    BoardManager.setPiece(board, targetPos, null);
+    context.triggeredRef.value = true;
+    context.logs.push({
+      player: context.player,
+      message: `【${context.effectName}】${context.piece.word} の効果により ${victim.word} (${getCellLabel(targetPos.y, targetPos.x)}) が消滅（墓地送り）しました！`,
+      type: 'system'
+    });
+  },
+  FREEZE: (targetPos, board, _to, context) => {
+    // Skip acting piece itself
+    if (targetPos.x === context.to.x && targetPos.y === context.to.y) return;
+
+    const victim = BoardManager.getPiece(board, targetPos);
+    if (!victim) return;
+
+    const isMutualDamage = context.ability.constraints?.includes('MUTUAL_DAMAGE');
+
+    // Safety guard: LINE_STRAIGHT vertical column destruction bypasses allies and Kings (unless MUTUAL_DAMAGE)
+    if (context.ability.targets.includes('LINE_STRAIGHT')) {
+      if (!isMutualDamage && (victim.owner === context.player || victim.isKing)) {
+        return;
+      }
+    }
+
+    // Ally safety guard (unless MUTUAL_DAMAGE)
+    if (!isMutualDamage && victim.owner === context.player) {
+      return;
+    }
+
+    BoardManager.setPiece(board, targetPos, {
+      ...victim,
+      isFrozen: true,
+      frozenDuration: 1
+    });
+    context.triggeredRef.value = true;
+    context.logs.push({
+      player: context.player,
+      message: `【${context.effectName}】${victim.word} (${getCellLabel(targetPos.y, targetPos.x)}) を1手番の間、凍結しました！`,
+      type: 'ability'
+    });
+  },
+  KNOCKBACK: (targetPos, board, to, context) => {
+    // Skip acting piece itself
+    if (targetPos.x === context.to.x && targetPos.y === context.to.y) return;
+
+    const victim = BoardManager.getPiece(board, targetPos);
+    if (!victim) return;
+
+    const isMutualDamage = context.ability.constraints?.includes('MUTUAL_DAMAGE');
+
+    // Safety guard: LINE_STRAIGHT vertical column destruction bypasses allies and Kings (unless MUTUAL_DAMAGE)
+    if (context.ability.targets.includes('LINE_STRAIGHT')) {
+      if (!isMutualDamage && (victim.owner === context.player || victim.isKing)) {
+        return;
+      }
+    }
+
+    // Ally safety guard (unless MUTUAL_DAMAGE)
+    if (!isMutualDamage && victim.owner === context.player) {
+      return;
+    }
+
+    // Calculate movement direction
+    let kdy = 0;
+    let kdx = 0;
+    if (context.from) {
+      kdy = Math.sign(to.y - context.from.y);
+      kdx = Math.sign(to.x - context.from.x);
+    }
+    if (kdy === 0 && kdx === 0) {
+      // Fallback: push outward from landing point
+      kdy = Math.sign(targetPos.y - to.y);
+      kdx = Math.sign(targetPos.x - to.x);
+    }
+    if (kdy === 0 && kdx === 0) {
+      kdy = context.player === 'sente' ? -1 : 1;
+    }
+
+    const ny = targetPos.y + kdy;
+    const nx = targetPos.x + kdx;
+    const pushPos = { x: nx, y: ny };
+
+    if (nx < 0 || nx >= 9 || ny < 0 || ny >= 9) {
+      // Banish/destroy piece
+      context.graveyard.push({
+        ...victim,
+        owner: victim.owner,
+        isPromoted: false,
+        isRevealed: true,
+        coolDownTurnsRemaining: 0,
+        stunTurnsRemaining: 0,
+        deathCountdown: 0
+      });
+      BoardManager.setPiece(board, targetPos, null);
+      context.triggeredRef.value = true;
+      context.logs.push({
+        player: context.player,
+        message: `【${context.effectName}】${victim.word} (${getCellLabel(targetPos.y, targetPos.x)}) はノックバックにより盤外へ押し出され、消滅しました！`,
+        type: 'capture'
+      });
+    } else {
+      const currentPieceAtDest = BoardManager.getPiece(board, pushPos);
+      const isDestinationSelf = (nx === context.currentActingPos.x && ny === context.currentActingPos.y);
+
+      if (currentPieceAtDest === null && !isDestinationSelf) {
+        BoardManager.setPiece(board, pushPos, {
+          ...victim,
+          originalPosition: [ny, nx]
+        });
+        BoardManager.setPiece(board, targetPos, null);
+        context.triggeredRef.value = true;
+        context.logs.push({
+          player: context.player,
+          message: `【${context.effectName}】${victim.word} (${getCellLabel(targetPos.y, targetPos.x)}) をノックバックで ${getCellLabel(ny, nx)} に押し戻しました！`,
+          type: 'ability'
+        });
+      } else {
+        context.logs.push({
+          player: context.player,
+          message: `【${context.effectName}】${victim.word} (${getCellLabel(targetPos.y, targetPos.x)}) は障害物（他の駒）があるためノックバックできませんでした。`,
+          type: 'system'
+        });
+      }
+    }
+  },
+  AUTO_FOLLOW_UP: (_targetPos, board, _to, context) => {
+    const currentActingPos = context.currentActingPos;
+    const dirs = [
+      { dx: 0, dy: -1 },
+      { dx: 0, dy: 1 },
+      { dx: -1, dy: 0 },
+      { dx: 1, dy: 0 }
+    ];
+
+    for (const d of dirs) {
+      const scanPos = { x: currentActingPos.x + d.dx, y: currentActingPos.y + d.dy };
+      const neighbor = BoardManager.getPiece(board, scanPos);
+      if (neighbor && neighbor.owner !== context.player) {
+        // Enemy neighbor detected! Capture neighbor piece
+        const cap = {
+          ...neighbor,
+          owner: context.player,
+          isPromoted: false,
+          isRevealed: true,
+          coolDownTurnsRemaining: 0
+        };
+        context.capturedPieces.push(cap);
+
+        // Move acting piece to neighbor's spot (upper-write move)
+        const actingPiece = BoardManager.getPiece(board, currentActingPos);
+        if (actingPiece) {
+          BoardManager.setPiece(board, scanPos, actingPiece);
+          BoardManager.setPiece(board, currentActingPos, null);
+          context.logs.push({
+            player: context.player,
+            message: `【自動追撃】${actingPiece.word} は ${getCellLabel(scanPos.y, scanPos.x)} にいる敵の ${neighbor.word} を感知し、突進して捕獲しました！`,
+            type: 'ability'
+          });
+          context.triggeredRef.value = true;
+          // Update acting piece position in context
+          context.currentActingPos = scanPos;
+        }
+        break; // Capture only the first enemy found
+      }
+    }
+  },
+
+  // ── 新パーツ: SWAP_POSITION (位置交換) ──────────────────────────────────────
+  SWAP_POSITION: (targetPos, board, _to, context) => {
+    // Skip acting piece itself
+    if (targetPos.x === context.to.x && targetPos.y === context.to.y) return;
+
+    const victim = BoardManager.getPiece(board, targetPos);
+    if (!victim) return;
+    if (victim.isKing) return; // Safety: never swap King
+
+    const actingPiece = BoardManager.getPiece(board, context.currentActingPos);
+    if (!actingPiece) return;
+
+    // Swap positions
+    BoardManager.setPiece(board, targetPos, { ...actingPiece, originalPosition: [targetPos.y, targetPos.x] as [number, number] });
+    BoardManager.setPiece(board, context.currentActingPos, { ...victim, originalPosition: [context.currentActingPos.y, context.currentActingPos.x] as [number, number] });
+    context.currentActingPos = targetPos;
+    context.triggeredRef.value = true;
+    context.logs.push({
+      player: context.player,
+      message: `【${context.effectName}】${actingPiece.word} と ${victim.word} (${getCellLabel(targetPos.y, targetPos.x)}) が時空を歪めて位置を交換しました！`,
+      type: 'ability'
+    });
+  },
+
+  // ── 新パーツ: PULL_1 (引き寄せ1マス) ───────────────────────────────────────
+  PULL_1: (targetPos, board, _to, context) => {
+    if (targetPos.x === context.to.x && targetPos.y === context.to.y) return;
+
+    const victim = BoardManager.getPiece(board, targetPos);
+    if (!victim) return;
+
+    const isMutualDamage = context.ability.constraints?.includes('MUTUAL_DAMAGE');
+
+    // Ally safety guard (unless MUTUAL_DAMAGE)
+    if (!isMutualDamage && victim.owner === context.player) {
+      return;
+    }
+
+    if (victim.isKing) return;
+
+    // Direction vector: from target toward self (currentActingPos)
+    const dy = Math.sign(context.currentActingPos.y - targetPos.y);
+    const dx = Math.sign(context.currentActingPos.x - targetPos.x);
+    if (dy === 0 && dx === 0) return;
+
+    const ny = targetPos.y + dy;
+    const nx = targetPos.x + dx;
+    if (nx < 0 || nx >= 9 || ny < 0 || ny >= 9) return;
+
+    const destPos = { x: nx, y: ny };
+    // Only pull if destination is empty (and not the acting piece's square)
+    const destPiece = BoardManager.getPiece(board, destPos);
+    const isActingSquare = nx === context.currentActingPos.x && ny === context.currentActingPos.y;
+    if (destPiece !== null || isActingSquare) return;
+
+    BoardManager.setPiece(board, destPos, { ...victim, originalPosition: [ny, nx] as [number, number] });
+    BoardManager.setPiece(board, targetPos, null);
+    context.triggeredRef.value = true;
+    context.logs.push({
+      player: context.player,
+      message: `【${context.effectName}】磁力により ${victim.word} (${getCellLabel(targetPos.y, targetPos.x)}) を ${getCellLabel(ny, nx)} へ引き寄せました！`,
+      type: 'ability'
+    });
+  },
+
+  // ── 新パーツ: KNOCKBACK_MAX (極大吹き飛ばし) ────────────────────────────────
+  KNOCKBACK_MAX: (targetPos, board, to, context) => {
+    if (targetPos.x === context.to.x && targetPos.y === context.to.y) return;
+
+    const victim = BoardManager.getPiece(board, targetPos);
+    if (!victim) return;
+
+    const isMutualDamage = context.ability.constraints?.includes('MUTUAL_DAMAGE');
+
+    // Ally safety guard (unless MUTUAL_DAMAGE)
+    if (!isMutualDamage && victim.owner === context.player) {
+      return;
+    }
+
+    if (victim.isKing) return;
+
+    // Direction: from self toward target (push outward)
+    let kdy = Math.sign(targetPos.y - context.currentActingPos.y);
+    let kdx = Math.sign(targetPos.x - context.currentActingPos.x);
+    if (kdy === 0 && kdx === 0) {
+      // Fallback using movement direction
+      kdy = Math.sign(to.y - context.from.y);
+      kdx = Math.sign(to.x - context.from.x);
+    }
+    if (kdy === 0 && kdx === 0) {
+      kdy = context.player === 'sente' ? -1 : 1;
+    }
+
+    // Slide to the farthest empty cell in that direction
+    let ny = targetPos.y + kdy;
+    let nx = targetPos.x + kdx;
+    let lastValidY = targetPos.y;
+    let lastValidX = targetPos.x;
+    let ejected = false;
+
+    while (ny >= 0 && ny < 9 && nx >= 0 && nx < 9) {
+      const cell = BoardManager.getPiece(board, { x: nx, y: ny });
+      if (cell !== null) break; // Hit another piece — stop before it
+      lastValidY = ny;
+      lastValidX = nx;
+      ny += kdy;
+      nx += kdx;
+    }
+
+    // If the piece slid off the board
+    if (lastValidY === targetPos.y && lastValidX === targetPos.x) {
+      // Couldn't move at all — check if first step is out of bounds
+      const firstY = targetPos.y + kdy;
+      const firstX = targetPos.x + kdx;
+      if (firstX < 0 || firstX >= 9 || firstY < 0 || firstY >= 9) {
+        ejected = true;
+      } else {
+        return; // blocked immediately
+      }
+    }
+
+    if (ejected) {
+      context.graveyard.push({ ...victim, isPromoted: false, isRevealed: true, coolDownTurnsRemaining: 0, stunTurnsRemaining: 0, deathCountdown: 0 });
+      BoardManager.setPiece(board, targetPos, null);
+      context.triggeredRef.value = true;
+      context.logs.push({
+        player: context.player,
+        message: `【${context.effectName}】${victim.word} (${getCellLabel(targetPos.y, targetPos.x)}) は極大吹き飛ばしにより盤外へ消滅しました！`,
+        type: 'capture'
+      });
+    } else {
+      BoardManager.setPiece(board, { x: lastValidX, y: lastValidY }, { ...victim, originalPosition: [lastValidY, lastValidX] as [number, number] });
+      BoardManager.setPiece(board, targetPos, null);
+      context.triggeredRef.value = true;
+      context.logs.push({
+        player: context.player,
+        message: `【${context.effectName}】${victim.word} (${getCellLabel(targetPos.y, targetPos.x)}) を ${getCellLabel(lastValidY, lastValidX)} まで極大吹き飛ばししました！`,
+        type: 'ability'
+      });
+    }
+  },
+
+  // ── 新パーツ: RE_ACTION (再行動フラグ) ─────────────────────────────────────
+  RE_ACTION: (_targetPos, _board, _to, context) => {
+    // Set the re-action flag so the caller can skip turn switching
+    context.reActionRef.value = true;
+    context.triggeredRef.value = true;
+    context.logs.push({
+      player: context.player,
+      message: `【${context.effectName}】覚醒の力が発動！同じ手番でもう一度行動できます！`,
+      type: 'ability'
+    });
+  }
+};
+
+export function filterUniquePositions(positions: Position[]): Position[] {
+  const seen = new Set<string>();
+  const list: Position[] = [];
+  for (const pos of positions) {
+    const key = `${pos.x},${pos.y}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      list.push(pos);
+    }
+  }
+  return list;
+}
+
+function applyConstraints(piece: Piece, constraints: string[]): { abilityUsed: boolean; coolDownTurnsRemaining: number } {
+  let setCooldown = 0;
+  let setOnce = false;
+  for (const c of constraints) {
+    if (c === 'ONCE') {
+      setOnce = true;
+    } else if (c.startsWith('COOLDOWN_')) {
+      const num = parseInt(c.split('_')[1], 10);
+      if (!isNaN(num)) {
+        setCooldown = num;
+      }
+    }
+  }
+  return {
+    abilityUsed: setOnce ? true : !!piece.abilityUsed,
+    coolDownTurnsRemaining: setOnce ? 99 : (setCooldown > 0 ? setCooldown : (piece.coolDownTurnsRemaining || 0))
+  };
+}
+
+export function executeCustomAbility(
+  arg1: any,
+  arg2: any,
+  arg3?: any,
+  arg4?: any,
+  arg5?: any,
+  arg6?: any
+): {
+  board: Board;
+  capturedPieces: Piece[];
+  graveyard: Piece[];
+  logs: Omit<GameLog, 'id' | 'timestamp'>[];
+  triggered: boolean;
+  reAction: boolean;
+} {
+  let board: Board;
+  let to: Position;
+  let ability: CustomAbility;
+  let player: Player;
+  let from: Position;
+  let clickedTarget: Position | null = null;
+
+  if (arg1 && typeof arg1 === 'object' && 'word' in arg1) {
+    // Signature 1: executeCustomAbility(piece, board, from, to)
+    const piece = arg1 as Piece;
+    board = arg2 as Board;
+    from = ensurePosition(arg3);
+    to = ensurePosition(arg4);
+    ability = piece.custom_ability || (piece as any).ability;
+    player = piece.owner;
+  } else {
+    // Signature 2: executeCustomAbility(board, position, ability, player, fromPosition, targetPosition)
+    board = arg1 as Board;
+    to = ensurePosition(arg2);
+    ability = arg3 as CustomAbility;
+    player = arg4 as Player;
+    from = arg5 ? ensurePosition(arg5) : to;
+    if (arg6) {
+      clickedTarget = ensurePosition(arg6);
+    }
+  }
+
+  const piece = BoardManager.getPiece(board, to);
+  if (!piece || !ability) {
+    return { board, capturedPieces: [], graveyard: [], logs: [], triggered: false, reAction: false };
+  }
+
+  // 1. Constraints Check
+  if (piece.abilityUsed || (piece.coolDownTurnsRemaining && piece.coolDownTurnsRemaining > 0)) {
+    return { board, capturedPieces: [], graveyard: [], logs: [], triggered: false, reAction: false };
+  }
+
+  const nextBoard = board.map(row => [...row]);
+  const capturedPieces: Piece[] = [];
+  const graveyard: Piece[] = [];
+  const logs: Omit<GameLog, 'id' | 'timestamp'>[] = [];
+  const triggeredRef = { value: false };
+  const effectName = ability.ability_name || piece.effect_name;
+
+  // 2. Select Targets
+  let allTargets: Position[] = [];
+  const targets = ability.targets || [];
+  const hasRange = targets.includes('RANGE_2') || targets.includes('RANGE_3');
+  const hasPoint = targets.includes('POINT');
+
+  if (hasRange && hasPoint && clickedTarget) {
+    allTargets = [clickedTarget];
+  } else {
+    targets.forEach(targetKey => {
+      if (TargetRegistry[targetKey]) {
+        const cells = TargetRegistry[targetKey](to, nextBoard, from);
+        allTargets = [...allTargets, ...cells];
+      }
+    });
+  }
+
+  const uniqueTargets = filterUniquePositions(allTargets);
+
+  const reActionRef = { value: false };
+
+  const context: ActionContext = {
+    piece,
+    player,
+    from,
+    to,
+    graveyard,
+    capturedPieces,
+    logs,
+    triggeredRef,
+    reActionRef,
+    effectName,
+    currentActingPos: to,
+    ability
+  };
+
+  // 3. Execute Actions
+  ability.actions.forEach(actionKey => {
+    if (ActionRegistry[actionKey]) {
+      uniqueTargets.forEach(targetPos => {
+        ActionRegistry[actionKey](targetPos, nextBoard, to, context);
+      });
+    }
+  });
+
+  // 4. Set Constraints (Cooldown / Once per game)
+  if (triggeredRef.value) {
+    const updatedConstraints = applyConstraints(piece, ability.constraints);
+    const finalActingPos = context.currentActingPos;
+    const currentPiece = BoardManager.getPiece(nextBoard, finalActingPos);
+    if (currentPiece) {
+      BoardManager.setPiece(nextBoard, finalActingPos, {
+        ...currentPiece,
+        abilityUsed: updatedConstraints.abilityUsed,
+        coolDownTurnsRemaining: updatedConstraints.coolDownTurnsRemaining
+      });
+    }
+  }
+
+  return {
+    board: nextBoard,
+    capturedPieces,
+    graveyard,
+    logs,
+    triggered: triggeredRef.value,
+    reAction: reActionRef.value
+  };
 }

@@ -284,6 +284,81 @@ export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHover
           {piece.deep_search_analysis}
         </div>
       )}
+
+      {/* custom_ability パーツ構成バッジ（新プラグイン型能力） */}
+      {(piece as import('../types').Piece).custom_ability && (() => {
+        const ca = (piece as import('../types').Piece).custom_ability!;
+        const allTags: { label: string; color: string; bg: string }[] = [];
+
+        const triggerMap: Record<string, { label: string; color: string; bg: string }> = {
+          ON_MOVE:     { label: '移動時',       color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)' },
+          TURN_START:  { label: 'ターン開始',   color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
+          ON_TAKEN:    { label: '被捕獲時',     color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
+          ON_APPROACH: { label: '敵接近時',     color: '#f97316', bg: 'rgba(249,115,22,0.1)' },
+          ALWAYS:      { label: '常時',         color: '#6b7280', bg: 'rgba(107,114,128,0.1)' },
+          COOLDOWN_1:  { label: '充填1手',      color: '#a78bfa', bg: 'rgba(167,139,250,0.1)' },
+          COOLDOWN_2:  { label: '充填2手',      color: '#a78bfa', bg: 'rgba(167,139,250,0.1)' },
+          COOLDOWN_3:  { label: '充填3手',      color: '#a78bfa', bg: 'rgba(167,139,250,0.1)' },
+          COOLDOWN_4:  { label: '充填4手',      color: '#a78bfa', bg: 'rgba(167,139,250,0.1)' },
+        };
+        const targetMap: Record<string, { label: string; color: string; bg: string }> = {
+          LINE_STRAIGHT: { label: '縦列',       color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
+          SQUARE_3X3:    { label: '3×3',        color: '#ec4899', bg: 'rgba(236,72,153,0.1)' },
+          SQUARE_5X5:    { label: '5×5',        color: '#db2777', bg: 'rgba(219,39,119,0.1)' },
+          CROSS:         { label: '十字',        color: '#10b981', bg: 'rgba(16,185,129,0.1)' },
+          POINT:         { label: '単体',        color: '#64748b', bg: 'rgba(100,116,139,0.1)' },
+        };
+        const actionMap: Record<string, { label: string; color: string; bg: string }> = {
+          DESTROY:        { label: '破壊',      color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
+          FREEZE:         { label: '凍結',      color: '#38bdf8', bg: 'rgba(56,189,248,0.1)' },
+          KNOCKBACK:      { label: '吹き飛ばし',color: '#f97316', bg: 'rgba(249,115,22,0.1)' },
+          KNOCKBACK_MAX:  { label: '極大吹き飛ばし', color: '#ea580c', bg: 'rgba(234,88,12,0.1)' },
+          SWAP_POSITION:  { label: '位置交換',  color: '#a855f7', bg: 'rgba(168,85,247,0.1)' },
+          PULL_1:         { label: '引き寄せ',  color: '#10b981', bg: 'rgba(16,185,129,0.1)' },
+          RE_ACTION:      { label: '再行動',    color: '#d97706', bg: 'rgba(217,119,6,0.1)' },
+          AUTO_FOLLOW_UP: { label: '自動追撃',  color: '#dc2626', bg: 'rgba(220,38,38,0.1)' },
+        };
+
+        const resolve = (id: string, map: Record<string, { label: string; color: string; bg: string }>) =>
+          map[id] ?? { label: id, color: '#9ca3af', bg: 'rgba(156,163,175,0.1)' };
+
+        (ca.triggers || []).forEach(t => allTags.push(resolve(t, triggerMap)));
+        (ca.targets || []).forEach(t => allTags.push(resolve(t, targetMap)));
+        (ca.actions || []).forEach(a => allTags.push(resolve(a, actionMap)));
+
+        if (allTags.length === 0) return null;
+
+        return (
+          <div style={{
+            borderTop: `1px solid ${boxBorder}`,
+            paddingTop: '10px',
+            marginTop: '4px',
+          }}>
+            <div style={{ fontSize: '9px', color: subText, fontFamily: 'var(--font-cyber)', marginBottom: '6px', letterSpacing: '0.05em' }}>
+              【パーツ構成】
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+              {allTags.map((tag, i) => (
+                <span key={i} style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '2px 6px',
+                  borderRadius: '12px',
+                  fontSize: '9px',
+                  fontWeight: '600',
+                  color: tag.color,
+                  backgroundColor: tag.bg,
+                  border: `1px solid ${tag.color}50`,
+                  fontFamily: 'var(--font-cyber)',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {tag.label}
+                </span>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

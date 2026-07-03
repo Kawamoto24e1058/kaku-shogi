@@ -683,9 +683,9 @@ AIは、生成する単語のイメージ（例：「超電磁砲」なら青白
     "activation_trigger": "能力の発動タイミング（'ON_MOVE' / 'TURN_START' / 'ON_TAKEN' / 'ON_APPROACH' / 'ALWAYS'）",
     "range": 3,
     "target_selection": "ターゲット選択方式（'CLICK_ZONE'=プレイヤーが着弾点を選択 / 'AUTOMATIC'=自動で近くの対象を狙う / 'SELF'=自分自身に発発動）",
-    "area_shape": "着弾形状（'POINT'=単点 / 'SQUARE_3X3'=3x3全範囲 / 'SQUARE_5X5'=5x5全範囲 / 'CROSS'=十字無限 / 'LINE_STRAIGHT'=8方向直線無限）",
+    "area_shape": "着弾形状（'POINT'=単点 / 'SQUARE_3X3'=3x3全範囲 / 'SQUARE_5X5'=5x5全範囲 / 'CROSS'=十字無限 / 'LINE_STRAIGHT'=8方向直線無限 / 'RANGE_2'=周囲2マス以内の指定点 / 'RANGE_3'=周囲3マス以内の指定点。RANGEはtarget_selection:'CLICK_ZONE'と組み合わせて遠隔狙撃に使う）",
     "effect_type": "効果種別（'DESTROY'=消滅（墓地送り）/ 'CAPTURE'=通常捕獲（持ち駒化）/ 'IMMOBILIZE'=行動封印2手番 / 'SWAP'=位置入替 / 'PULL'=引き寄せ / 'PUSH'=押し出し / 'STEALTH'=自身を隠蔽 / 'SPAWN'=トークン召喚 / 'TRANSFORM'=擬態（能力コピー）/ 'RESURRECT'=墓地から蘇生）",
-    "affects_who": "対象（'ENEMY_ONLY' / 'ALL_PIECES' / 'ALLY_ONLY' / 'EMPTY_ONLY'）",
+    "affects_who": "対象（'ENEMY_ONLY'=敵のみ / 'ALL_PIECES'=敵も味方も無差別に巻き込む / 'ALLY_ONLY'=味方のみ / 'EMPTY_ONLY'=空マスのみ）",
     "cooldown_turns": 3
   },
   "visual_effect": {

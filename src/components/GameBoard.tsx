@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import type { Board, Piece, Player, GamePhase, VisualEffect } from '../types';
-import { BOARD_SIZE, getPieceLogicCode, getPieceTrigger, getEffectCells } from '../gameLogic';
+import { BOARD_SIZE, getPieceLogicCode, getPieceTrigger, getEffectCells, getBoardPiece } from '../gameLogic';
 import type { AbilityAnimationState } from '../App';
 
 interface GameBoardProps {
@@ -124,6 +124,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     if (effectType === 'IMMOBILIZE') return '#38bdf8'; // Frosty blue
     if (effectType === 'SWAP') return '#a855f7'; // Swirling purple
     if (effectType === 'PULL' || effectType === 'PUSH') return '#10b981'; // Green wind
+    if (effectType === 'RE_ACTION') return '#ffd700'; // Gold/Yellow aura
     
     switch (theme) {
       case 'WARRIOR_IRON': return '#06b6d4'; // Cyan
@@ -306,6 +307,26 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         const speed = Math.random() * 3.0 + 1.0;
         particlesRef.current.push({ x: pos.x, y: pos.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, color: Math.random() < 0.6 ? '#34d399' : '#a7f3d0', size: Math.random() * 4 + 1, life: 1.0, decay: Math.random() * 0.04 + 0.025, shape: 'circle' });
       }
+
+    } else if (effectType === 'RE_ACTION') {
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 1.5 + 0.5;
+        const vx = Math.cos(angle) * speed * 0.5;
+        const vy = -Math.abs(Math.sin(angle) * speed) - 0.5;
+        particlesRef.current.push({
+          x: pos.x + (Math.random() - 0.5) * 15,
+          y: pos.y + (Math.random() - 0.5) * 15,
+          vx,
+          vy,
+          color: Math.random() < 0.6 ? '#ffd700' : '#fbbf24',
+          size: Math.random() * 4 + 2,
+          life: 1.0,
+          decay: Math.random() * 0.03 + 0.02,
+          shape: 'circle'
+        });
+      }
+      particlesRef.current.push({ x: pos.x, y: pos.y, vx: 0, vy: 0, color: '#ffd700', size: 10, life: 0.9, decay: 0.03, shape: 'ring' });
 
     } else {
       for (let i = 0; i < 20; i++) {
@@ -492,39 +513,56 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           const start = getCellCenterPixel(sx, sy);
           const end = getCellCenterPixel(tx, ty);
 
+          const isBeam = visualEffect?.trajectory_type === 'BEAM';
           const isStrike = visualEffect?.trajectory_type === 'STRIKE';
-          const startX = isStrike ? end.x : start.x;
-          const startY = isStrike ? -50 : start.y;
 
-          projectilesRef.current.push({
-            x: startX,
-            y: startY,
-            startX,
-            startY,
-            endX: end.x,
-            endY: end.y,
-            progress: 0,
-            speed: projSpeed,
-            color: projColor,
-            theme,
-            effectType,
-            trajectoryType: visualEffect?.trajectory_type,
-            onArrive: () => {
-              spawnExplosion(end, theme, effectType, visualEffect);
-              
-              if (theme === 'WARRIOR_IRON' || visualEffect?.trajectory_type === 'BEAM' || isStrike) {
-                lasersRef.current.push({
-                  startX: isStrike ? end.x : start.x,
-                  startY: isStrike ? 0 : start.y,
-                  endX: end.x,
-                  endY: end.y,
-                  life: 1.0,
-                  color: projColor
-                });
-                spawnLaserParticles(isStrike ? { x: end.x, y: 0 } : start, end);
+          if (isBeam) {
+            // Instant laser beam & explosion
+            lasersRef.current.push({
+              startX: start.x,
+              startY: start.y,
+              endX: end.x,
+              endY: end.y,
+              life: 1.0,
+              color: projColor
+            });
+            spawnLaserParticles(start, end);
+            spawnExplosion(end, theme, effectType, visualEffect);
+          } else {
+            // Traveling projectile
+            const startX = isStrike ? end.x : start.x;
+            const startY = isStrike ? -50 : start.y;
+
+            projectilesRef.current.push({
+              x: startX,
+              y: startY,
+              startX,
+              startY,
+              endX: end.x,
+              endY: end.y,
+              progress: 0,
+              speed: projSpeed,
+              color: projColor,
+              theme,
+              effectType,
+              trajectoryType: visualEffect?.trajectory_type,
+              onArrive: () => {
+                spawnExplosion(end, theme, effectType, visualEffect);
+                
+                if (theme === 'WARRIOR_IRON' || isStrike) {
+                  lasersRef.current.push({
+                    startX: isStrike ? end.x : start.x,
+                    startY: isStrike ? 0 : start.y,
+                    endX: end.x,
+                    endY: end.y,
+                    life: 1.0,
+                    color: projColor
+                  });
+                  spawnLaserParticles(isStrike ? { x: end.x, y: 0 } : start, end);
+                }
               }
-            }
-          });
+            });
+          }
         });
       } else if (targets.length > 0) {
         targets.forEach(([ty, tx]) => {
@@ -562,7 +600,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   const isProtectedByNullifier = (y: number, x: number, owner: Player): boolean => {
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
-        const p = board[r][c];
+        const p = getBoardPiece(board, { x: c, y: r });
         if (
           p &&
           p.owner === owner &&
@@ -611,7 +649,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       for (let y = 0; y < BOARD_SIZE; y++) {
         for (let x = 0; x < BOARD_SIZE; x++) {
           const prevPiece = prevBoardRef.current[y]?.[x];
-          const currPiece = board[y]?.[x];
+          const currPiece = getBoardPiece(board, { x, y });
 
           if (prevPiece) {
             if (!currPiece) {
@@ -694,7 +732,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     let sx: number | undefined;
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
-        const p = board[r][c];
+        const p = getBoardPiece(board, { x: c, y: r });
         if (p && p.ability_spec && p.ability_spec.target_selection === 'CLICK_ZONE') {
           const isOwner = p.owner === (onlineMode ? (myRole || 'sente') : (vsAiMode ? 'sente' : localTurn));
           if (isOwner) { 
@@ -714,7 +752,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 
   const isValidSetupCell = (y: number, x: number) => {
     if (phase !== 'placement') return false;
-    if (board[y][x] !== null) return false;
+    if (getBoardPiece(board, { x, y }) !== null) return false;
     // Sente places on bottom 3 ranks (y=6, 7, 8)
     if (localTurn === 'sente') return y >= 6;
     // Gote places on top 3 ranks (y=0, 1, 2)
@@ -723,7 +761,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 
   // Render cell
   const renderCell = (y: number, x: number) => {
-    const piece = board[y][x];
+    const piece = getBoardPiece(board, { x, y });
     const isSel = isSelected(y, x);
     const isMove = isMoveHighlight(y, x);
     const isActiveTarget = isActiveAbilityHighlight(y, x);
@@ -1158,23 +1196,31 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                 )}
 
                 {/* Piece Text - size locked with break-all to prevent cell warping */}
-                <div style={{
-                  fontSize: fontSizeVal,
-                  letterSpacing: letterSpacingVal,
-                  fontWeight: (activePiece.isKing || activePiece.isHisha || activePiece.isKaku) ? '900' : 'bold',
-                  color: textColor,
-                  textAlign: 'center',
-                  writingMode: 'vertical-rl',
-                  textOrientation: 'upright',
-                  lineHeight: 1.0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: wordPadding,
-                  marginTop: activePiece.isKing ? '6px' : '0'
-                }}>
-                  {wordStr}
-                </div>
+                {(() => {
+                  const isPieceRotated = isMyPiece
+                    ? (shouldRotate)
+                    : (!shouldRotate);
+                  return (
+                    <div style={{
+                      fontSize: fontSizeVal,
+                      letterSpacing: letterSpacingVal,
+                      fontWeight: (activePiece.isKing || activePiece.isHisha || activePiece.isKaku) ? '900' : 'bold',
+                      color: textColor,
+                      textAlign: 'center',
+                      writingMode: 'vertical-rl',
+                      textOrientation: 'upright',
+                      lineHeight: 1.0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: wordPadding,
+                      marginTop: activePiece.isKing ? '6px' : '0',
+                      transform: isPieceRotated ? 'rotate(180deg)' : 'none',
+                    }}>
+                      {wordStr}
+                    </div>
+                  );
+                })()}
                 {/* Abbreviated logic label */}
                 {!activePiece.isKing && !activePiece.isPawn && !activePiece.isHisha && !activePiece.isKaku && (
                   <div style={{ fontSize: '5px', color: 'rgba(26, 26, 26, 0.5)', transform: 'scale(0.8)', maxWidth: '90%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--font-cyber)', marginTop: '1px' }}>
@@ -1287,18 +1333,23 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                         </span>
                       ) : (
                         <span style={{
-                          fontSize: '8px',
-                          fontWeight: 'bold',
-                          color: '#6b21a8', // purple-800
-                          background: 'rgba(243, 232, 255, 0.95)', // purple-100
-                          border: '1px solid #8b5cf6',
-                          borderRadius: '3px',
-                          padding: '1px 2px',
-                          transform: 'scale(0.8)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '1px',
+                          fontSize: '7.5px',
+                          fontWeight: '700',
+                          color: '#5b21b6',
+                          background: 'rgba(237,233,254,0.96)',
+                          border: '1px solid rgba(139,92,246,0.4)',
+                          borderRadius: '4px',
+                          padding: '1px 3px',
+                          transform: 'scale(0.82)',
                           transformOrigin: 'bottom right',
-                          whiteSpace: 'nowrap'
+                          whiteSpace: 'nowrap',
+                          backdropFilter: 'blur(4px)',
+                          boxShadow: '0 1px 4px rgba(109,40,217,0.18)',
                         }}>
-                          充填:{activePiece.coolDownTurnsRemaining}
+                          ⏳{activePiece.coolDownTurnsRemaining}
                         </span>
                       )
                     )}
@@ -1372,8 +1423,9 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           }
           if (piece) {
             const viewer: Player = onlineMode ? (myRole || 'sente') : (vsAiMode ? 'sente' : localTurn);
-            const isMyPiece = piece.owner === viewer;
-            if (isMyPiece) {
+            // ステルス未公開の敵駒は除く（それ以外は敵駒も含めて全駒渡す）
+            const isHiddenStealth = piece.owner !== viewer && !piece.isRevealed;
+            if (!isHiddenStealth) {
               onHoverPiece?.(piece);
             } else {
               onHoverPiece?.(null);

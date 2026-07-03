@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { GameLog, Player, Piece, GamePhase } from '../types';
 import { PieceDetailCard } from './PieceDetailCard';
+import { AbilityTooltip } from './AbilityTooltip';
 
 interface ControlPanelProps {
   turn: Player;
@@ -369,16 +370,28 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         </h3>
         
         {/* Selected Piece Details */}
-        <div style={{ height: '380px', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-          {hoveredPiece || selectedPiece ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <PieceDetailCard piece={hoveredPiece || selectedPiece || {}} isHoverPreview={!!hoveredPiece} />
-            </div>
-          ) : (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px dashed rgba(139, 92, 26, 0.15)', borderRadius: '12px', background: 'rgba(139, 92, 26, 0.01)' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-cyber)' }}>駒を選択またはホバーして能力表示</span>
-            </div>
-          )}
+        <div style={{ height: '380px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {(() => {
+            const displayPiece = hoveredPiece || selectedPiece || null;
+            if (!displayPiece) {
+              return (
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px dashed rgba(139, 92, 26, 0.15)', borderRadius: '12px', background: 'rgba(139, 92, 26, 0.01)' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-cyber)' }}>駒を選択またはホバーして能力表示</span>
+                </div>
+              );
+            }
+            const hasCustomAbility = !!(displayPiece as Piece).custom_ability;
+            return (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {/* カスタム能力バッジカードを先頭に表示 */}
+                {hasCustomAbility && (
+                  <AbilityTooltip piece={displayPiece as Piece} visible />
+                )}
+                {/* 従来の詳細カード */}
+                <PieceDetailCard piece={displayPiece} isHoverPreview={!!hoveredPiece} />
+              </div>
+            );
+          })()}
         </div>
       </div>
 
