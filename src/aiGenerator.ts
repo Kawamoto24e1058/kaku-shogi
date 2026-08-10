@@ -768,6 +768,7 @@ AIは、生成する単語のイメージ（例：「超電磁砲」なら青白
   },
   "ability_spec": {
     // 🚨 必須要件: プレイヤー単語から調合したメインの能力（actions/custom_moves/isAutonomous等）は、必ずこの通常時の「ability_spec」に100%セットすること！（成る前の基礎能力としてすぐ発動・使用可能にする）
+    "activation_type": "発動タイプ ('ACTIVE'=任意発動ボタンを押して対象選択 / 'AUTO_TRIGGER'=移動完了時などにシステム自動発動 / 'PASSIVE'=被捕獲時・常時・被攻撃時のパッシブ)",
     "activation_trigger": "能力の発動タイミング（'ON_MOVE' / 'TURN_START' / 'ON_TAKEN' / 'ON_APPROACH' / 'ALWAYS'）",
     "range": 3,
     "target_selection": "ターゲット選択方式（'CLICK_ZONE'=プレイヤーが着弾点を選択 / 'AUTOMATIC'=自動で近くの対象を狙う / 'SELF'=自分自身に発動）",

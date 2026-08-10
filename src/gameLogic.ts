@@ -1,4 +1,4 @@
-import type { Board, Piece, Player, GameLog, AbilityEvent, AbilitySpec, CustomAbility, Position, TileEffectType, TileState } from './types';
+import type { Board, Piece, Player, GameLog, AbilityEvent, AbilitySpec, CustomAbility, Position, TileEffectType, TileState, ActivationType } from './types';
 import { decrementCacheUses } from './aiGenerator';
 
 export const BOARD_SIZE = 9;
@@ -57,6 +57,27 @@ export function getPieceAbilitySpec(piece: Piece): AbilitySpec | undefined {
     return piece.promoted_effect.ability_spec;
   }
   return piece.ability_spec;
+}
+
+export function getPieceActivationType(piece: Piece): ActivationType {
+  const spec = getPieceAbilitySpec(piece);
+  if (spec && spec.activation_type) return spec.activation_type;
+  if (piece.custom_ability && piece.custom_ability.activation_type) return piece.custom_ability.activation_type;
+  if (piece.activation_type) return piece.activation_type;
+
+  const trigger = piece.trigger || spec?.activation_trigger || 'ON_MOVE';
+  const desc = piece.description || '';
+  const hasClickTarget = requiresTargeting(piece);
+
+  if (trigger === 'ON_TAKEN' || trigger === 'ON_APPROACH' || trigger === 'ALWAYS' || trigger === 'ON_DEATH') {
+    return 'PASSIVE';
+  }
+
+  if (hasClickTarget || desc.includes('任意') || desc.includes('発動する') || desc.includes('狙撃') || desc.includes('放つ') || desc.includes('選択')) {
+    return 'ACTIVE';
+  }
+
+  return 'AUTO_TRIGGER';
 }
 
 /**

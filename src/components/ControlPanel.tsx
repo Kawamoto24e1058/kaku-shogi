@@ -30,6 +30,8 @@ interface ControlPanelProps {
   onHoverPiece?: (piece: Piece | null) => void;
   isResurrectActive?: boolean;
   isViewerOpponent?: boolean;
+  canTriggerActiveAbility?: boolean;
+  onTriggerActiveAbility?: () => void;
 }
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -54,6 +56,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onHoverPiece,
   isResurrectActive,
   isViewerOpponent = false,
+  canTriggerActiveAbility = false,
+  onTriggerActiveAbility,
 }) => {
   const [hoveredIdx, setHoveredIdx] = useState<string | null>(null);
 
@@ -399,6 +403,32 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                   isHoverPreview={!!hoveredPiece} 
                   isViewerOpponent={isViewerOpponent} 
                 />
+                {canTriggerActiveAbility && !hoveredPiece && (
+                  <button
+                    type="button"
+                    onClick={onTriggerActiveAbility}
+                    style={{
+                      width: '100%',
+                      marginTop: '8px',
+                      padding: '10px 16px',
+                      backgroundColor: '#D97706',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      borderRadius: '10px',
+                      fontWeight: 'bold',
+                      fontSize: '13px',
+                      letterSpacing: '0.1em',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 12px rgba(217, 119, 6, 0.4)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <span>⚡</span> 能力発動 (対象選択)
+                  </button>
+                )}
               </div>
             );
           })()}

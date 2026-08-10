@@ -33,6 +33,7 @@ export interface CustomAbility {
   effect_offsets?: EffectOffset[];
   isAutonomous?: boolean; // 暴走・自動行動フラグ（勝手に動く / 他駒移動後に発動など）
   trigger_override?: 'MANUAL' | 'ON_TURN_END' | 'PASSIVE';
+  activation_type?: ActivationType;
 }
 
 export interface VisualEffect {
@@ -84,11 +85,14 @@ export interface TileState {
 // EffectType: 全アクション種別の共有型エイリアス
 export type EffectType = 'DESTROY' | 'CAPTURE' | 'IMMOBILIZE' | 'SWAP' | 'PULL' | 'PUSH' | 'STEALTH' | 'SPAWN' | 'TRANSFORM' | 'RESURRECT' | 'FORCE_CAPTURE' | 'TRANSFORM_PAWN' | 'STEAL_HAND' | 'TIME_REWIND' | 'BOOMERANG' | 'GRAVITY_PULL' | 'SHARE_FATE' | 'WALL_CREATE' | 'LEAVE_TRAIL_FIRE' | 'EVOLUTION' | 'MIND_CONTROL' | 'CLEAR_DEBUFF' | 'MAGNET_PULL' | 'KNOCKBACK_BUMP' | 'POS_SWAP_ENEMY' | 'STUN_LOCK' | 'PENETRATE_STRIKE' | 'VAULT_EXECUTE' | 'CLEAVE_LINE' | 'GUARD_STANCE' | 'SILENCE_SEAL' | 'OVERDRIVE_BOOST' | 'PROBABILITY_STRIKE' | 'CHAOS_GAMBLE' | 'LUCKY_DODGE' | 'DELAYED_BURST' | 'CHARGE_TURN' | 'SACRIFICE_COST' | 'SELF_STUN' | 'EVOLUTION_CHECK' | 'SET_TILE_FIRE' | 'SET_TILE_POISON' | 'SET_TILE_ICE' | 'SET_TILE_BOMB' | 'SET_TILE_TRAP';
 
+export type ActivationType = 'ACTIVE' | 'AUTO_TRIGGER' | 'PASSIVE';
+
 export type TargetSelection = 'CLICK_ZONE' | 'AUTOMATIC' | 'SELF';
 export type AreaShape = 'POINT' | 'SQUARE_3X3' | 'SQUARE_5X5' | 'CROSS' | 'LINE_STRAIGHT' | 'RANGE_2' | 'RANGE_3' | 'LINE_DIAGONAL' | 'KNIGHT_JUMP_ALL' | 'FRONT_3_LINE' | 'ALL_ENEMY_PIECES' | 'LEADER_SURROUND' | 'DYNAMIC_OFFSETS';
 export type AffectsWho = 'ENEMY_ONLY' | 'ALL_PIECES' | 'ALLY_ONLY' | 'EMPTY_ONLY';
 
 export interface AbilitySpec {
+  activation_type?: ActivationType;
   activation_trigger: 'ON_MOVE' | 'TURN_START' | 'ON_TAKEN' | 'ON_APPROACH' | 'ALWAYS' | 'ON_DEATH';
   range: number;             // Range radius (1, 2, 3, etc.) or straight infinity
   target_selection: TargetSelection;
@@ -129,6 +133,7 @@ export interface PieceData {
   range_distance?: number;
   effect_offsets?: EffectOffset[];
   isAutonomous?: boolean; // 暴走・自動行動フラグ
+  activation_type?: ActivationType;
 }
 
 
@@ -190,7 +195,7 @@ export interface GameLog {
   type: 'move' | 'action' | 'system' | 'capture' | 'ability';
 }
 
-export type GamePhase = 'start' | 'setup' | 'placement' | 'playing' | 'SELECTING_ABILITY_TARGET' | 'finished';
+export type GamePhase = 'start' | 'setup' | 'placement' | 'playing' | 'SELECTING_ABILITY_TARGET' | 'RESOLVING_ACTION' | 'TURN_TRANSITION' | 'finished';
 
 export interface HistoryState {
   turnNumber: number;

@@ -22,6 +22,7 @@ import {
   getEffectCells,
   getSelectableRangeCells,
   requiresTargeting,
+  getPieceActivationType,
   createEmptyTileBoard,
   applyTileEffects
 } from './gameLogic';
@@ -2198,6 +2199,9 @@ export const App: React.FC = () => {
       return; // Must select a graveyard piece first
     }
 
+    // Lock phase during action resolution to prevent input overlap
+    setState(prev => ({ ...prev, phase: 'RESOLVING_ACTION', activeAbilityMode: false }));
+
     const { source, triggerType, fromPosition, board, capturedPieces, logs, customStateUpdates, remainingEvents } = suspendedAbility;
     let [sy, sx] = source;
     let sourcePiece = board[sy][sx];
@@ -3068,6 +3072,7 @@ export const App: React.FC = () => {
   // Click Router
   const handleCellClick = (y: number, x: number) => {
     if (isCutinPlaying) return;
+    if (state.phase === 'RESOLVING_ACTION' || state.phase === 'TURN_TRANSITION') return;
     if (onlineMode && state.turn !== myRole) return;
     if (state.activeAbilityMode) {
       if (suspendedAbility) {
@@ -3487,6 +3492,45 @@ export const App: React.FC = () => {
   };
 
   const selectedPieceObject = state.selectedCell ? state.board[state.selectedCell[0]][state.selectedCell[1]] : null;
+
+  const canTriggerActiveAbility = (() => {
+    if (!selectedPieceObject) return false;
+    if (state.phase !== 'playing') return false;
+    if (selectedPieceObject.owner !== state.turn) return false;
+    if (onlineMode && state.turn !== myRole) return false;
+    if (selectedPieceObject.coolDownTurnsRemaining && selectedPieceObject.coolDownTurnsRemaining > 0) return false;
+    const actType = getPieceActivationType(selectedPieceObject);
+    return actType === 'ACTIVE';
+  })();
+
+  const handleTriggerActiveAbility = () => {
+    if (!state.selectedCell) return;
+    const [sy, sx] = state.selectedCell;
+    const piece = state.board[sy][sx];
+    if (!piece) return;
+
+    const targetsInfo = getAbilityTargets(state.board, [sy, sx], state.turn, state.sharedPieces);
+    if (targetsInfo && targetsInfo.targets.length > 0) {
+      setSuspendedAbility({
+        source: [sy, sx],
+        targets: targetsInfo.targets,
+        type: targetsInfo.type,
+        triggerType: 'ON_MOVE',
+        board: state.board,
+        capturedPieces: state.capturedPieces,
+        logs: state.logs,
+        customStateUpdates: { destroyedPieces: state.destroyedPieces },
+        remainingEvents: []
+      });
+      setState(prev => ({
+        ...prev,
+        phase: 'SELECTING_ABILITY_TARGET',
+        activeAbilityMode: true,
+        activeAbilitySource: [sy, sx],
+        activeAbilityTargets: targetsInfo.targets
+      }));
+    }
+  };
   const shouldRotate = onlineMode
     ? (myRole === 'gote')
     : (vsAiMode ? false : state.turn === 'gote');
@@ -3512,6 +3556,46 @@ export const App: React.FC = () => {
             </div>
             <div className="turn-change-bar" style={{ backgroundColor: 'var(--color-gold)' }} />
           </div>
+        </div>
+      )}
+
+      {/* 能力対象選択通知 ＆ キャンセルバー */}
+      {(state.phase === 'SELECTING_ABILITY_TARGET' || state.activeAbilityMode) && (
+        <div style={{
+          margin: '0 10px 10px 10px',
+          padding: '10px 20px',
+          backgroundColor: 'rgba(139, 92, 26, 0.95)',
+          color: '#FFFFFF',
+          borderRadius: '12px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          boxShadow: '0 4px 15px rgba(139, 92, 26, 0.4)',
+          zIndex: 100
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '18px' }}>🎯</span>
+            <span style={{ fontWeight: 'bold', fontSize: '14px', letterSpacing: '0.05em' }}>
+              【能力対象選択中】 ハイライトされた対象マスを選択してください。
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleCancelAbilitySelection}
+            style={{
+              padding: '6px 16px',
+              backgroundColor: '#DC2626',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: '8px',
+              fontWeight: 'bold',
+              fontSize: '12px',
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+            }}
+          >
+            選択をキャンセル
+          </button>
         </div>
       )}
 
@@ -3730,6 +3814,8 @@ export const App: React.FC = () => {
                   onHoverPiece={setHoveredPiece}
                   isResurrectActive={state.activeAbilityMode && suspendedAbility?.type === 'resurrect'}
                   isViewerOpponent={shouldRotate}
+                  canTriggerActiveAbility={canTriggerActiveAbility}
+                  onTriggerActiveAbility={handleTriggerActiveAbility}
                 />
               </div>
 
