@@ -82,6 +82,11 @@ export const App: React.FC = () => {
     gote: savedGoteName,
   });
 
+  const sanitizeForFirestore = <T,>(obj: T): T => {
+    if (obj === undefined || obj === null) return obj;
+    return JSON.parse(JSON.stringify(obj));
+  };
+
   const getPlayerName = (owner: 'sente' | 'gote') => {
     return owner === 'sente'
       ? (playerNames.sente || 'プレイヤー1')
@@ -141,8 +146,10 @@ export const App: React.FC = () => {
   const [isWaitingForOpponent, setIsWaitingForOpponent] = useState<boolean>(false);
   const [isSearchingMatch, setIsSearchingMatch] = useState<boolean>(false);
   const [isRandomMatch, setIsRandomMatch] = useState<boolean>(false);
+  const [isConnectingHandshake, setIsConnectingHandshake] = useState<boolean>(false);
   const [matchmakingError, setMatchmakingError] = useState<string>('');
   const [matchDoc, setMatchDoc] = useState<any>(null);
+  const matchmakingTimeoutRef = useRef<any>(null);
 
   const [suspendedAbility, setSuspendedAbility] = useState<{
     source: [number, number];
@@ -1215,10 +1222,22 @@ export const App: React.FC = () => {
     }
   };
 
-  // 2.5. ランダムマッチング処理
+  // 2.5. ランダムマッチング処理 (通信ハンドシェイク ＆ 10秒タイムアウト付き)
   const handleRandomMatchmaking = async () => {
     setMatchmakingError('');
     setIsSearchingMatch(true);
+    setIsConnectingHandshake(false);
+
+    if (matchmakingTimeoutRef.current) {
+      clearTimeout(matchmakingTimeoutRef.current);
+    }
+
+    // 10秒タイムアウト監視を設定
+    matchmakingTimeoutRef.current = setTimeout(() => {
+      handleCancelMatchmaking();
+      setMatchmakingError('通信に失敗しました。もう一度お試しください。');
+    }, 10000);
+
     try {
       const queueRef = collection(db, 'matchmaking_queue');
       const q = query(queueRef, where('status', '==', 'waiting'), orderBy('createdAt', 'asc'), limit(1));
@@ -1243,11 +1262,13 @@ export const App: React.FC = () => {
         const docRef = doc(db, 'matches', code);
         const goteName = playerNames.gote || 'プレイヤー2';
         
+        // 接続確立中 (connecting) & ゲスト側ハンドシェイク済みを記録
         await updateDoc(docRef, {
-          status: 'setup',
+          status: 'connecting',
           goteDeviceId: clientDeviceId,
           goteName: goteName,
-          logs: arrayUnion({ player: 'system', message: `${goteName} が入室しました。能力駒の構築を開始します。`, type: 'system' }),
+          goteReadyHandshake: true,
+          logs: arrayUnion({ player: 'system', message: `${goteName} が入室しました。通信同期中…`, type: 'system' }),
           lastUpdated: Date.now()
         });
         
@@ -1257,6 +1278,7 @@ export const App: React.FC = () => {
         setVsAiMode(false);
         setOnlineMode(true);
         setIsSearchingMatch(false);
+        setIsConnectingHandshake(true);
       } else {
         let code = '';
         let isUnique = false;
@@ -1286,6 +1308,8 @@ export const App: React.FC = () => {
           goteDeviceId: null,
           senteName: senteName,
           goteName: '',
+          senteReadyHandshake: true,
+          goteReadyHandshake: false,
           senteWords: [],
           goteWords: [],
           sentePiecesReady: false,
@@ -1323,16 +1347,23 @@ export const App: React.FC = () => {
       }
     } catch (err: any) {
       console.error(err);
+      if (matchmakingTimeoutRef.current) clearTimeout(matchmakingTimeoutRef.current);
       setMatchmakingError(err.message || 'マッチング中にエラーが発生しました。');
       setIsSearchingMatch(false);
+      setIsConnectingHandshake(false);
     }
   };
 
   const handleCancelMatchmaking = async () => {
+    if (matchmakingTimeoutRef.current) {
+      clearTimeout(matchmakingTimeoutRef.current);
+      matchmakingTimeoutRef.current = null;
+    }
     setMatchmakingError('');
     setIsSearchingMatch(false);
     setIsWaitingForOpponent(false);
     setIsRandomMatch(false);
+    setIsConnectingHandshake(false);
     
     const clientDeviceId = getOrCreateDeviceId();
     
@@ -1342,7 +1373,7 @@ export const App: React.FC = () => {
       if (roomCode && myRole === 'sente') {
         const matchRef = doc(db, 'matches', roomCode);
         const snap = await getDoc(matchRef);
-        if (snap.exists() && snap.data().status === 'waiting') {
+        if (snap.exists() && (snap.data().status === 'waiting' || snap.data().status === 'connecting')) {
           await deleteDoc(matchRef);
         }
       }
@@ -1355,7 +1386,7 @@ export const App: React.FC = () => {
     setOnlineMode(false);
   };
 
-  // 3. リアルタイムFirestoreリスナーおよび再同期ロジック
+  // 3. リアルタイムFirestoreリスナーおよび再同期ロジック (Mutual Confirmation)
   const updateLocalStateFromMatchData = useCallback((data: any) => {
     setMatchDoc(data);
 
@@ -1367,7 +1398,26 @@ export const App: React.FC = () => {
       return newNames;
     });
 
-    if (data.status === 'setup') {
+    // 相互ハンドシェイク通信確認
+    if (data.status === 'connecting') {
+      setIsConnectingHandshake(true);
+      // 先手側も後手側入室を確認した時点で senteReadyHandshake を記録
+      if (myRole === 'sente' && !data.senteReadyHandshake && roomCode) {
+        updateDoc(doc(db, 'matches', roomCode), {
+          senteReadyHandshake: true,
+          status: 'setup'
+        });
+      }
+    }
+
+    if (data.status === 'setup' || (data.senteReadyHandshake && data.goteReadyHandshake && data.status === 'connecting')) {
+      if (matchmakingTimeoutRef.current) {
+        clearTimeout(matchmakingTimeoutRef.current);
+        matchmakingTimeoutRef.current = null;
+      }
+      setIsConnectingHandshake(false);
+      setIsWaitingForOpponent(false);
+
       setState(prev => {
         if (prev.phase !== 'setup') {
           return {
@@ -1378,8 +1428,14 @@ export const App: React.FC = () => {
         }
         return prev;
       });
-      setIsWaitingForOpponent(false);
     } else if (data.status === 'playing') {
+      if (matchmakingTimeoutRef.current) {
+        clearTimeout(matchmakingTimeoutRef.current);
+        matchmakingTimeoutRef.current = null;
+      }
+      setIsConnectingHandshake(false);
+      setIsWaitingForOpponent(false);
+
       setState(prev => {
         const newTurn = data.turn as Player;
         const newBoard = JSON.parse(data.board) as Board;
@@ -1416,7 +1472,7 @@ export const App: React.FC = () => {
         winner: data.winner,
       }));
     }
-  }, [myRole]);
+  }, [myRole, roomCode]);
 
   const forceResyncGame = useCallback(async () => {
     if (!onlineMode || !roomCode) return;
@@ -1537,7 +1593,7 @@ export const App: React.FC = () => {
       ];
 
       const docRef = doc(db, 'matches', roomCode);
-      updateDoc(docRef, {
+      updateDoc(docRef, sanitizeForFirestore({
         status: 'playing',
         board: JSON.stringify(nextBoard),
         customPieces: { sente: initializedSente, gote: initializedGote },
@@ -1549,7 +1605,7 @@ export const App: React.FC = () => {
         logs: nextLogs,
         logsJson: JSON.stringify(nextLogs),
         lastUpdated: Date.now()
-      }).catch(err => console.error("Error setting up online board:", err));
+      })).catch(err => console.error("Error setting up online board:", err));
     }
   }, [onlineMode, roomCode, myRole, matchDoc]);
 
@@ -2762,15 +2818,16 @@ export const App: React.FC = () => {
   const handlePiecesCreated = async (pieces: Piece[]) => {
     if (onlineMode) {
       const docRef = doc(db, 'matches', roomCode);
+      const sanitizedPieces = sanitizeForFirestore(pieces);
       if (myRole === 'sente') {
         await updateDoc(docRef, {
-          sentePieces: pieces,
+          sentePieces: sanitizedPieces,
           sentePiecesReady: true,
           logs: arrayUnion({ player: 'system', message: `▲ ${playerNames.sente || 'プレイヤー1'} が能力駒の構築を完了しました！`, type: 'system' })
         });
       } else {
         await updateDoc(docRef, {
-          gotePieces: pieces,
+          gotePieces: sanitizedPieces,
           gotePiecesReady: true,
           logs: arrayUnion({ player: 'system', message: `▽ ${playerNames.gote || 'プレイヤー2'} が能力駒の構築を完了しました！`, type: 'system' })
         });
@@ -3483,6 +3540,7 @@ export const App: React.FC = () => {
             isWaitingForOpponent={isWaitingForOpponent}
             isSearchingMatch={isSearchingMatch}
             isRandomMatch={isRandomMatch}
+            isConnectingHandshake={isConnectingHandshake}
             onRandomMatch={handleRandomMatchmaking}
             onCancelMatchmaking={handleCancelMatchmaking}
             matchmakingError={matchmakingError}
