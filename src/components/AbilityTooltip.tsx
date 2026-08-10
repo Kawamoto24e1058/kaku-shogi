@@ -1,9 +1,11 @@
 import React from 'react';
 import type { Piece } from '../types';
+import { MoveDiagram } from './MoveDiagram';
 
 interface AbilityTooltipProps {
   piece: Piece | null;
   visible: boolean;
+  isViewerOpponent?: boolean;
 }
 
 // ─── バッジ日本語マッピング ────────────────────────────────────────────────
@@ -77,7 +79,7 @@ const resolveBadge = (
 ): { label: string; color: string; bg: string } =>
   map[id] ?? { label: id, color: '#9ca3af', bg: 'rgba(156,163,175,0.1)' };
 
-export const AbilityTooltip: React.FC<AbilityTooltipProps> = ({ piece, visible }) => {
+export const AbilityTooltip: React.FC<AbilityTooltipProps> = ({ piece, visible, isViewerOpponent = false }) => {
   if (!visible || !piece) return null;
 
   const ca = piece.custom_ability;
@@ -104,6 +106,8 @@ export const AbilityTooltip: React.FC<AbilityTooltipProps> = ({ piece, visible }
           '0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(139,92,26,0.08), inset 0 1px 0 rgba(255,255,255,0.9)',
         border: '1px solid rgba(212, 175, 55, 0.22)',
         animation: 'tooltipFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+        transform: isViewerOpponent ? 'rotate(180deg)' : 'none',
+        transition: 'transform 0.6s ease-in-out',
       }}
     >
       {/* ─── Top accent bar ─── */}
@@ -234,6 +238,40 @@ export const AbilityTooltip: React.FC<AbilityTooltipProps> = ({ piece, visible }
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
               {ca.constraints.map((c, i) => <Badge key={i} {...resolveBadge(c, CONSTRAINT_LABELS)} />)}
+            </div>
+          </div>
+        )}
+
+        {/* ─── Move Diagram ─── */}
+        {((piece.custom_moves && piece.custom_moves.length > 0) || (ca.custom_moves && ca.custom_moves.length > 0)) && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '4px' }}>
+            <div style={{
+              fontSize: '8.5px', fontWeight: '700', color: '#b0b8c4',
+              fontFamily: 'var(--font-cyber)', letterSpacing: '0.08em', textTransform: 'uppercase',
+            }}>
+              カスタム移動ベクトル
+            </div>
+            <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
+              <MoveDiagram customMoves={piece.custom_moves || ca.custom_moves} />
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '5px',
+                fontSize: '9px',
+                color: '#4b5563',
+                fontFamily: 'var(--font-ui, sans-serif)',
+                fontWeight: '600'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ color: '#10b981', fontSize: '11px' }}>●</span> 通常移動 (dx, dy)
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ color: '#0891b2', fontSize: '11px' }}>↑</span> 滑走移動 (slide)
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ color: '#7c3aed', fontSize: '10px' }}>✦</span> 跳躍移動 (jump)
+                </div>
+              </div>
             </div>
           </div>
         )}

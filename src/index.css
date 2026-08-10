@@ -1476,3 +1476,275 @@ button, input, [role="button"] {
   }
 }
 
+/* ─── Custom Moves Highlight Effects ─── */
+@keyframes slidePulse {
+  0% {
+    box-shadow: inset 0 0 6px rgba(6, 182, 212, 0.45), 0 0 3px rgba(6, 182, 212, 0.25);
+    border-color: rgba(6, 182, 212, 0.7) !important;
+    background-color: rgba(6, 182, 212, 0.09) !important;
+  }
+  100% {
+    box-shadow: inset 0 0 16px rgba(6, 182, 212, 0.85), 0 0 8px rgba(6, 182, 212, 0.5);
+    border-color: rgba(6, 182, 212, 1) !important;
+    background-color: rgba(6, 182, 212, 0.22) !important;
+  }
+}
+
+@keyframes jumpRipple {
+  0% {
+    box-shadow: inset 0 0 6px rgba(139, 92, 246, 0.45), 0 0 3px rgba(139, 92, 246, 0.25);
+    border-color: rgba(139, 92, 246, 0.7) !important;
+    background-color: rgba(139, 92, 246, 0.09) !important;
+  }
+  100% {
+    box-shadow: inset 0 0 18px rgba(139, 92, 246, 0.95), 0 0 10px rgba(139, 92, 246, 0.65);
+    border-color: rgba(139, 92, 246, 1) !important;
+    background-color: rgba(139, 92, 246, 0.24) !important;
+  }
+}
+
+.move-highlight-slide {
+  animation: slidePulse 1s infinite alternate ease-in-out !important;
+  border-style: solid !important;
+  border-width: 2px !important;
+}
+
+.move-highlight-jump {
+  animation: jumpRipple 1s infinite alternate ease-in-out !important;
+  border-style: solid !important;
+  border-width: 2px !important;
+}
+
+.move-highlight-normal {
+  border-color: #059669 !important;
+  border-style: dashed !important;
+  border-width: 1.5px !important;
+  background-color: rgba(5, 150, 105, 0.09) !important;
+}
+
+/* Slide direction guide line on hover */
+.board-cell-hovered-slide::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border: 2px solid #06b6d4;
+  border-radius: inherit;
+  box-shadow: 0 0 8px #06b6d4;
+  pointer-events: none;
+  animation: targetPulseBlue 0.8s infinite alternate ease-in-out;
+}
+
+/* ==========================================================================
+   🎮 PERSONA 5 / PERSONA 3 RELOAD STYLED CUTIN & UI SYSTEM
+   ========================================================================== */
+
+/* Slanted Slash Animations */
+@keyframes personaSlashIn {
+  0% {
+    transform: translateX(-100%) skewX(-20deg);
+    opacity: 0;
+  }
+  60% {
+    transform: translateX(5%) skewX(-20deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(0) skewX(-20deg);
+    opacity: 1;
+  }
+}
+
+@keyframes personaSlashTextIn {
+  0% {
+    transform: scale(3) rotate(-15deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(0.9) rotate(-3deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(-5deg);
+    opacity: 1;
+  }
+}
+
+@keyframes personaStarburst {
+  0% {
+    transform: scale(0.2) rotate(0deg);
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.5) rotate(45deg);
+    opacity: 0;
+  }
+}
+
+@keyframes persona1MoreBounce {
+  0% {
+    transform: translateY(20px) scale(0.5) skewX(-15deg);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(-8px) scale(1.2) skewX(-15deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0) scale(1) skewX(-15deg);
+    opacity: 1;
+  }
+}
+
+/* Slanted Slash Animations - Faster Speeds */
+@keyframes personaSlashIn {
+  0% {
+    transform: translateX(-100%) skewX(-15deg);
+    opacity: 0;
+  }
+  60% {
+    transform: translateX(2%) skewX(-15deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(0) skewX(-15deg);
+    opacity: 1;
+  }
+}
+
+@keyframes personaSlashTextIn {
+  0% {
+    transform: scale(2) rotate(-10deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(0.95) rotate(-2deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(-3deg);
+    opacity: 1;
+  }
+}
+
+@keyframes personaStarburst {
+  0% {
+    transform: scale(0.2) rotate(0deg);
+    opacity: 0;
+  }
+  50% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.8) rotate(30deg);
+    opacity: 0;
+  }
+}
+
+/* Persona UI Components - Ultra Transparent Non-blocking Overlay */
+.persona-ambush-overlay {
+  background: rgba(0, 0, 0, 0.12);
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 5vh;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.persona-slash-red {
+  background: #e60012;
+  transform: skewX(-15deg);
+  border-top: 3px solid #ffee00;
+  border-bottom: 3px solid #000000;
+  box-shadow: 0 4px 20px rgba(230, 0, 18, 0.5);
+  animation: personaSlashIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.persona-slash-black {
+  background: rgba(17, 17, 17, 0.9);
+  transform: skewX(-15deg);
+  border-top: 2px solid #e60012;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6);
+}
+
+.persona-text-ambush {
+  font-family: 'Impact', 'Arial Black', sans-serif;
+  color: #ffee00;
+  text-shadow: 6px 6px 0px #111111, -3px -3px 0px #e60012, 0 0 20px rgba(255, 238, 0, 0.8);
+  letter-spacing: 0.1em;
+  transform: rotate(-5deg);
+  animation: personaSlashTextIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.persona-text-skill {
+  font-family: 'Impact', 'Arial Black', sans-serif;
+  color: #ffffff;
+  background: #111111;
+  border: 4px solid #00bcff;
+  box-shadow: 8px 8px 0px #e60012;
+  transform: skewX(-12deg);
+}
+
+.persona-down-badge {
+  background: #e60012;
+  color: #ffffff;
+  font-family: 'Impact', sans-serif;
+  font-size: 0.65rem;
+  font-weight: 900;
+  padding: 1px 5px;
+  border-radius: 2px;
+  transform: skewX(-12deg);
+  box-shadow: 2px 2px 0px #000000;
+  border: 1px solid #ffee00;
+  letter-spacing: 0.05em;
+  animation: pulse 1.5s infinite alternate;
+}
+
+.persona-cd-badge {
+  background: #111111;
+  color: #ffee00;
+  font-family: 'Impact', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 900;
+  padding: 1px 6px;
+  border: 1.5px solid #e60012;
+  transform: skewX(-10deg);
+  box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.8);
+}
+
+.persona-1more-badge {
+  background: #ffee00;
+  color: #111111;
+  font-family: 'Impact', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 900;
+  padding: 2px 8px;
+  border: 2px solid #e60012;
+  transform: skewX(-15deg);
+  box-shadow: 3px 3px 0px #00bcff;
+  animation: persona1MoreBounce 0.4s ease-out forwards;
+}
+
+.persona-awakened-aura {
+  position: relative;
+}
+
+.persona-awakened-aura::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border: 2px solid #00bcff;
+  border-radius: inherit;
+  box-shadow: 0 0 15px #00bcff, inset 0 0 10px #ffee00;
+  pointer-events: none;
+  animation: pulse 1s infinite alternate;
+}
+
+
+

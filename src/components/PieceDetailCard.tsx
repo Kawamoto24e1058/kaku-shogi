@@ -6,9 +6,10 @@ import { getPieceDescription } from '../gameLogic';
 interface PieceDetailCardProps {
   piece: Partial<Piece>;
   isHoverPreview?: boolean;
+  isViewerOpponent?: boolean;
 }
 
-export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHoverPreview = false }) => {
+export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHoverPreview = false, isViewerOpponent = false }) => {
   if (!piece) return null;
 
   const themeStyles: Record<string, {
@@ -98,10 +99,11 @@ export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHover
         padding: '20px',
         boxShadow: shadow,
         position: 'relative',
+        transform: isViewerOpponent ? 'rotate(180deg)' : 'none',
         overflow: 'hidden',
         fontFamily: 'var(--font-cyber)',
         boxSizing: 'border-box',
-        transition: 'all 0.3s ease'
+        transition: 'transform 0.6s ease-in-out, all 0.3s ease'
       }}
     >
       {/* Camp Marker Line */}
@@ -120,7 +122,7 @@ export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHover
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
           <h3 style={{ fontSize: '22px', color: text, fontWeight: 'bold', letterSpacing: '0.05em', margin: 0, fontFamily: 'var(--font-cyber)' }}>
-            {piece.isHisha && piece.isPromoted ? '竜王' : (piece.isKaku && piece.isPromoted ? '竜馬' : (piece.isPawn && piece.isPromoted ? 'と金' : piece.word))}
+            {piece.isHisha && piece.isPromoted ? '竜王' : (piece.isKaku && piece.isPromoted ? '竜馬' : (piece.isPawn && (piece.word === '歩' || piece.word === '歩兵' || piece.word === 'と金' || piece.word === '封印歩兵') && piece.isPromoted ? 'と金' : (piece.isPromoted && piece.promoted_effect?.effect_name ? piece.promoted_effect.effect_name : piece.word)))}
           </h3>
           {theme && (
             <span style={{ 

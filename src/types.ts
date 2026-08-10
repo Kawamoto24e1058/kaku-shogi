@@ -5,6 +5,20 @@ export interface Position {
   y: number;
 }
 
+export interface CustomMoveDef {
+  dx: number;
+  dy: number;
+  slide?: boolean;
+  jump?: boolean;
+}
+
+export interface EffectOffset {
+  dx: number;
+  dy: number;
+}
+
+export type TargetMode = 'SELF_CENTERED' | 'POINT_CENTERED';
+
 export interface CustomAbility {
   ability_name: string;
   flavor_text: string;
@@ -12,6 +26,13 @@ export interface CustomAbility {
   targets: string[];
   actions: string[];
   constraints: string[];
+  remaining_uses: number; // ✨ 【新設】残り使用回数カウント（初期値は一律 3）
+  custom_moves?: CustomMoveDef[];
+  target_mode?: TargetMode;
+  range_distance?: number;
+  effect_offsets?: EffectOffset[];
+  isAutonomous?: boolean; // 暴走・自動行動フラグ（勝手に動く / 他駒移動後に発動など）
+  trigger_override?: 'MANUAL' | 'ON_TURN_END' | 'PASSIVE';
 }
 
 export interface VisualEffect {
@@ -49,14 +70,37 @@ export interface SpawnConfig {
 
 // ─── 動的インタープリター型能力システム（AbilitySpec） ────────────────────────
 // AIが出力する数値パラメータを元に、ゲームロジックが動的に射程・範囲・効果を計算する
+
+export type TileEffectType = 'FIRE_ZONE' | 'POISON_MUD' | 'ICE_FLOOR' | 'TIME_BOMB' | 'STEALTH_TRAP';
+
+export interface TileState {
+  effectType: TileEffectType;
+  duration: number;
+  ownerPlayer: Player;
+  isStealth?: boolean;
+  payloadAbility?: AbilitySpec;
+}
+
+// EffectType: 全アクション種別の共有型エイリアス
+export type EffectType = 'DESTROY' | 'CAPTURE' | 'IMMOBILIZE' | 'SWAP' | 'PULL' | 'PUSH' | 'STEALTH' | 'SPAWN' | 'TRANSFORM' | 'RESURRECT' | 'FORCE_CAPTURE' | 'TRANSFORM_PAWN' | 'STEAL_HAND' | 'TIME_REWIND' | 'BOOMERANG' | 'GRAVITY_PULL' | 'SHARE_FATE' | 'WALL_CREATE' | 'LEAVE_TRAIL_FIRE' | 'EVOLUTION' | 'MIND_CONTROL' | 'CLEAR_DEBUFF' | 'MAGNET_PULL' | 'KNOCKBACK_BUMP' | 'POS_SWAP_ENEMY' | 'STUN_LOCK' | 'PENETRATE_STRIKE' | 'VAULT_EXECUTE' | 'CLEAVE_LINE' | 'GUARD_STANCE' | 'SILENCE_SEAL' | 'OVERDRIVE_BOOST' | 'PROBABILITY_STRIKE' | 'CHAOS_GAMBLE' | 'LUCKY_DODGE' | 'DELAYED_BURST' | 'CHARGE_TURN' | 'SACRIFICE_COST' | 'SELF_STUN' | 'EVOLUTION_CHECK' | 'SET_TILE_FIRE' | 'SET_TILE_POISON' | 'SET_TILE_ICE' | 'SET_TILE_BOMB' | 'SET_TILE_TRAP';
+
+export type TargetSelection = 'CLICK_ZONE' | 'AUTOMATIC' | 'SELF';
+export type AreaShape = 'POINT' | 'SQUARE_3X3' | 'SQUARE_5X5' | 'CROSS' | 'LINE_STRAIGHT' | 'RANGE_2' | 'RANGE_3' | 'LINE_DIAGONAL' | 'KNIGHT_JUMP_ALL' | 'FRONT_3_LINE' | 'ALL_ENEMY_PIECES' | 'LEADER_SURROUND' | 'DYNAMIC_OFFSETS';
+export type AffectsWho = 'ENEMY_ONLY' | 'ALL_PIECES' | 'ALLY_ONLY' | 'EMPTY_ONLY';
+
 export interface AbilitySpec {
-  activation_trigger: 'ON_MOVE' | 'TURN_START' | 'ON_TAKEN' | 'ON_APPROACH' | 'ALWAYS';
-  range: number;             // 射程。1〜9=通常, 99=全画面（全盤面）
-  target_selection: 'CLICK_ZONE' | 'AUTOMATIC' | 'SELF';
-  area_shape: 'POINT' | 'SQUARE_3X3' | 'SQUARE_5X5' | 'CROSS' | 'LINE_STRAIGHT';
-  effect_type: 'DESTROY' | 'CAPTURE' | 'IMMOBILIZE' | 'SWAP' | 'PULL' | 'PUSH' | 'STEALTH' | 'SPAWN' | 'TRANSFORM' | 'RESURRECT';
-  affects_who: 'ENEMY_ONLY' | 'ALL_PIECES' | 'ALLY_ONLY' | 'EMPTY_ONLY';
-  cooldown_turns: number;
+  activation_trigger: 'ON_MOVE' | 'TURN_START' | 'ON_TAKEN' | 'ON_APPROACH' | 'ALWAYS' | 'ON_DEATH';
+  range: number;             // Range radius (1, 2, 3, etc.) or straight infinity
+  target_selection: TargetSelection;
+  area_shape: AreaShape;
+  effect_type: EffectType;   // 単体アクション（互換性維持・非推奨）
+  actions?: EffectType[];    // 複合アクション配列（最大3要素）— effect_type より優先
+  affects_who: AffectsWho;
+  cooldown_turns: number;    // 0 = none, N = turn cooldown
+  target_mode?: TargetMode;  // Specific target resolution strategy
+  effect_offsets?: EffectOffset[]; // Precise multi-cell shape offsets
+  success_rate?: number;     // 確率判定アクション用成功率 (0.0 ～ 1.0)
+  delayed_turns?: number;    // 遅延発動ターン数
 }
 
 export interface PieceData {
@@ -65,7 +109,7 @@ export interface PieceData {
   mechanics_type: 'MOVEMENT_HACK' | 'STEALTH_TRAP' | 'RULE_BREAK' | 'DYNAMICS_HACK' | 'AUTOMATIC_DRIVE';
   ability_genre: string; // Display-only Japanese genre name
   visual_theme?: 'WARRIOR_IRON' | 'MYSTIC_MIST' | 'SHADOW_NIGHT' | 'NATURE_STONE' | 'SPACE_NATURE' | 'UNIQUE';
-  trigger: 'ALWAYS' | 'ON_MOVE' | 'TURN_START' | 'ON_TAKEN' | 'ON_APPROACH';
+  trigger: 'ALWAYS' | 'ON_MOVE' | 'TURN_START' | 'ON_TAKEN' | 'ON_APPROACH' | 'TURN_END' | 'ON_DEATH';
   cool_down_turns: number; // Cooldown (charging) turns required. 99 = once-per-game (永続歩兵化)
   is_once_per_game?: boolean; // 1ゲームに1回限りの必殺技フラグ（発動後は永続歩兵化）
   range_geometry: RangeGeometry;
@@ -76,8 +120,15 @@ export interface PieceData {
   deep_search_analysis: string;
   logic_code?: string;
   ability_spec?: AbilitySpec; // 動的インタープリター用パラメータ（新システム）
-  visual_effect?: VisualEffect; // AIデザインのビジュアルエフェクト仕様
+  visual_effect?: VisualEffect; // AIデザイン of ビジュアルエフェクト仕様
   custom_ability?: CustomAbility;
+  isStealth?: boolean;
+  remaining_uses?: number; // Remaining uses for the custom ability (default 3)
+  custom_moves?: CustomMoveDef[];
+  target_mode?: TargetMode;
+  range_distance?: number;
+  effect_offsets?: EffectOffset[];
+  isAutonomous?: boolean; // 暴走・自動行動フラグ
 }
 
 
@@ -89,10 +140,13 @@ export interface Piece extends PieceData {
   isHisha?: boolean;
   isKaku?: boolean;
   originalPosition: [number, number] | null;
+  previousPosition?: Position;
   isPromoted: boolean;
   
   // Dynamic runtime states for new gimmicks
   coolDownTurnsRemaining: number; // If > 0, the piece is in the "charging" state
+  cooldownTurnsRemaining?: number; // Alias for coolDownTurnsRemaining
+  maxCooldown?: number;            // Original cooldown turns limit
   isRevealed: boolean;            // Reveal state for STEALTH_TRAP pieces (starts as false for opponent)
   stunTurnsRemaining?: number;    // Action-lock/immobility curse (0 = active, > 0 = stunned)
   deathCountdown?: number;        // Death countdown curse (decrements every turn, 0 = vaporized)
@@ -100,6 +154,30 @@ export interface Piece extends PieceData {
   isFrozen?: boolean;
   frozenDuration?: number;
   abilityUsed?: boolean;
+  isStealth?: boolean;
+  remaining_uses?: number; // Remaining uses for the custom ability (reverts to normal when <= 0)
+  usesRemaining?: number;  // Alias for remaining_uses
+  hasShield?: boolean;
+  isInverted?: boolean;
+  
+  // Group 3 fields
+  linkedPieceId?: string;
+  type?: 'wall' | 'hazard';
+  duration?: number;
+  isObstacle?: boolean;
+  isHazard?: boolean;
+
+  // Group 4 fields
+  level?: number;
+  isMindControlled?: boolean;
+  originalPlayer?: Player;
+
+  // Group 5 fields
+  hasAbsoluteGuard?: boolean;
+  guardDuration?: number;
+  isSilenced?: boolean;
+  silenceDuration?: number;
+  isOverdrive?: boolean;
 }
 
 export type Board = (Piece | null)[][]; // 9x9 grid
@@ -112,7 +190,7 @@ export interface GameLog {
   type: 'move' | 'action' | 'system' | 'capture' | 'ability';
 }
 
-export type GamePhase = 'start' | 'setup' | 'placement' | 'playing' | 'finished';
+export type GamePhase = 'start' | 'setup' | 'placement' | 'playing' | 'SELECTING_ABILITY_TARGET' | 'finished';
 
 export interface HistoryState {
   turnNumber: number;
@@ -126,6 +204,7 @@ export interface HistoryState {
 
 export interface GameState {
   board: Board;
+  tileBoard: (TileState | null)[][];
   turn: Player;
   phase: GamePhase;
   customPieces: {
@@ -167,7 +246,7 @@ export interface GameState {
 export interface AbilityEvent {
   id: string;
   priority: number; // 1 = Traps (ON_TAKEN, ON_APPROACH), 2 = Moving piece abilities (ON_MOVE), 3 = Turn start / environmental (TURN_START)
-  triggerType: 'ON_TAKEN' | 'ON_APPROACH' | 'ON_MOVE' | 'TURN_START';
+  triggerType: 'ON_TAKEN' | 'ON_APPROACH' | 'ON_MOVE' | 'TURN_START' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE';
   pieceId: string; // The ID of the piece triggering the event (to check if it's still alive/valid)
   position: [number, number]; // Position of the triggering piece on the board
   owner: Player;
@@ -176,3 +255,5 @@ export interface AbilityEvent {
   attackerPiecePos?: [number, number]; // For traps, where the intruder landed
   targetCellPiece?: Piece; // For ON_TAKEN trap context (a copy of the captured trap piece)
 }
+
+export type ValidMove = [number, number] & { moveType?: 'normal' | 'slide' | 'jump' };

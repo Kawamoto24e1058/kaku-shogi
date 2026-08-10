@@ -1,6 +1,6 @@
 import type { PieceData, PromotedEffect, RangeGeometry, SpawnConfig } from './types';
 import { db } from './firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, getDocs, collection, deleteDoc } from 'firebase/firestore';
 
 // キャッシュ用インメモリマップおよび localStorage との連携
 const memoryCache = new Map<string, PieceData>();
@@ -59,6 +59,18 @@ function getFromCache(word: string): PieceData | null {
   return null;
 }
 
+export async function decrementCacheUses(word: string): Promise<void> {
+  const piece = getFromCache(word);
+  if (piece) {
+    const nextUses = Math.max(0, (piece.remaining_uses !== undefined ? piece.remaining_uses : 3) - 1);
+    piece.remaining_uses = nextUses;
+    if (piece.custom_ability) {
+      piece.custom_ability.remaining_uses = nextUses;
+    }
+    saveToCache(word, piece);
+  }
+}
+
 // ── Firestore キャッシュ ─────────────────────────────────────────────────────
 const FIRESTORE_COLLECTION = 'custom_pieces';
 
@@ -89,6 +101,31 @@ async function saveToFirestore(word: string, data: PieceData): Promise<void> {
   } catch (e) {
     console.warn('[Firestore] setDoc failed:', e);
   }
+}
+
+/** Firestoreおよびローカルキャッシュからすべてのカスタム駒データを一括消去・リセットする */
+export async function clearAllCustomPieceCache(): Promise<number> {
+  let count = 0;
+  memoryCache.clear();
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.removeItem('shogi_piece_cache');
+      localStorage.setItem('shogi_cache_version', 'v' + Date.now());
+    }
+  } catch (e) {
+    console.warn('Failed to clear localStorage piece cache:', e);
+  }
+
+  try {
+    const snap = await getDocs(collection(db, FIRESTORE_COLLECTION));
+    const deletePromises = snap.docs.map(d => deleteDoc(d.ref));
+    await Promise.all(deletePromises);
+    count = snap.docs.length;
+    console.info(`[Firestore] Successfully deleted ${count} custom pieces from Firestore.`);
+  } catch (e) {
+    console.warn('[Firestore] Failed to delete custom pieces collection:', e);
+  }
+  return count;
 }
 
 // Offline deterministic generator for 3 Grand Stratagem Gimmicks & Cooldown Turns (9x9 Shogi)
@@ -508,17 +545,15 @@ AIは、生成対象のユーザー入力単語の「概念、物理的特性（
 4. 概念的に隠密、あるいは奇襲するもの（例：「忍者」「ステルス」「影」「霧」「幽霊」など）
    - 相手画面から姿を隠すステルス（STEALTH_TRAP: 隣接接近されるまで非表示）や、裏向きに配置される罠（TRAP_MINE）を設定すること。
 5. 罠を設置する（罠設置、地雷設置、トラップ配置）能力を設計する場合は、必ず「移動完了時、移動先の隣接マスの空きマスにランダムに1個の裏向きの罠（地雷）を設置する（logic_code: 'spawn_trap'）」仕様とし、説明文も「移動先の隣接マスに裏向きの罠をランダムに1個設置する」と書いてください（元の位置に設置する仕様は完全に廃止されました）。
-6. レーザーやビーム等の縦一直線の破壊能力（logic_code: 'kill_linear'）を設計する場合は、必ず「移動完了時、移動先の縦直線上にいる敵のすべての駒を消滅（墓地送り）させる（玉将を除く）」仕様とし、説明文もそのように書いてください（移動前の位置からの直線攻撃は完全に廃止されました）。
+6. レーザーやビーム、砲台、大砲等の直線破壊能力を設計する場合は、必ず移動範囲（custom_moves）を生成し、移動は前後左右1マス、または縦横の移動範囲を持たせてください。移動能力（custom_moves）がないと移動完了時（ON_MOVE）の直線攻撃能力を発動できません。必ず「移動完了時、移動先の直線上にいる敵のすべての駒を消滅（墓地送り）させる（玉将を除く）」仕様とし、説明文もそのように書いてください（移動前の位置からの直線攻撃は完全に廃止されました）。
 
 【和風演出テーマ（visual_theme）の判定ガイドライン】
 入力された単語の歴史的背景、概念、特徴から、最も相応しい「モダン和風演出テーマ」を1つ割り当ててください：
 - 'WARRIOR_IRON' (武将・武器系): 戦場、武力、金属に関連する単語（例：「信長」「大砲」「刀」など）。演出モチーフは錆びた鉄、赤黒い土、掠れ筆。
 - 'MYSTIC_MIST' (神話・呪術・怪異系): 霊、死、神仏、魔力に関連する単語（例：「お化け」「仏」「呪い」など）。演出モチーフは立ち込める川霧、和蝋燭のじんわりとした陰影。
-- 'SHADOW_NIGHT' (隠密・罠・忍系): 暗殺、隠蔽、夜、闇に関連する単語（例：「忍者」「ステルス」「影」など）。演出モチーフは夜の帳、引き裂かれる影、静寂な闇。
-- 'NATURE_STONE' (自然・建造物・概念系): 天候、地形、城、動植物、その他基本概念に関連する単語（例：「山」「新幹線」「犬」「城」など）。演出モチーフは風塵の渦、大地の重い沈み込み。
-
-### 🚨 最重要：能力説明文の厳格な構造化フォーマット
-能力説明文（description および promoted_effect.description）は、初心者がルールを直感的に理解できるよう、余計な修飾語を省き、主語・述語を明確にして、以下の【改行文字 \n を含んだ3部構成のフォーマット】を【完全厳守】して出力してください。
+- 'SHADOW_NIGHT' (隠密・罠・忍系): 暗殺、隠蔽、夜、闇に関連する単語（例：    "effect_type": "効果種別（'DESTROY'=消滅（墓地送り）/ 'CAPTURE'=通常捕獲（持ち駒化）/ 'IMMOBILIZE'=行動封印2手番 / 'SWAP'=位置入替 / 'PULL'=引き寄せ / 'PUSH'=押し出し / 'STEALTH'=自身を隠蔽 / 'SPAWN'=トークン召喚 / 'TRANSFORM'=擬態（能力コピー）/ 'RESURRECT'=墓地から蘇生 / 'FORCE_CAPTURE'=強制捕獲 / 'TRANSFORM_PAWN'=敵の歩兵化 / 'STEAL_HAND'=敵の持ち駒強奪 / 'TIME_REWIND'=時間逆行 / 'BOOMERANG'=帰還（一撃離脱）/ 'GRAVITY_PULL'=重力吸引 / 'SHARE_FATE'=因果応報 / 'WALL_CREATE'=障害物生成 / 'LEAVE_TRAIL_FIRE'=炎の足跡 / 'EVOLUTION'=特殊成長 / 'MIND_CONTROL'=精神支配 / 'CLEAR_DEBUFF'=状態浄化 / 'MAGNET_PULL'=手前引き寄せ / 'KNOCKBACK_BUMP'=弾き飛ばし / 'POS_SWAP_ENEMY'=位置交換 / 'STUN_LOCK'=手番麻痺 / 'PENETRATE_STRIKE'=貫通狙撃 / 'VAULT_EXECUTE'=跳躍撃破 / 'CLEAVE_LINE'=縦ライン一掃 / 'GUARD_STANCE'=絶対防護 / 'SILENCE_SEAL'=能力封印 / 'OVERDRIVE_BOOST'=限界突破）※単体の場合はこちらを使用。複合コンボは actions 配列を使うこと",
+    "actions": "【複合アクション配列・最大3要素】単体では表現できない連続コンボをここで定義してください。効果は配列の順番に連続実行されます。例: ['MAGNET_PULL', 'DESTROY']（引き寄せてから切る）/ ['KNOCKBACK_BUMP', 'STUN_LOCK']（体当たりして麻痺）/ ['POS_SWAP_ENEMY', 'SILENCE_SEAL']（位置入替後に能力封印）/ ['PENETRATE_STRIKE', 'STUN_LOCK']（貫通後に麻痺）。単体の場合は effect_type のみ使い、このフィールドは省略すること。",
+フォーマット】を【完全厳守】して出力してください。
 
 【説明文フォーマット】
 【発動条件】<いつ、どういう条件で自動発動するのか。例：自身の移動完了時（自動発動）など>
@@ -646,6 +681,31 @@ AIは上記のクラシックな例にとどまらず、**完全に前例のな�
 - [重力崩壊（引力爆発）]: 移動完了時に周囲2マスにいる全ての駒（敵味方問わず）を自身のマスへ強制引き寄せ、隣接衝突した敵駒を捕獲する。
 - [成前無能・成後無双]: 成る前は一切の特殊能力も特殊移動もない完全な置物だが、成ることで盤面全体の任意マスへワープし着地周囲2マスの敵を全捕獲する無双へ変貌する（is_once_per_game: trueで使い捨て）。
 
+### 🚨 アビリティ効果種別（effect_type）のマッピングルール
+AIは生成する単語の概念から最も適切な効果種別（effect_type）を選択してください。
+- 敵を強制的に捕獲して自分の持ち駒にする ➔ FORCE_CAPTURE
+- 敵の駒を無力化し、ただの歩兵（封印歩兵）に弱体化させる ➔ TRANSFORM_PAWN
+- 相手の持ち駒をランダムに強奪する ➔ STEAL_HAND
+- 時間を巻き戻し、駒を前ターンの座標にワープさせる ➔ TIME_REWIND
+- 攻撃や能力を使用した後に移動前の元のマスに戻る（ヒット＆アウェイ） ➔ BOOMERANG
+- 盤面全体のすべての敵駒を自分（または指定の中心）に向けて1マス引き寄せる ➔ GRAVITY_PULL
+- 自分と敵の運命を共有し、自分が倒されたときに敵も道連れにする ➔ SHARE_FATE
+- 指定の空きマスに進入不可能の障害物（結界）を生成する ➔ WALL_CREATE
+- 移動経路上の空きマスに炎上ダメージトラップを設置する ➔ LEAVE_TRAIL_FIRE
+- 進化・成長・レベルアップ・強くなる ➔ EVOLUTION
+- 洗脳・マインドコントロール・操る ➔ MIND_CONTROL
+- 浄化・解呪・治す・リセット ➔ CLEAR_DEBUFF
+- 引き寄せ・磁石・引力・たぐり寄せる ➔ MAGNET_PULL
+- 体当たり・バンプ・押し出し・吹き飛ばす ➔ KNOCKBACK_BUMP
+- 位置交換・チェンジ・スワップ・位置をかえる ➔ POS_SWAP_ENEMY
+- 麻痺・足止め・金縛り・バインド・スタン ➔ STUN_LOCK
+- 貫通・狙撃・遠距離打撃・スルー ➔ PENETRATE_STRIKE
+- 飛び越える・背後・跳躍撃破・回り込み ➔ VAULT_EXECUTE
+- 縦回転・縦一掃・スライス・軸攻撃 ➔ CLEAVE_LINE
+- ガード・パリィ・絶対防護・無効化 ➔ GUARD_STANCE
+- 封印・沈黙・無力化・サイレンス ➔ SILENCE_SEAL
+- 限界突破・オーバードライブ・2倍機動・界王拳 ➔ OVERDRIVE_BOOST
+
 ---
 
 ### 🚨 演出のAIデザイン化ルール（visual_effect オブジェクトの出力）
@@ -663,6 +723,33 @@ AIは、生成する単語のイメージ（例：「超電磁砲」なら青白
 
 ---
 
+### 🧠 【知識連動・超個性錬成】思考プロセス（Chain of Thought）指示
+プレイヤーが入力した単語「${word}」が、固有名詞（競走馬・アニメ/漫画キャラクター・神話/伝説・ブランド製品・偉人・歴史的出来事・ネットミームなど）である場合、必ず以下の思考プロセスで能力を錬成してください：
+
+1. **知識検索・元ネタ分析**:
+   - その単語が持つ元ネタのエピソード、固有の性質、能力、名言、物理的特徴（質量・吸引力・速度・気まぐれさなど）を内部知識から抽出してください。
+2. **将棋ゲームメカニクスへの翻訳・調合レシピ**:
+   - 抽出した元ネタの性質を、最も合致するアクション (actions)、移動範囲 (range_geometry/custom_moves)、発動タイミング (trigger/activation_trigger)、自動行動フラグ (isAutonomous) の組み合わせへ翻訳してください。
+
+#### 【解釈・調合レシピの代表例】
+- **「ゴールドシップ」**
+  - 意味解析: 規格外の強さを持つ競走馬だが気まぐれで指示を聞かない暴れ馬。突然のワープ（ワープワープ）。
+  - 調合レシピ: isAutonomous: true（操作不能/自動行動）, logic_code: 'random_teleport', actions: ['VAULT_EXECUTE', 'KNOCKBACK_BUMP'], description: "【効果内容】手番終了時にランダムなマスへ突如ワープし、着地地点の敵を跳躍撃破・吹き飛ばす。暴れ馬のためプレイヤーの直接操作を聞かない。"
+- **「ダイソン」**
+  - 意味解析: 吸引力が変わらない唯一の掃除機。強力な吸い込み。
+  - 調合レシピ: actions: ['MAGNET_PULL', 'GRAVITY_PULL'], area_shape: 'SQUARE_5X5', description: "【効果内容】周囲5x5以内のすべての敵駒を強烈な吸引力で自分へ引き寄せる。"
+- **「アーニャ」**
+  - 意味解析: 他人の心を読める超能力者（わくわく）。相手の企みを事前に察知。
+  - 調合レシピ: actions: ['SILENCE_SEAL', 'STEALTH_ON'], trigger: 'ON_APPROACH', description: "【効果内容】敵駒が接近した瞬間、相手の心を読んで行動と能力を封印し、自身は隠密状態に入る。"
+- **「キングクリムゾン」**
+  - 意味解析: 時間を消し去り、過程を飛ばして結果だけを残す悪魔的スタンド。
+  - 調合レシピ: actions: ['POS_SWAP_ENEMY', 'STUN_LOCK'], description: "【効果内容】敵駒と位置を強制入れ替えし、消し去った時間の中で対象の手番を1ターン麻痺封印する。"
+- **「エクスカリバー」**
+  - 意味解析: 約束された勝利の聖剣。直線上の全てを穿つ極大光線。
+  - 調合レシピ: actions: ['PENETRATE_STRIKE', 'OVERDRIVE_BOOST'], area_shape: 'LINE_STRAIGHT', visual_effect: { trajectory_type: 'BEAM', particle_color: '#ffd700', screen_shake: 5 }
+
+---
+
 ### 💻 出力JSONフォーマット（純粋なJSONのみ。Markdownのバッククォートや解説文は一切禁止）
 {
   "word": "プレイヤーが入力した単語",
@@ -673,20 +760,22 @@ AIは、生成する単語のイメージ（例：「超電磁砲」なら青白
   "trigger": "発動形式（'ALWAYS' / 'ON_MOVE' / 'TURN_START' / 'ON_TAKEN' / 'ON_APPROACH'）",
   "is_once_per_game": true,
   "cool_down_turns": 0,
+  "isAutonomous": false, // 指示を聞かない・勝手に動く・暴走駒・暴れ馬の場合は true に設定（操作不能/自動行動）
   "range_geometry": {
     "normal_grid": "通常時5x5範囲（周囲2マスの場合は外周の計算ミス厳禁）",
     "charging_grid": "0000000100012100010000000", // 十字移動に完全固定
     "promoted_grid": "成った（プロモーション）時の5x5範囲（通常時よりも移動範囲が拡張されたバフグリッドであること。例えば8方向すべての隣接マスに移動可能な '0000001110012100111000000' や、それ以上に拡張された範囲）"
   },
   "ability_spec": {
-    // 通常時の動的アビリティスペック（成った後にのみ能力を発動したい場合は、通常時をnullまたは不活性にし、promoted_effect内にability_specを記述すること）
+    // 🚨 必須要件: プレイヤー単語から調合したメインの能力（actions/custom_moves/isAutonomous等）は、必ずこの通常時の「ability_spec」に100%セットすること！（成る前の基礎能力としてすぐ発動・使用可能にする）
     "activation_trigger": "能力の発動タイミング（'ON_MOVE' / 'TURN_START' / 'ON_TAKEN' / 'ON_APPROACH' / 'ALWAYS'）",
     "range": 3,
-    "target_selection": "ターゲット選択方式（'CLICK_ZONE'=プレイヤーが着弾点を選択 / 'AUTOMATIC'=自動で近くの対象を狙う / 'SELF'=自分自身に発発動）",
-    "area_shape": "着弾形状（'POINT'=単点 / 'SQUARE_3X3'=3x3全範囲 / 'SQUARE_5X5'=5x5全範囲 / 'CROSS'=十字無限 / 'LINE_STRAIGHT'=8方向直線無限 / 'RANGE_2'=周囲2マス以内の指定点 / 'RANGE_3'=周囲3マス以内の指定点。RANGEはtarget_selection:'CLICK_ZONE'と組み合わせて遠隔狙撃に使う）",
-    "effect_type": "効果種別（'DESTROY'=消滅（墓地送り）/ 'CAPTURE'=通常捕獲（持ち駒化）/ 'IMMOBILIZE'=行動封印2手番 / 'SWAP'=位置入替 / 'PULL'=引き寄せ / 'PUSH'=押し出し / 'STEALTH'=自身を隠蔽 / 'SPAWN'=トークン召喚 / 'TRANSFORM'=擬態（能力コピー）/ 'RESURRECT'=墓地から蘇生）",
-    "affects_who": "対象（'ENEMY_ONLY'=敵のみ / 'ALL_PIECES'=敵も味方も無差別に巻き込む / 'ALLY_ONLY'=味方のみ / 'EMPTY_ONLY'=空マスのみ）",
-    "cooldown_turns": 3
+    "target_selection": "ターゲット選択方式（'CLICK_ZONE'=プレイヤーが着弾点を選択 / 'AUTOMATIC'=自動で近くの対象を狙う / 'SELF'=自分自身に発動）",
+    "area_shape": "着弾形状（'POINT'=単点 / 'SQUARE_3X3'=3x3全範囲 / 'SQUARE_5X5'=5x5全範囲 / 'CROSS'=十字無限 / 'LINE_STRAIGHT'=8方向直線無限 / 'RANGE_2'=周囲2マス / 'RANGE_3'=周囲3マス）",
+    "effect_type": "効果種別（'DESTROY'=消滅 / 'CAPTURE'=通常捕獲 / 'IMMOBILIZE'=行動封印 / 'SWAP'=位置入替 / 'PULL'=引き寄せ / 'PUSH'=押し出し / 'STEALTH'=隠蔽 / 'SPAWN'=召喚 / 'TRANSFORM'=擬態 / 'RESURRECT'=蘇生 / 'FORCE_CAPTURE'=強制捕獲 / 'TRANSFORM_PAWN'=歩兵化 / 'STEAL_HAND'=持ち駒強奪 / 'TIME_REWIND'=時間逆行 / 'BOOMERANG'=帰還 / 'GRAVITY_PULL'=重力吸引 / 'SHARE_FATE'=因果応報 / 'WALL_CREATE'=障害物生成 / 'LEAVE_TRAIL_FIRE'=炎の足跡 / 'EVOLUTION'=特殊成長 / 'MIND_CONTROL'=精神支配 / 'CLEAR_DEBUFF'=状態浄化 / 'MAGNET_PULL'=手前引き寄せ / 'KNOCKBACK_BUMP'=弾き飛ばし / 'POS_SWAP_ENEMY'=位置交換 / 'STUN_LOCK'=手番麻痺 / 'PENETRATE_STRIKE'=貫通狙撃 / 'VAULT_EXECUTE'=跳躍撃破 / 'CLEAVE_LINE'=縦ライン一掃 / 'GUARD_STANCE'=絶対防護 / 'SILENCE_SEAL'=能力封印 / 'OVERDRIVE_BOOST'=限界突破）",
+    "actions": ["複合アクション配列（最大3要素）。例: ['MAGNET_PULL', 'DESTROY']"],
+    "affects_who": "対象（'ENEMY_ONLY'=敵のみ / 'ALL_PIECES'=無差別 / 'ALLY_ONLY'=味方のみ / 'EMPTY_ONLY'=空マスのみ）",
+    "cooldown_turns": 2
   },
   "visual_effect": {
     "trajectory_type": "軌道タイプ（'PARABOLA' / 'BEAM' / 'STRIKE' / 'SPIRAL' / 'BURST'）",
@@ -695,24 +784,25 @@ AIは、生成する単語のイメージ（例：「超電磁砲」なら青白
     "particle_speed": 1.2,
     "screen_shake": 2
   },
-  "description": "通常時の説明文（【発動条件】...\n【効果内容】...\n【制限・代償】... の3部構成。覚醒後/成った後の効果はここに絶対含めないこと！）",
+  "description": "通常時の説明文（【発動条件】...\n【効果内容】...\n【制限・代償】... の3部構成。）",
   "spawn_config": {
     "spawn_piece_name": "生み出す駒名（不要ならnull）",
     "max_limit": 2,
     "spawn_range_geometry": "生み出す範囲の5x5グリッド（不要ならnull）"
   },
   "promoted_effect": {
-    "effect_name": "成った時の能力名",
-    "description": "【発動条件】成ることで自動適用。\n【効果内容】突撃によって敵を捕獲できる直線上の範囲が3マス先まで増加する。\n【制限・代償】クールダウン等の制限は維持される。",
+    "effect_name": "成った時の能力名（例: 漢字名＋'・覚醒'）",
+    "description": "成った後の覚醒効果の説明文（基礎能力の対象範囲拡大、クールタイム短縮、または元ネタの別側面・派生技の追加効果）",
     "logic_code": "成った後の移動パターン（不要ならnull。例: 成後ワープなら 'teleport_move'、成後クイーンなら 'queen'）",
     "ability_spec": {
-      "activation_trigger": "成後にのみ発現する能力タイミング（不要ならこのフィールドごと省略可）",
-      "range": 2,
+      "activation_trigger": "能力の発動タイミング",
+      "range": 4,
       "target_selection": "AUTOMATIC",
       "area_shape": "SQUARE_5X5",
-      "effect_type": "CAPTURE",
+      "effect_type": "DESTROY",
+      "actions": ["DESTROY", "KNOCKBACK_BUMP"],
       "affects_who": "ENEMY_ONLY",
-      "cooldown_turns": 0
+      "cooldown_turns": 1
     },
     "visual_effect": {
       "trajectory_type": "軌道タイプ（'PARABOLA' / 'BEAM' / 'STRIKE' / 'SPIRAL' / 'BURST'）",
@@ -1099,6 +1189,208 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
       promoted_grid: prom
     };
   }
+
+  // Safeguard: Check if custom_moves is empty or undefined
+  if (!parsed.custom_moves || parsed.custom_moves.length === 0) {
+    if (parsed.custom_ability && parsed.custom_ability.custom_moves && parsed.custom_ability.custom_moves.length > 0) {
+      parsed.custom_moves = parsed.custom_ability.custom_moves;
+    }
+  }
+
+  // Force minimum movement range fallback if the piece has no custom moves AND has no grid moves
+  const normGrid = parsed.range_geometry?.normal_grid || '0000000000002000000000000';
+  const isImmobileGrid = !normGrid.includes('1') && !normGrid.includes('3');
+  const hasNoCustomMoves = !parsed.custom_moves || parsed.custom_moves.length === 0;
+
+  // Beam/Battery/Cannon word triggers
+  const nameOrDesc = ((parsed.word || '') + ' ' + (parsed.description || '')).toLowerCase();
+  const isBeamPiece = nameOrDesc.includes('砲台') || nameOrDesc.includes('大砲') || nameOrDesc.includes('レーザー') || nameOrDesc.includes('ビーム') || nameOrDesc.includes('キャノン') || nameOrDesc.includes('砲');
+
+  if (hasNoCustomMoves && (isImmobileGrid || isBeamPiece)) {
+    // Default 8-direction King-like step moves
+    parsed.custom_moves = [
+      { dx: 0, dy: -1 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
+      { dx: -1, dy: -1 }, { dx: 1, dy: -1 }, { dx: -1, dy: 1 }, { dx: 1, dy: 1 }
+    ];
+    if (parsed.custom_ability) {
+      parsed.custom_ability.custom_moves = parsed.custom_moves;
+    }
+    // Also make sure normal_grid has at least gold/silver equivalent step moves
+    if (parsed.range_geometry) {
+      parsed.range_geometry.normal_grid = '0000001110012100111000000';
+    }
+  }
+
+  // Also safeguard charging_grid from being completely immobile (0 moves)
+  if (parsed.range_geometry && parsed.range_geometry.charging_grid) {
+    const chgGrid = parsed.range_geometry.charging_grid;
+    if (!chgGrid.includes('1') && !chgGrid.includes('3')) {
+      parsed.range_geometry.charging_grid = '0000000100012100010000000'; // Default 4 directions
+    }
+  }
+
+  // ─── Safeguard: custom_ability.actions の正規化 ───────────────────────
+  // 1. actions が未定義で effect_type があれば actions: [effect_type] に自動変換
+  // 2. actions を最大3要素にクランプ
+  // 3. 未知のアクションキーを除去してパイプラインの安全性を保証
+  const VALID_EFFECT_TYPES = new Set([
+    'DESTROY', 'CAPTURE', 'IMMOBILIZE', 'SWAP', 'PULL', 'PUSH', 'STEALTH', 'SPAWN', 'TRANSFORM',
+    'RESURRECT', 'FORCE_CAPTURE', 'TRANSFORM_PAWN', 'STEAL_HAND', 'TIME_REWIND', 'BOOMERANG',
+    'GRAVITY_PULL', 'SHARE_FATE', 'WALL_CREATE', 'LEAVE_TRAIL_FIRE', 'EVOLUTION', 'MIND_CONTROL',
+    'CLEAR_DEBUFF', 'MAGNET_PULL', 'KNOCKBACK_BUMP', 'POS_SWAP_ENEMY', 'STUN_LOCK',
+    'PENETRATE_STRIKE', 'VAULT_EXECUTE', 'CLEAVE_LINE', 'GUARD_STANCE', 'SILENCE_SEAL', 'OVERDRIVE_BOOST'
+  ]);
+  // ─── Safeguard 1: 基礎能力 (ability_spec) の優先割り当て保護 ───────────────────────
+  if (!parsed.ability_spec || typeof parsed.ability_spec !== 'object' || Object.keys(parsed.ability_spec).length === 0) {
+    if (parsed.promoted_effect && parsed.promoted_effect.ability_spec) {
+      parsed.ability_spec = { ...parsed.promoted_effect.ability_spec };
+    } else {
+      parsed.ability_spec = {
+        activation_trigger: parsed.trigger || 'ON_MOVE',
+        range: 2,
+        target_selection: 'AUTOMATIC',
+        area_shape: 'POINT',
+        effect_type: 'DESTROY',
+        actions: ['DESTROY'],
+        affects_who: 'ENEMY_ONLY',
+        cooldown_turns: 2
+      };
+    }
+  }
+
+  // ─── Safeguard: 確率・ギャンブル・回避キーワ―ドの自動検知 ───────────────────
+  const fullDesc = String(parsed.description || '') + String(parsed.effect_name || '') + String(parsed.word || '');
+  const isGambleKeyword = fullDesc.includes('ギャンブル') || fullDesc.includes('運') || fullDesc.includes('気まぐれ') || fullDesc.includes('確率') || fullDesc.includes('コイン') || fullDesc.includes('スロット') || fullDesc.includes('サイコロ') || fullDesc.includes('ダイス');
+  const isDodgeKeyword = fullDesc.includes('回避') || fullDesc.includes('見切り') || fullDesc.includes('身軽') || fullDesc.includes('かわす');
+
+  if (isGambleKeyword || isDodgeKeyword) {
+    const spec = parsed.ability_spec;
+    if (spec) {
+      spec.success_rate = spec.success_rate || (isDodgeKeyword ? 0.35 : 0.5);
+      const acts = spec.actions || [spec.effect_type];
+      if (isDodgeKeyword && !acts.includes('LUCKY_DODGE')) {
+        acts.push('LUCKY_DODGE');
+      } else if (isGambleKeyword && !acts.includes('PROBABILITY_STRIKE') && !acts.includes('CHAOS_GAMBLE')) {
+        acts.push(Math.random() < 0.5 ? 'PROBABILITY_STRIKE' : 'CHAOS_GAMBLE');
+      }
+      spec.actions = acts;
+      if (spec.actions.length > 0) spec.effect_type = spec.actions[0];
+    }
+  }
+
+  // ─── Safeguard: 地形・新メカニクスキーワード検知 ＆ 強能力バランス抑制 ─────────
+  const isFireKw = fullDesc.includes('炎') || fullDesc.includes('火') || fullDesc.includes('燃');
+  const isPoisonKw = fullDesc.includes('毒') || fullDesc.includes('沼') || fullDesc.includes('紫煙');
+  const isIceKw = fullDesc.includes('氷') || fullDesc.includes('凍') || fullDesc.includes('滑');
+  const isBombKw = fullDesc.includes('爆弾') || fullDesc.includes('時限') || fullDesc.includes('タイマー');
+  const isEvoKw = fullDesc.includes('進化') || fullDesc.includes('成長') || fullDesc.includes('覚醒');
+
+  if (parsed.ability_spec) {
+    const spec = parsed.ability_spec;
+    const acts = spec.actions || [spec.effect_type];
+    
+    if (isFireKw && !acts.includes('SET_TILE_FIRE') && acts.length < 3) acts.push('SET_TILE_FIRE');
+    if (isPoisonKw && !acts.includes('SET_TILE_POISON') && acts.length < 3) acts.push('SET_TILE_POISON');
+    if (isIceKw && !acts.includes('SET_TILE_ICE') && acts.length < 3) acts.push('SET_TILE_ICE');
+    if (isBombKw && !acts.includes('SET_TILE_BOMB') && acts.length < 3) acts.push('SET_TILE_BOMB');
+    if (isEvoKw && !acts.includes('EVOLUTION_CHECK') && acts.length < 3) acts.push('EVOLUTION_CHECK');
+
+    // 自動バランス抑制: 広範囲全滅能力（SQUARE_5X5やALL_ENEMY_PIECES等）にはデメリットパーツを付加
+    if (spec.area_shape === 'SQUARE_5X5' || spec.area_shape === 'ALL_ENEMY_PIECES' || spec.range >= 5) {
+      if (!acts.includes('DELAYED_BURST') && !acts.includes('SACRIFICE_COST') && !acts.includes('SELF_STUN') && acts.length < 3) {
+        acts.push('DELAYED_BURST');
+      }
+      spec.cooldown_turns = Math.max(3, spec.cooldown_turns || 3);
+    }
+    spec.actions = acts.slice(0, 3);
+    if (spec.actions.length > 0) spec.effect_type = spec.actions[0];
+  }
+
+  // ─── Safeguard 2: 成り時覚醒効果 (promoted_effect) の強化補完 ────────────────────
+  if (!parsed.promoted_effect || !parsed.promoted_effect.ability_spec) {
+    const baseSpec = parsed.ability_spec;
+    const baseActions = baseSpec.actions || [baseSpec.effect_type || 'DESTROY'];
+    const enhancedActions = [...baseActions];
+    if (!enhancedActions.includes('OVERDRIVE_BOOST') && enhancedActions.length < 3) {
+      enhancedActions.push('OVERDRIVE_BOOST');
+    }
+    parsed.promoted_effect = {
+      effect_name: (parsed.effect_name || parsed.word || '真技') + '・覚醒',
+      description: `【覚醒効果】成ることで基礎能力「${parsed.effect_name || parsed.word}」が限界突破・強化。効果範囲と威力が大幅に拡張される。`,
+      logic_code: parsed.promoted_effect?.logic_code || null,
+      ability_spec: {
+        activation_trigger: baseSpec.activation_trigger || 'ON_MOVE',
+        range: Math.min(99, (baseSpec.range || 2) + 1),
+        target_selection: baseSpec.target_selection || 'AUTOMATIC',
+        area_shape: baseSpec.area_shape === 'POINT' ? 'SQUARE_3X3' : (baseSpec.area_shape === 'SQUARE_3X3' ? 'SQUARE_5X5' : baseSpec.area_shape),
+        effect_type: baseSpec.effect_type || 'DESTROY',
+        actions: enhancedActions,
+        affects_who: baseSpec.affects_who || 'ENEMY_ONLY',
+        cooldown_turns: Math.max(0, (baseSpec.cooldown_turns || 2) - 1)
+      }
+    };
+  }
+
+  // ─── Safeguard 3: custom_ability の自動補正・生成 ────────────────────────
+  if (!parsed.custom_ability && parsed.ability_spec) {
+    const spec = parsed.ability_spec;
+    const actions = (spec.actions && spec.actions.length > 0)
+      ? spec.actions
+      : (spec.effect_type ? [spec.effect_type] : ['DESTROY']);
+    parsed.custom_ability = {
+      ability_name: parsed.effect_name || '神秘の力',
+      flavor_text: parsed.description || '',
+      triggers: [spec.activation_trigger || parsed.trigger || 'ON_MOVE'],
+      targets: [spec.area_shape || 'POINT'],
+      actions: actions,
+      constraints: spec.affects_who === 'ALL_PIECES' ? ['MUTUAL_DAMAGE'] : [],
+      remaining_uses: 3,
+      custom_moves: parsed.custom_moves,
+      target_mode: spec.target_mode || 'POINT_CENTERED'
+    };
+  }
+
+  if (parsed.custom_ability && typeof parsed.custom_ability === 'object') {
+    const ca = parsed.custom_ability;
+    if (!Array.isArray(ca.actions) || ca.actions.length === 0) {
+      // legacy effect_type 形式 → actions 配列に変換
+      if (ca.effect_type && typeof ca.effect_type === 'string' && VALID_EFFECT_TYPES.has(ca.effect_type)) {
+        ca.actions = [ca.effect_type];
+      } else if (!Array.isArray(ca.actions)) {
+        ca.actions = ['DESTROY']; // 最終フォールバック
+      }
+    }
+    // 未知のアクションをフィルタリング
+    ca.actions = ca.actions.filter((a: string) => VALID_EFFECT_TYPES.has(a));
+    // 最大3要素にクランプ
+    if (ca.actions.length > 3) {
+      ca.actions = ca.actions.slice(0, 3);
+    }
+    // 空になった場合はフォールバック
+    if (ca.actions.length === 0) {
+      ca.actions = ['DESTROY'];
+    }
+    parsed.custom_ability = ca;
+  }
+
+  // ─── Safeguard: isAutonomous の自動同期・補正 ──────────────────────
+  const descStr = String(parsed.description || '');
+  const wordStr = String(parsed.word || '');
+  const isAutoKeyword = descStr.includes('勝手に動く') || descStr.includes('暴れ馬') || descStr.includes('指示を聞かない') || descStr.includes('気まぐれ') || descStr.includes('操作不能') || wordStr.includes('ゴールドシップ');
+  if (parsed.isAutonomous === true || parsed.mechanics_type === 'AUTOMATIC_DRIVE' || isAutoKeyword) {
+    parsed.isAutonomous = true;
+    if (parsed.custom_ability) {
+      parsed.custom_ability.isAutonomous = true;
+    }
+  } else if (parsed.custom_ability && parsed.custom_ability.isAutonomous) {
+    parsed.isAutonomous = true;
+  }
+
+  // ─── Safeguard: カスタム駒のフラグ保護 (標準歩兵成り化防止) ──────────────────────
+  parsed.isPawn = false;
+  parsed.isKing = false;
+  parsed.isHisha = false;
+  parsed.isKaku = false;
 
   return parsed as PieceData;
 }

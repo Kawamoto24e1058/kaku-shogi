@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { generatePieceFromWord } from '../aiGenerator';
+import { generatePieceFromWord, clearAllCustomPieceCache } from '../aiGenerator';
 import type { Piece, Player } from '../types';
 import { generateId } from '../gameLogic';
 import { PieceDetailCard } from './PieceDetailCard';
@@ -109,6 +109,24 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
     }
   };
 
+  const [resettingCache, setResettingCache] = useState(false);
+
+  const handleResetFirebaseCache = async () => {
+    if (!window.confirm('過去に記録・生成されたすべてのカスタム駒データをFirebaseおよびローカルキャッシュから完全消去・リセットしますか？')) {
+      return;
+    }
+    setResettingCache(true);
+    try {
+      const count = await clearAllCustomPieceCache();
+      alert(`Firestoreおよびキャッシュから計 ${count} 件のカスタム駒データを消去・リセットしました！次回から新しいプロンプトで再錬成されます。`);
+    } catch (e) {
+      console.error(e);
+      alert('リセット処理中にエラーが発生しました。');
+    } finally {
+      setResettingCache(false);
+    }
+  };
+
   return (
     <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '16px', zIndex: 10, position: 'relative' }}>
       
@@ -141,8 +159,28 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
             </span>
           </div>
           
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-            {onlineMode ? '※お互いのデバイスから同時に駒の作成が可能です' : !vsAiMode && '※1台のデバイスを交互に操作して対戦します'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button
+              onClick={handleResetFirebaseCache}
+              disabled={resettingCache}
+              style={{
+                fontSize: '10.5px',
+                fontWeight: 'bold',
+                color: '#991b1b',
+                background: '#fef2f2',
+                border: '1px solid #fca5a5',
+                borderRadius: '6px',
+                padding: '4px 10px',
+                cursor: resettingCache ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s'
+              }}
+              title="Firebaseおよびローカルキャッシュに保存された過去のすべてのカスタム駒データを完全消去して初期リセットします"
+            >
+              {resettingCache ? '🔥 消去中...' : '🔥 全カスタム駒リセット'}
+            </button>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              {onlineMode ? '※お互いのデバイスから同時に駒の作成が可能です' : !vsAiMode && '※1台のデバイスを交互に操作して対戦します'}
+            </div>
           </div>
         </div>
 

@@ -1,10 +1,11 @@
 import React, { useRef, useState, useEffect } from 'react';
-import type { Board, Piece, Player, GamePhase, VisualEffect } from '../types';
+import type { Board, Piece, Player, GamePhase, VisualEffect, TileState } from '../types';
 import { BOARD_SIZE, getPieceLogicCode, getPieceTrigger, getEffectCells, getBoardPiece } from '../gameLogic';
 import type { AbilityAnimationState } from '../App';
 
 interface GameBoardProps {
   board: Board;
+  tileBoard?: (TileState | null)[][];
   turn: Player;
   phase: GamePhase;
   capturedPieces: {
@@ -22,7 +23,7 @@ interface GameBoardProps {
   selectedCapturedPiece: { piece: Piece; index: number } | null;
   selectedSharedPiece: { piece: Piece; index: number } | null; // Shared pool selection
   selectedCustomDeckPiece: { piece: Piece; index: number } | null;
-  validMoves: [number, number][];
+  validMoves: ( [number, number] & { moveType?: 'normal' | 'slide' | 'jump' } )[];
   activeAbilityTargets: [number, number][];
   activeAbilityMode: boolean;
   onCellClick: (y: number, x: number) => void;
@@ -44,6 +45,7 @@ interface GameBoardProps {
 
 export const GameBoard: React.FC<GameBoardProps> = ({
   board,
+  tileBoard,
   turn,
   phase,
   customPiecesToPlace: _customPiecesToPlace,
@@ -710,6 +712,11 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     return validMoves.some(([my, mx]) => my === y && mx === x);
   };
 
+  const getMoveHighlightType = (y: number, x: number): 'normal' | 'slide' | 'jump' | undefined => {
+    const move = validMoves.find(([my, mx]) => my === y && mx === x);
+    return move?.moveType;
+  };
+
   const isActiveAbilityHighlight = (y: number, x: number) => {
     return activeAbilityTargets.some(([dy, dx]) => dy === y && dx === x);
   };
@@ -730,6 +737,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     let spec: import('../types').AbilitySpec | undefined;
     let sy: number | undefined;
     let sx: number | undefined;
+    let owner: Player | undefined;
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
         const p = getBoardPiece(board, { x: c, y: r });
@@ -739,6 +747,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             spec = p.ability_spec; 
             sy = r;
             sx = c;
+            owner = p.owner;
             break; 
           }
         }
@@ -746,7 +755,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       if (spec) break;
     }
     if (!spec) return false;
-    const effectCells = getEffectCells(hy, hx, spec.area_shape, sy, sx);
+    const effectCells = getEffectCells(hy, hx, spec.area_shape, sy, sx, owner, board, spec.effect_offsets);
     return effectCells.some(([ey, ex]) => ey === y && ex === x);
   };
 
@@ -809,9 +818,14 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       cellStyle.borderColor = 'var(--color-gold)';
       cellStyle.background = 'rgba(212, 175, 55, 0.12)';
     } else if (isMove) {
-      cellStyle.borderColor = 'var(--color-gold)';
-      cellStyle.borderStyle = 'dashed';
-      cellStyle.background = 'rgba(212, 175, 55, 0.06)';
+      const moveType = getMoveHighlightType(y, x) || 'normal';
+      if (moveType === 'slide') {
+        cellClassName += ' move-highlight-slide';
+      } else if (moveType === 'jump') {
+        cellClassName += ' move-highlight-jump';
+      } else {
+        cellClassName += ' move-highlight-normal';
+      }
     } else if (isEffectPreview) {
       // 着弾範囲プレビュー（赤枠）
       cellStyle.borderColor = 'rgba(220, 38, 38, 0.85)';
@@ -823,8 +837,24 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       cellStyle.background = 'rgba(74, 21, 75, 0.15)';
     } else if (isSetupValid) {
       cellStyle.borderColor = 'var(--color-gold)';
-      cellStyle.background = 'rgba(244, 237, 226, 0.05)';
-      cellStyle.borderStyle = 'dashed';
+    }
+
+    const currentTile = tileBoard?.[y]?.[x];
+    const showTileGraphic = currentTile && (!currentTile.isStealth || currentTile.ownerPlayer === (myRole || turn));
+    if (showTileGraphic && currentTile) {
+      if (currentTile.effectType === 'FIRE_ZONE') {
+        cellStyle.background = 'radial-gradient(circle, rgba(239, 68, 68, 0.45) 0%, rgba(185, 28, 28, 0.25) 100%)';
+        cellStyle.borderColor = '#ef4444';
+      } else if (currentTile.effectType === 'POISON_MUD') {
+        cellStyle.background = 'radial-gradient(circle, rgba(168, 85, 247, 0.45) 0%, rgba(126, 34, 206, 0.25) 100%)';
+        cellStyle.borderColor = '#a855f7';
+      } else if (currentTile.effectType === 'ICE_FLOOR') {
+        cellStyle.background = 'radial-gradient(circle, rgba(56, 189, 248, 0.45) 0%, rgba(3, 105, 161, 0.25) 100%)';
+        cellStyle.borderColor = '#38bdf8';
+      } else if (currentTile.effectType === 'TIME_BOMB') {
+        cellStyle.background = 'radial-gradient(circle, rgba(234, 179, 8, 0.45) 0%, rgba(161, 98, 7, 0.25) 100%)';
+        cellStyle.borderColor = '#eab308';
+      }
     }
 
     const isActiveSource = activeAbilityAnimation?.active && 
@@ -846,7 +876,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     if (activePiece) {
       const viewer: Player = onlineMode ? (myRole || 'sente') : (vsAiMode ? 'sente' : localTurn);
       const isMyPiece = activePiece.owner === viewer;
-      const shouldHide = !isMyPiece && !activePiece.isRevealed;
+      const shouldHide = activePiece.isStealth === true && !activePiece.isRevealed && activePiece.owner !== viewer;
 
       if (!shouldHide) {
         const isAutonomous = activePiece.trigger === 'ALWAYS' && (getPieceLogicCode(activePiece).includes('runaway') || activePiece.description.includes('操作不能'));
@@ -1107,7 +1137,11 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           padding: innerPadding,
         };
 
-        let wordStr = activePiece.isHisha && activePiece.isPromoted ? '竜王' : (activePiece.isKaku && activePiece.isPromoted ? '竜馬' : (activePiece.isPawn && activePiece.isPromoted ? 'と金' : activePiece.word));
+        const isRealPawn = activePiece.isPawn && (activePiece.word === '歩' || activePiece.word === '歩兵' || activePiece.word === 'と金' || activePiece.word === '封印歩兵');
+        let wordStr = (activePiece.isHisha && activePiece.isPromoted) ? '竜王' : 
+                      (activePiece.isKaku && activePiece.isPromoted) ? '竜馬' : 
+                      (isRealPawn && activePiece.isPromoted) ? 'と金' : 
+                      (activePiece.isPromoted && activePiece.promoted_effect?.effect_name ? activePiece.promoted_effect.effect_name : activePiece.word);
         let fontSizeVal = '11px';
         let letterSpacingVal = 'normal';
         let wordPadding = '0px';
@@ -1228,6 +1262,30 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                   </div>
                 )}
                 {/* Status Badges Overlay */}
+                {showTileGraphic && currentTile && (
+                  <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', padding: '2px', zIndex: 10 }}>
+                    {currentTile.effectType === 'FIRE_ZONE' && (
+                      <span className="text-red-500 font-black text-[9px] animate-bounce drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                        🔥 炎 ({currentTile.duration})
+                      </span>
+                    )}
+                    {currentTile.effectType === 'POISON_MUD' && (
+                      <span className="text-purple-400 font-black text-[9px] animate-pulse drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                        ☠️ 毒 ({currentTile.duration})
+                      </span>
+                    )}
+                    {currentTile.effectType === 'ICE_FLOOR' && (
+                      <span className="text-sky-300 font-black text-[9px] drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                        🧊 氷 ({currentTile.duration})
+                      </span>
+                    )}
+                    {currentTile.effectType === 'TIME_BOMB' && (
+                      <span className="text-yellow-300 font-black text-[9px] animate-ping drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                        💣 {currentTile.duration}
+                      </span>
+                    )}
+                  </div>
+                )}
                 <div style={{
                   position: 'absolute',
                   inset: 0,
@@ -1314,44 +1372,24 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                         呪縛:{activePiece.stunTurnsRemaining}
                       </span>
                     )}
-                    {/* Right: Cooldown / Weathered */}
-                    {activePiece.coolDownTurnsRemaining > 0 && (
+                    {/* Right: Cooldown / DOWN Status (Persona P5/P3R Style) */}
+                    {(activePiece.coolDownTurnsRemaining > 0 || (activePiece.cooldownTurnsRemaining !== undefined && activePiece.cooldownTurnsRemaining > 0)) && (
                       activePiece.coolDownTurnsRemaining === 99 ? (
-                        <span style={{
-                          fontSize: '8px',
-                          fontWeight: 'bold',
-                          color: '#7f1d1d', // red-950
-                          background: 'rgba(254, 226, 226, 0.95)', // red-100
-                          border: '1px solid #b91c1c',
-                          borderRadius: '3px',
-                          padding: '1px 2px',
-                          transform: 'scale(0.8)',
-                          transformOrigin: 'bottom right',
-                          whiteSpace: 'nowrap'
-                        }}>
-                          風化
+                        <span className="persona-down-badge tracking-tighter">
+                          DOWN!
                         </span>
                       ) : (
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '1px',
-                          fontSize: '7.5px',
-                          fontWeight: '700',
-                          color: '#5b21b6',
-                          background: 'rgba(237,233,254,0.96)',
-                          border: '1px solid rgba(139,92,246,0.4)',
-                          borderRadius: '4px',
-                          padding: '1px 3px',
-                          transform: 'scale(0.82)',
-                          transformOrigin: 'bottom right',
-                          whiteSpace: 'nowrap',
-                          backdropFilter: 'blur(4px)',
-                          boxShadow: '0 1px 4px rgba(109,40,217,0.18)',
-                        }}>
-                          ⏳{activePiece.coolDownTurnsRemaining}
+                        <span className="persona-cd-badge tracking-tight">
+                          CD:{activePiece.coolDownTurnsRemaining ?? activePiece.cooldownTurnsRemaining}
                         </span>
                       )
+                    )}
+
+                    {/* Awakened Badge for Promoted Pieces */}
+                    {activePiece.isPromoted && (
+                      <span className="bg-cyan-500 text-black font-black text-[7px] px-1 py-0.5 border border-yellow-300 transform -skew-x-12 shadow-sm">
+                        AWAKENED
+                      </span>
                     )}
                   </div>
                 </div>
@@ -1424,7 +1462,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           if (piece) {
             const viewer: Player = onlineMode ? (myRole || 'sente') : (vsAiMode ? 'sente' : localTurn);
             // ステルス未公開の敵駒は除く（それ以外は敵駒も含めて全駒渡す）
-            const isHiddenStealth = piece.owner !== viewer && !piece.isRevealed;
+            const isHiddenStealth = piece.isStealth === true && piece.owner !== viewer;
             if (!isHiddenStealth) {
               onHoverPiece?.(piece);
             } else {

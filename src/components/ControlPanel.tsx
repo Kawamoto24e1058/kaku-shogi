@@ -29,6 +29,7 @@ interface ControlPanelProps {
   onSharedPieceClick: (piece: Piece, index: number) => void;
   onHoverPiece?: (piece: Piece | null) => void;
   isResurrectActive?: boolean;
+  isViewerOpponent?: boolean;
 }
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -52,6 +53,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onSharedPieceClick,
   onHoverPiece,
   isResurrectActive,
+  isViewerOpponent = false,
 }) => {
   const [hoveredIdx, setHoveredIdx] = useState<string | null>(null);
 
@@ -385,10 +387,18 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {/* カスタム能力バッジカードを先頭に表示 */}
                 {hasCustomAbility && (
-                  <AbilityTooltip piece={displayPiece as Piece} visible />
+                  <AbilityTooltip 
+                    piece={displayPiece as Piece} 
+                    visible 
+                    isViewerOpponent={isViewerOpponent} 
+                  />
                 )}
                 {/* 従来の詳細カード */}
-                <PieceDetailCard piece={displayPiece} isHoverPreview={!!hoveredPiece} />
+                <PieceDetailCard 
+                  piece={displayPiece} 
+                  isHoverPreview={!!hoveredPiece} 
+                  isViewerOpponent={isViewerOpponent} 
+                />
               </div>
             );
           })()}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { GameState, Piece, Player, Board, GameLog, HistoryState, AbilityEvent, VisualEffect } from './types';
 import {
   initializeBoard,
@@ -20,7 +20,10 @@ import {
   getPieceDescription,
   isStealthPiece,
   getEffectCells,
-  getSelectableRangeCells
+  getSelectableRangeCells,
+  requiresTargeting,
+  createEmptyTileBoard,
+  applyTileEffects
 } from './gameLogic';
 import { PieceCreator } from './components/PieceCreator';
 import { GameBoard } from './components/GameBoard';
@@ -28,6 +31,7 @@ import { ControlPanel } from './components/ControlPanel';
 import { getRandomCachedPieces } from './aiGenerator';
 import { StartScreen } from './components/StartScreen';
 import { SakuraShower } from './components/SakuraShower';
+import { PersonaCutin, type CutinType } from './components/PersonaCutin';
 import { db } from './firebase';
 import { doc, getDoc, setDoc, updateDoc, onSnapshot, arrayUnion, collection, query, where, orderBy, limit, getDocs, deleteDoc } from 'firebase/firestore';
 
@@ -86,6 +90,7 @@ export const App: React.FC = () => {
 
   const [state, setState] = useState<GameState>({
     board: initializeBoard(),
+    tileBoard: createEmptyTileBoard(),
     turn: 'sente',
     phase: 'start',
     customPieces: { sente: [], gote: [] },
@@ -283,7 +288,7 @@ export const App: React.FC = () => {
           console.log(`Skipping ON_APPROACH event ${event.id}: Attacker piece is no longer at position.`);
           continue;
         }
-      } else {
+      } else if (event.triggerType !== 'ON_DEATH') {
         const livePos = isPieceAlive(boardState, event.pieceId);
         if (!livePos) {
           console.log(`Skipping ${event.triggerType} event ${event.id}: Piece is no longer alive on board (dead).`);
@@ -294,21 +299,25 @@ export const App: React.FC = () => {
       }
 
       // 1.5 Collect animation details
-      const animPos = event.triggerType === 'ON_TAKEN' ? event.position : (event.triggerType === 'ON_APPROACH' ? event.position : isPieceAlive(boardState, event.pieceId));
-      const animPiece = animPos ? boardState[animPos[0]][animPos[1]] : null;
+      const animPos = (event.triggerType === 'ON_TAKEN' || event.triggerType === 'ON_APPROACH' || event.triggerType === 'ON_DEATH') 
+        ? event.position 
+        : isPieceAlive(boardState, event.pieceId);
+      const animPiece = (event.triggerType === 'ON_DEATH' && event.targetCellPiece)
+        ? event.targetCellPiece
+        : (animPos ? boardState[animPos[0]][animPos[1]] : null);
       let animTargets: [number, number][] = [];
 
       const isCustomAnimStart = animPiece && !animPiece.isKing && !animPiece.isPawn && !animPiece.isHisha && !animPiece.isKaku;
       if (animPiece && isCustomAnimStart) {
         const spec = getPieceAbilitySpec(animPiece);
-        if (event.triggerType === 'ON_TAKEN') {
+        if (event.triggerType === 'ON_TAKEN' || event.triggerType === 'ON_DEATH') {
           if (spec) {
-            animTargets = getEffectCells(event.position[0], event.position[1], spec.area_shape, event.position[0], event.position[1]);
+            animTargets = getEffectCells(event.position[0], event.position[1], spec.area_shape, event.position[0], event.position[1], event.owner, boardState, spec.effect_offsets);
           } else if (animPiece.custom_ability) {
             const affected: [number, number][] = [];
             const seen = new Set<string>();
             for (const shape of animPiece.custom_ability.targets) {
-              const cells = getEffectCells(event.position[0], event.position[1], shape, event.position[0], event.position[1]);
+              const cells = getEffectCells(event.position[0], event.position[1], shape, event.position[0], event.position[1], event.owner, boardState, animPiece.custom_ability.effect_offsets);
               for (const cell of cells) {
                 const key = `${cell[0]},${cell[1]}`;
                 if (!seen.has(key)) { seen.add(key); affected.push(cell); }
@@ -320,12 +329,12 @@ export const App: React.FC = () => {
           }
         } else if (event.triggerType === 'ON_APPROACH') {
           if (spec) {
-            animTargets = getEffectCells(event.position[0], event.position[1], spec.area_shape, event.position[0], event.position[1]);
+            animTargets = getEffectCells(event.position[0], event.position[1], spec.area_shape, event.position[0], event.position[1], event.owner, boardState, spec.effect_offsets);
           } else if (animPiece.custom_ability) {
             const affected: [number, number][] = [];
             const seen = new Set<string>();
             for (const shape of animPiece.custom_ability.targets) {
-              const cells = getEffectCells(event.position[0], event.position[1], shape, event.position[0], event.position[1]);
+              const cells = getEffectCells(event.position[0], event.position[1], shape, event.position[0], event.position[1], event.owner, boardState, animPiece.custom_ability.effect_offsets);
               for (const cell of cells) {
                 const key = `${cell[0]},${cell[1]}`;
                 if (!seen.has(key)) { seen.add(key); affected.push(cell); }
@@ -348,12 +357,12 @@ export const App: React.FC = () => {
                 [cy, cx] = selectable[0];
               }
             }
-            animTargets = getEffectCells(cy, cx, spec.area_shape, animPos[0], animPos[1]);
+            animTargets = getEffectCells(cy, cx, spec.area_shape, animPos[0], animPos[1], event.owner, boardState, spec.effect_offsets);
           } else if (animPiece.custom_ability) {
             const affected: [number, number][] = [];
             const seen = new Set<string>();
             for (const shape of animPiece.custom_ability.targets) {
-              const cells = getEffectCells(animPos[0], animPos[1], shape, animPos[0], animPos[1]);
+              const cells = getEffectCells(animPos[0], animPos[1], shape, animPos[0], animPos[1], event.owner, boardState, animPiece.custom_ability.effect_offsets);
               for (const cell of cells) {
                 const key = `${cell[0]},${cell[1]}`;
                 if (!seen.has(key)) { seen.add(key); affected.push(cell); }
@@ -411,11 +420,13 @@ export const App: React.FC = () => {
         });
       }
 
-      // 2. Check if the ability is interactive (needs human target selection)
-      if (event.triggerType === 'ON_MOVE' || event.triggerType === 'TURN_START') {
-        const targetsInfo = getAbilityTargets(boardState, event.position, event.owner, sharedState);
-        if (targetsInfo && isPieceOwnerHuman(event.owner)) {
-          // Suspend queue execution!
+      // 2. Check if the ability is interactive (needs human target selection during THEIR OWN TURN only)
+      if ((event.triggerType === 'ON_MOVE' || event.triggerType === 'TURN_START') && event.owner === state.turn) {
+        const animPiece = boardState[event.position[0]][event.position[1]];
+        const needsTargeting = animPiece ? requiresTargeting(animPiece) : false;
+        const targetsInfo = needsTargeting ? getAbilityTargets(boardState, event.position, event.owner, sharedState) : null;
+        if (needsTargeting && targetsInfo && isPieceOwnerHuman(event.owner)) {
+          // Suspend queue execution & enter SELECTING_ABILITY_TARGET phase!
           const remainingEvents = eventQueue.slice(i + 1);
           setSuspendedAbility({
             source: event.position,
@@ -434,6 +445,7 @@ export const App: React.FC = () => {
 
           setState(prev => ({
             ...prev,
+            phase: 'SELECTING_ABILITY_TARGET',
             board: boardState,
             capturedPieces: capturedState,
             destroyedPieces: destroyedState,
@@ -469,13 +481,19 @@ export const App: React.FC = () => {
           undefined,
           undefined,
           [...destroyedState],
-          sharedState
+          sharedState,
+          undefined,
+          event.targetCellPiece,
+          capturedState[event.owner === 'sente' ? 'gote' : 'sente']
         );
 
         if (trapEffectRes.triggered) {
           boardState = trapEffectRes.board;
           if (trapEffectRes.capturedPieces && trapEffectRes.capturedPieces.length > 0) {
             capturedState[event.owner] = [...capturedState[event.owner], ...trapEffectRes.capturedPieces];
+          }
+          if (trapEffectRes.opponentCapturedPieces) {
+            capturedState[event.owner === 'sente' ? 'gote' : 'sente'] = trapEffectRes.opponentCapturedPieces;
           }
           if (trapEffectRes.graveyard) {
             sharedState = trapEffectRes.graveyard;
@@ -490,15 +508,13 @@ export const App: React.FC = () => {
           capturedState[event.owner] = capturedState[event.owner].filter(p => p.id !== event.pieceId);
           capturedState[event.owner === 'sente' ? 'gote' : 'sente'] = capturedState[event.owner === 'sente' ? 'gote' : 'sente'].filter(p => p.id !== event.pieceId);
         } else if (
-          trapPiece.logic_code === 'self_destruct_trap' ||
-          trapPiece.logic_code === 'curse_retaliation' ||
-          (trapPiece.description || '').includes('道連れ') ||
-          (trapPiece.description || '').includes('自爆') ||
-          (trapPiece.description || '').includes('爆発') ||
-          (trapPiece.description || '').includes('爆破') ||
-          (trapPiece.description || '').includes('爆砕') ||
-          (trapPiece.description || '').includes('激突') ||
-          trapPiece.ability_spec?.effect_type === 'DESTROY'
+          (trapPiece.trigger === 'ON_TAKEN' || (trapPiece.custom_ability?.triggers && trapPiece.custom_ability.triggers.includes('ON_TAKEN'))) &&
+          (
+            trapPiece.logic_code === 'self_destruct_trap' ||
+            trapPiece.logic_code === 'curse_retaliation' ||
+            (trapPiece.description || '').includes('道連れ') ||
+            (trapPiece.description || '').includes('自爆')
+          )
         ) {
           // Default self-destruct if no custom effect triggered:
           const attackerOnBoard = boardState[ty][tx];
@@ -571,13 +587,19 @@ export const App: React.FC = () => {
           undefined,
           undefined,
           [...destroyedState],
-          sharedState
+          sharedState,
+          undefined,
+          undefined,
+          capturedState[event.owner === 'sente' ? 'gote' : 'sente']
         );
 
         if (trapEffectRes.triggered) {
           boardState = trapEffectRes.board;
           if (trapEffectRes.capturedPieces && trapEffectRes.capturedPieces.length > 0) {
             capturedState[event.owner] = [...capturedState[event.owner], ...trapEffectRes.capturedPieces];
+          }
+          if (trapEffectRes.opponentCapturedPieces) {
+            capturedState[event.owner === 'sente' ? 'gote' : 'sente'] = trapEffectRes.opponentCapturedPieces;
           }
           if (trapEffectRes.graveyard) {
             sharedState = trapEffectRes.graveyard;
@@ -606,13 +628,19 @@ export const App: React.FC = () => {
           event.fromPosition,
           undefined,
           graveyardCandidates,
-          sharedState
+          sharedState,
+          undefined,
+          event.targetCellPiece,
+          capturedState[event.owner === 'sente' ? 'gote' : 'sente']
         );
 
         if (effectRes.triggered || effectRes.logs.length > 0) {
           if (effectRes.triggered) {
             boardState = effectRes.board;
             capturedState[event.owner] = effectRes.capturedPieces;
+            if (effectRes.opponentCapturedPieces) {
+              capturedState[event.owner === 'sente' ? 'gote' : 'sente'] = effectRes.opponentCapturedPieces;
+            }
             if (effectRes.graveyard) {
               sharedState = effectRes.graveyard;
             }
@@ -788,7 +816,8 @@ export const App: React.FC = () => {
           logsState,
           { promotionPending: null },
           state.customDecks,
-          destroyedState
+          destroyedState,
+          true
         );
       }
     }
@@ -835,7 +864,7 @@ export const App: React.FC = () => {
               message: `👁️ 【気配感知】${getPlayerName(piece.owner)}の『${piece.word}』の周囲1マス以内に敵が侵入したため、ステルスが解除され姿が露見しました！`,
               type: 'ability'
             });
-            return { ...piece, isRevealed: true };
+            return { ...piece, isRevealed: true, isStealth: false };
           }
 
           if (piece.isRevealed && !hasAdjacentOpponent) {
@@ -846,7 +875,7 @@ export const App: React.FC = () => {
               message: `🌫️ 【再隠蔽】${getPlayerName(piece.owner)}の『${piece.word}』の周囲から敵が立ち去ったため、再びステルス状態（透明）に戻りました。`,
               type: 'ability'
             });
-            return { ...piece, isRevealed: false };
+            return { ...piece, isRevealed: false, isStealth: true };
           }
         }
         return piece;
@@ -873,7 +902,8 @@ export const App: React.FC = () => {
     toY: number,
     owner: Player
   ): boolean => {
-    if (piece.isPawn) {
+    const isRealPawn = piece.isPawn && (piece.word === '歩' || piece.word === '歩兵' || piece.word === 'と金' || piece.word === '封印歩兵');
+    if (isRealPawn) {
       if (owner === 'sente' && toY === 0) return true;
       if (owner === 'gote' && toY === 8) return true;
     }
@@ -882,11 +912,16 @@ export const App: React.FC = () => {
 
   const isAutoNormalMover = (p: Piece | null): boolean => {
     if (!p) return false;
-    return p.trigger === 'ALWAYS' && (getPieceLogicCode(p).includes('runaway') || p.description.includes('操作不能'));
+    if (p.isAutonomous === true || p.custom_ability?.isAutonomous === true) return true;
+    const logicCode = getPieceLogicCode(p);
+    const desc = p.description || '';
+    return (p.trigger === 'ALWAYS' && (logicCode.includes('runaway') || desc.includes('操作不能'))) ||
+           desc.includes('勝手に動く') || desc.includes('暴れ馬') || desc.includes('指示を聞かない') || desc.includes('気まぐれ');
   };
 
   const isAutonomous = (p: Piece | null): boolean => {
     if (!p) return false;
+    if (p.isAutonomous === true || p.custom_ability?.isAutonomous === true) return true;
     const logicCode = getPieceLogicCode(p);
     return logicCode === 'random_teleport' || isAutoNormalMover(p);
   };
@@ -969,17 +1004,40 @@ export const App: React.FC = () => {
 
     const events = [...(res.abilityEvents || [])];
     const landingPiece = res.board[y][x];
-    if (landingPiece && landingPiece.owner === state.turn && isTriggerMatching(landingPiece, 'ON_MOVE') && landingPiece.coolDownTurnsRemaining === 0) {
-      events.push({
-        id: generateId(),
-        priority: 2,
-        triggerType: 'ON_MOVE',
-        pieceId: landingPiece.id,
-        position: [y, x],
-        owner: landingPiece.owner,
-        fromPosition: [sy, sx]
-      });
+    if (landingPiece && landingPiece.owner === state.turn) {
+      const cd = landingPiece.coolDownTurnsRemaining ?? landingPiece.cooldownTurnsRemaining ?? 0;
+      const uses = landingPiece.remaining_uses ?? landingPiece.usesRemaining ?? 3;
+      if (cd === 0 && uses > 0) {
+        if (isTriggerMatching(landingPiece, 'ON_MOVE')) {
+          events.push({
+            id: generateId(),
+            priority: 2,
+            triggerType: 'ON_MOVE',
+            pieceId: landingPiece.id,
+            position: [y, x],
+            owner: landingPiece.owner,
+            fromPosition: [sy, sx]
+          });
+        }
+        if (promote || landingPiece.isPromoted) {
+          if (isTriggerMatching(landingPiece, 'ON_PROMOTE')) {
+            events.push({
+              id: generateId(),
+              priority: 1,
+              triggerType: 'ON_PROMOTE',
+              pieceId: landingPiece.id,
+              position: [y, x],
+              owner: landingPiece.owner,
+              fromPosition: [sy, sx]
+            });
+          }
+        }
+      }
     }
+
+    // Apply tile effects (fire, poison, ice, bomb)
+    const tileRes = applyTileEffects(res.board, state.tileBoard, state.turn, finalLogs);
+    res.board = tileRes.board;
 
     // Process the asynchronous queue!
     await processAbilityEventsQueue(res.board, events, nextCaptured, nextShared, finalLogs, nextDestroyedPieces);
@@ -1007,6 +1065,40 @@ export const App: React.FC = () => {
   const [laserEffect] = useState<{ from: [number, number]; to: [number, number] } | null>(null);
   const [explosionEffects, setExplosionEffects] = useState<[number, number][]>([]);
   const [showCheckOverlay, setShowCheckOverlay] = useState<boolean>(false);
+
+  // Persona 5 / P3R Styled Cutin State + Async Execution Gate
+  const [cutinState, setCutinState] = useState<{
+    type: CutinType | null;
+    title?: string;
+    subtitle?: string;
+    comboHits?: string[];
+    gambleResult?: 'SUCCESS' | 'MISS';
+  }>({ type: null });
+  const [isCutinPlaying, setIsCutinPlaying] = useState<boolean>(false);
+  const cutinResolverRef = useRef<(() => void) | null>(null);
+
+  const triggerCutinWithGate = (params: {
+    type: CutinType;
+    title?: string;
+    subtitle?: string;
+    comboHits?: string[];
+    gambleResult?: 'SUCCESS' | 'MISS';
+  }): Promise<void> => {
+    return new Promise(resolve => {
+      cutinResolverRef.current = resolve;
+      setIsCutinPlaying(true);
+      setCutinState(params);
+    });
+  };
+
+  const handleCutinComplete = () => {
+    setCutinState({ type: null });
+    setIsCutinPlaying(false);
+    if (cutinResolverRef.current) {
+      cutinResolverRef.current();
+      cutinResolverRef.current = null;
+    }
+  };
 
   useEffect(() => {
     if (showCheckOverlay) {
@@ -1397,11 +1489,13 @@ export const App: React.FC = () => {
 
       const initializedSente = sentePieces.map((piece, index) => {
         const position = index < senteAvailable.length ? senteAvailable[index] : null;
+        const isStealth = isStealthPiece(piece);
         const initializedPiece = {
           ...piece,
           originalPosition: position,
           coolDownTurnsRemaining: 0,
-          isRevealed: isStealthPiece(piece) ? false : true,
+          isRevealed: isStealth ? false : true,
+          isStealth: isStealth ? true : false,
         };
         if (position) {
           nextBoard[position[0]][position[1]] = initializedPiece;
@@ -1422,11 +1516,13 @@ export const App: React.FC = () => {
 
       const initializedGote = gotePieces.map((piece, index) => {
         const position = index < goteAvailable.length ? goteAvailable[index] : null;
+        const isStealth = isStealthPiece(piece);
         const initializedPiece = {
           ...piece,
           originalPosition: position,
           coolDownTurnsRemaining: 0,
-          isRevealed: isStealthPiece(piece) ? false : true,
+          isRevealed: isStealth ? false : true,
+          isStealth: isStealth ? true : false,
         };
         if (position) {
           nextBoard[position[0]][position[1]] = initializedPiece;
@@ -1531,10 +1627,36 @@ export const App: React.FC = () => {
     nextLogs: GameLog[],
     customStateUpdates?: Partial<GameState>,
     nextCustomDecks: typeof state.customDecks = state.customDecks,
-    nextDestroyedPieces: Piece[] = state.destroyedPieces
+    nextDestroyedPieces: Piece[] = state.destroyedPieces,
+    hasProcessedTurnEnd: boolean = false
   ) => {
     const nextPlayer = (state.turn === 'sente' ? 'gote' : 'sente') as Player;
     const activePlayer = state.turn;
+
+    // 0. Scan and queue TURN_END triggers for activePlayer before turn switch (if not already processed)
+    if (!hasProcessedTurnEnd) {
+      const turnEndEvents: AbilityEvent[] = [];
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          const p = nextBoard[r][c];
+          if (p && p.owner === activePlayer && isTriggerMatching(p, 'TURN_END') && p.coolDownTurnsRemaining === 0) {
+            turnEndEvents.push({
+              id: generateId(),
+              priority: 3,
+              triggerType: 'TURN_END',
+              pieceId: p.id,
+              position: [r, c],
+              owner: activePlayer
+            });
+          }
+        }
+      }
+
+      if (turnEndEvents.length > 0) {
+        await processAbilityEventsQueue(nextBoard, turnEndEvents, nextCaptured, nextShared, nextLogs, nextDestroyedPieces);
+        return;
+      }
+    }
 
     let currentBoard = nextBoard;
     const currentCaptured = {
@@ -1721,9 +1843,13 @@ export const App: React.FC = () => {
           if (isAutonomous(updated)) {
             updated.cool_down_turns = 0;
             updated.coolDownTurnsRemaining = 0;
-          } else if (updated.coolDownTurnsRemaining > 0) {
-            if (updated.coolDownTurnsRemaining !== 99) {
-              updated.coolDownTurnsRemaining -= 1;
+            updated.cooldownTurnsRemaining = 0;
+          } else {
+            const currentCD = updated.coolDownTurnsRemaining ?? updated.cooldownTurnsRemaining ?? 0;
+            if (currentCD > 0 && currentCD !== 99) {
+              const nextCD = Math.max(0, currentCD - 1);
+              updated.coolDownTurnsRemaining = nextCD;
+              updated.cooldownTurnsRemaining = nextCD;
             }
           }
         }
@@ -1783,6 +1909,72 @@ export const App: React.FC = () => {
                 timestamp: new Date().toLocaleTimeString(),
                 player: activePlayer,
                 message: `【死の宣告】${piece.word} (${getCellLabel(r, c)}) の消滅まであと ${updated.deathCountdown} 手番。`,
+                type: 'system'
+              });
+            }
+          }
+
+          // Mind Control Reversion
+          if (updated.isMindControlled && updated.originalPlayer) {
+            updatedLogsList.push({
+              id: generateId(),
+              timestamp: new Date().toLocaleTimeString(),
+              player: activePlayer,
+              message: `【洗脳解除】${updated.word} (${getCellLabel(r, c)}) の精神支配が解除され、元の所有者 (${updated.originalPlayer === 'sente' ? '先手' : '後手'}) の元に戻りました。`,
+              type: 'system'
+            });
+            updated.owner = updated.originalPlayer;
+            updated.isMindControlled = false;
+            updated.originalPlayer = undefined;
+          }
+
+          // Guard stance decay
+          if (updated.hasAbsoluteGuard && updated.guardDuration !== undefined && updated.guardDuration > 0) {
+            updated.guardDuration -= 1;
+            if (updated.guardDuration === 0) {
+              updated.hasAbsoluteGuard = false;
+              updatedLogsList.push({
+                id: generateId(),
+                timestamp: new Date().toLocaleTimeString(),
+                player: activePlayer,
+                message: `【防護解除】${updated.word} (${getCellLabel(r, c)}) の絶対ガードシールドが解除されました。`,
+                type: 'system'
+              });
+            }
+          }
+
+          // Silence seal decay
+          if (updated.isSilenced && updated.silenceDuration !== undefined && updated.silenceDuration > 0) {
+            updated.silenceDuration -= 1;
+            if (updated.silenceDuration === 0) {
+              updated.isSilenced = false;
+              updatedLogsList.push({
+                id: generateId(),
+                timestamp: new Date().toLocaleTimeString(),
+                player: activePlayer,
+                message: `【封印解除】${updated.word} (${getCellLabel(r, c)}) の能力封印が解除されました。`,
+                type: 'system'
+              });
+            }
+          }
+
+          // Overdrive expires (piece was set isFrozen in the same turn so freeze handles recoil)
+          if (updated.isOverdrive) {
+            updated.isOverdrive = false;
+          }
+        }
+
+        // Wall and Hazard duration decay
+        if (updated.type === 'wall' || updated.type === 'hazard') {
+          if (updated.duration !== undefined && updated.duration > 0) {
+            updated.duration -= 1;
+            if (updated.duration === 0) {
+              died = true;
+              updatedLogsList.push({
+                id: generateId(),
+                timestamp: new Date().toLocaleTimeString(),
+                player: activePlayer,
+                message: `【消滅】${updated.word} (${getCellLabel(r, c)}) の持続時間が経過し、消滅しました。`,
                 type: 'system'
               });
             }
@@ -1911,6 +2103,7 @@ export const App: React.FC = () => {
     setState(prev => {
       const nextState = {
         ...prev,
+        phase: 'playing' as const,
         board: currentBoard,
         capturedPieces: currentCaptured,
         customDecks: nextCustomDecks,
@@ -1950,8 +2143,16 @@ export const App: React.FC = () => {
     }
 
     const { source, triggerType, fromPosition, board, capturedPieces, logs, customStateUpdates, remainingEvents } = suspendedAbility;
-    const [sy, sx] = source;
-    const activePlayer = board[sy][sx]?.owner;
+    let [sy, sx] = source;
+    let sourcePiece = board[sy][sx];
+    if (!sourcePiece && fromPosition) {
+      const [fy, fx] = fromPosition;
+      if (board[fy][fx]) {
+        sy = fy; sx = fx;
+        sourcePiece = board[sy][sx];
+      }
+    }
+    const activePlayer = sourcePiece?.owner;
     if (!activePlayer) return;
 
     let finalBoard = board;
@@ -1972,7 +2173,6 @@ export const App: React.FC = () => {
       }
     }
 
-    const sourcePiece = board[sy][sx];
     const isCustomSource = sourcePiece && !sourcePiece.isKing && !sourcePiece.isPawn && !sourcePiece.isHisha && !sourcePiece.isKaku;
     if (sourcePiece && isCustomSource) {
       let effectType = 'DEFAULT';
@@ -2011,8 +2211,30 @@ export const App: React.FC = () => {
       }
       const visualEffect = sourcePiece.isPromoted ? sourcePiece.promoted_effect?.visual_effect : sourcePiece.visual_effect;
       const animationTargets: [number, number][] = spec
-        ? getEffectCells(ty, tx, spec.area_shape, sy, sx)
+        ? getEffectCells(ty, tx, spec.area_shape, sy, sx, sourcePiece.owner, board, spec.effect_offsets)
         : [[ty, tx]];
+
+      // ── Persona 5 / P3R Styled Cutin Launch (With Async Execution Gate) ──
+      const trgStr = triggerType as string;
+      const specActions = spec?.actions || (sourcePiece.custom_ability?.actions) || [effectType as any];
+      if (specActions.includes('PROBABILITY_STRIKE') || specActions.includes('CHAOS_GAMBLE')) {
+        const isSuccess = Math.random() < (spec?.success_rate || 0.5);
+        await triggerCutinWithGate({
+          type: 'GAMBLE',
+          title: sourcePiece.effect_name || sourcePiece.word,
+          gambleResult: isSuccess ? 'SUCCESS' : 'MISS'
+        });
+      } else if (trgStr === 'ON_TAKEN' || trgStr === 'ON_APPROACH') {
+        await triggerCutinWithGate({ type: 'AMBUSH', title: 'AMBUSH!', subtitle: 'OUT OF NOWHERE!' });
+      } else if (trgStr === 'ON_MOVE') {
+        const title = sourcePiece.effect_name || sourcePiece.word;
+        const combos = sourcePiece.custom_ability?.actions?.length && sourcePiece.custom_ability.actions.length > 1
+          ? ['1ST HIT!', 'CRITICAL!', 'FINISH!'].slice(0, sourcePiece.custom_ability.actions.length)
+          : ['1ST HIT!'];
+        await triggerCutinWithGate({ type: 'SKILL', title, subtitle: sourcePiece.word, comboHits: combos });
+      } else if (trgStr === 'ON_PROMOTE') {
+        await triggerCutinWithGate({ type: 'AWAKENED', title: sourcePiece.word });
+      }
 
       setActiveAbilityAnimation({
         source: source,
@@ -2034,10 +2256,11 @@ export const App: React.FC = () => {
     // ── [動的インタープリーター優先ルート]
     // ability_spec が設定されている駒は「interpretAbilitySpec」で実行
     // それ以外の旧駒は従来の applyAutomatedEffect でフォールバック
-    const sourcePieceForEffect = finalBoard[sy][sx];
+    const sourcePieceForEffect = finalBoard[sy]?.[sx] || sourcePiece;
     let effectRes: {
       board: Board;
       capturedPieces: Piece[];
+      opponentCapturedPieces?: Piece[];
       graveyard?: Piece[];
       logs: Omit<import('./types').GameLog, 'id' | 'timestamp'>[];
       triggered: boolean;
@@ -2054,11 +2277,14 @@ export const App: React.FC = () => {
         capturedPieces[activePlayer],
         state.sharedPieces,
         [ty, tx],
-        selectedSharedPiece?.piece
+        selectedSharedPiece?.piece,
+        undefined,
+        capturedPieces[activePlayer === 'sente' ? 'gote' : 'sente']
       );
       effectRes = {
         board: specResult.board,
         capturedPieces: specResult.capturedPieces,
+        opponentCapturedPieces: specResult.opponentCapturedPieces,
         graveyard: specResult.graveyard,
         logs: specResult.logs,
         triggered: specResult.triggered
@@ -2074,7 +2300,9 @@ export const App: React.FC = () => {
         [ty, tx],
         undefined,
         state.sharedPieces,
-        selectedSharedPiece?.piece
+        selectedSharedPiece?.piece,
+        undefined,
+        capturedPieces[activePlayer === 'sente' ? 'gote' : 'sente']
       );
     }
 
@@ -2092,9 +2320,14 @@ export const App: React.FC = () => {
           finalBoard = finalBoard.map(row => 
             row.map(p => {
               if (p && p.id === sourcePiece.id) {
+                const uses = (p.remaining_uses ?? p.usesRemaining ?? 3) - 1;
                 return {
                   ...p,
-                  coolDownTurnsRemaining: targetCooldown
+                  coolDownTurnsRemaining: targetCooldown,
+                  cooldownTurnsRemaining: targetCooldown,
+                  maxCooldown: targetCooldown > 0 ? targetCooldown : (p.maxCooldown || 3),
+                  remaining_uses: Math.max(0, uses),
+                  usesRemaining: Math.max(0, uses)
                 };
               }
               return p;
@@ -2102,6 +2335,9 @@ export const App: React.FC = () => {
           );
         }
         nextCaptured[activePlayer] = effectRes.capturedPieces;
+        if (effectRes.opponentCapturedPieces) {
+          nextCaptured[activePlayer === 'sente' ? 'gote' : 'sente'] = effectRes.opponentCapturedPieces;
+        }
         if (effectRes.graveyard) {
           nextShared = effectRes.graveyard;
         }
@@ -2316,12 +2552,18 @@ export const App: React.FC = () => {
                 undefined,
                 undefined,
                 undefined,
-                nextShared
+                nextShared,
+                undefined,
+                undefined,
+                currentCaptured[activePlayer === 'sente' ? 'gote' : 'sente']
               );
               if (effectRes.triggered || effectRes.logs.length > 0) {
                 if (effectRes.triggered) {
                   currentBoard = effectRes.board;
                   currentCaptured[activePlayer] = effectRes.capturedPieces;
+                  if (effectRes.opponentCapturedPieces) {
+                    currentCaptured[activePlayer === 'sente' ? 'gote' : 'sente'] = effectRes.opponentCapturedPieces;
+                  }
                   if (effectRes.graveyard) {
                     nextShared = effectRes.graveyard;
                   }
@@ -2459,11 +2701,13 @@ export const App: React.FC = () => {
 
     const initializedSente = sentePieces.map((piece, index) => {
       const position = index < senteAvailable.length ? senteAvailable[index] : null;
+      const isStealth = isStealthPiece(piece);
       const initializedPiece = {
         ...piece,
         originalPosition: position,
         coolDownTurnsRemaining: 0,
-        isRevealed: isStealthPiece(piece) ? false : true,
+        isRevealed: isStealth ? false : true,
+        isStealth: isStealth ? true : false,
       };
       if (position) {
         nextBoard[position[0]][position[1]] = initializedPiece;
@@ -2484,11 +2728,13 @@ export const App: React.FC = () => {
 
     const initializedGote = gotePieces.map((piece, index) => {
       const position = index < goteAvailable.length ? goteAvailable[index] : null;
+      const isStealth = isStealthPiece(piece);
       const initializedPiece = {
         ...piece,
         originalPosition: position,
         coolDownTurnsRemaining: 0,
-        isRevealed: isStealthPiece(piece) ? false : true,
+        isRevealed: isStealth ? false : true,
+        isStealth: isStealth ? true : false,
       };
       if (position) {
         nextBoard[position[0]][position[1]] = initializedPiece;
@@ -2541,17 +2787,21 @@ export const App: React.FC = () => {
 
         // キャッシュ済み駒をランダムに4枚取得（なければオフライン生成）
         const gotePiecesData = getRandomCachedPieces(AI_PIECE_WORDS.length);
-        const gotePieces: Piece[] = gotePiecesData.map(pieceData => ({
-          ...pieceData,
-          id: Math.random().toString(36).substring(2, 11),
-          owner: 'gote',
-          isKing: false,
-          isPawn: false,
-          originalPosition: null,
-          coolDownTurnsRemaining: 0,
-          isRevealed: isStealthPiece(pieceData) ? false : true,
-          isPromoted: false,
-        }));
+        const gotePieces: Piece[] = gotePiecesData.map(pieceData => {
+          const isStealth = isStealthPiece(pieceData);
+          return {
+            ...pieceData,
+            id: Math.random().toString(36).substring(2, 11),
+            owner: 'gote',
+            isKing: false,
+            isPawn: false,
+            originalPosition: null,
+            coolDownTurnsRemaining: 0,
+            isRevealed: isStealth ? false : true,
+            isStealth: isStealth ? true : false,
+            isPromoted: false,
+          };
+        });
 
         setPiecesToPlace(prev => ({ ...prev, gote: gotePieces }));
         addLog(`🤖 Gemini AI の能力駒ロード完了（${gotePieces.map(p => isStealthPiece(p) ? '？' : p.word).join('・')}）`, 'system', 'gote');
@@ -2583,7 +2833,9 @@ export const App: React.FC = () => {
 
     const nextBoard = state.board.map(row => [...row]);
     pieceToPlace.originalPosition = [y, x];
-    pieceToPlace.isRevealed = isStealthPiece(pieceToPlace) ? false : true;
+    const isStealth = isStealthPiece(pieceToPlace);
+    pieceToPlace.isRevealed = isStealth ? false : true;
+    pieceToPlace.isStealth = isStealth ? true : false;
     nextBoard[y][x] = pieceToPlace;
 
     setPiecesToPlace(prev => ({
@@ -2758,11 +3010,19 @@ export const App: React.FC = () => {
 
   // Click Router
   const handleCellClick = (y: number, x: number) => {
+    if (isCutinPlaying) return;
     if (onlineMode && state.turn !== myRole) return;
-    if (state.activeAbilityMode && suspendedAbility) {
-      const isTarget = state.activeAbilityTargets.some(([ty, tx]) => ty === y && tx === x);
-      if (isTarget) {
-        resumeAbilitySelection(y, x);
+    if (state.activeAbilityMode) {
+      if (suspendedAbility) {
+        const isTarget = state.activeAbilityTargets.some(([ty, tx]) => ty === y && tx === x);
+        if (isTarget) {
+          resumeAbilitySelection(y, x);
+        } else {
+          // If clicked outside selectable targets during activeAbilityMode, safely cancel ability mode!
+          handleCancelAbilitySelection();
+        }
+      } else {
+        handleCancelAbilitySelection();
       }
       return;
     }
@@ -2775,6 +3035,7 @@ export const App: React.FC = () => {
 
   // Captured hand piece click Sente / Gote
   const handleCapturedPieceClick = (piece: Piece, index: number, owner: Player) => {
+    if (isCutinPlaying) return;
     if (onlineMode && state.turn !== myRole) return;
     if (state.phase !== 'playing' || state.winner) return;
     if (owner !== state.turn) return;
@@ -2787,6 +3048,17 @@ export const App: React.FC = () => {
 
     // Use drop-rule-aware valid cells (Nifu, No-move Drop)
     setValidMoves(getValidDropCells(state.board, piece, state.turn));
+  };
+
+  const handleCancelAbilitySelection = () => {
+    setSuspendedAbility(null);
+    setState(prev => ({
+      ...prev,
+      phase: 'playing',
+      activeAbilityMode: false,
+      activeAbilitySource: null,
+      activeAbilityTargets: []
+    }));
   };
 
   // Click Shared fantasy pool piece
@@ -3158,6 +3430,9 @@ export const App: React.FC = () => {
   };
 
   const selectedPieceObject = state.selectedCell ? state.board[state.selectedCell[0]][state.selectedCell[1]] : null;
+  const shouldRotate = onlineMode
+    ? (myRole === 'gote')
+    : (vsAiMode ? false : state.turn === 'gote');
 
   return (
     <div
@@ -3250,27 +3525,28 @@ export const App: React.FC = () => {
               
               {/* Left Side: Game Board (9x9) */}
               <div className="board-wrapper">
-                {state.activeAbilityMode && suspendedAbility && (
-                  <div style={{
-                    background: 'rgba(212, 175, 55, 0.08)',
-                    border: '1.5px solid var(--color-gold)',
-                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
-                    color: '#fff',
-                    padding: '8px 15px',
-                    borderRadius: '2px',
-                    marginBottom: '10px',
-                    fontSize: '12px',
-                    textAlign: 'center',
-                    fontWeight: 'bold',
-                    fontFamily: 'var(--font-cyber)'
-                  }}>
-                    {suspendedAbility.type === 'resurrect'
-                      ? '⚡ 【死者蘇生】墓場から蘇生する駒を選択し、配置する隣接マスを選択してください。'
-                      : '⚡ 【能力対象選択】効果を適用する対象の駒を盤上から選択してください。'}
+                {/* ─── SELECTING_ABILITY_TARGET Notification & Cancel Banner ─── */}
+                {state.phase === 'SELECTING_ABILITY_TARGET' && (
+                  <div className="w-full bg-gradient-to-r from-red-950 via-black to-red-900 border-2 border-yellow-400 p-2.5 rounded-lg shadow-2xl flex items-center justify-between mb-2 -skew-x-2 z-50 animate-pulse">
+                    <div className="flex items-center space-x-3">
+                      <span className="bg-yellow-400 text-black font-black text-xs px-2.5 py-0.5 -skew-x-12 tracking-wider shrink-0">
+                        TARGET SELECT
+                      </span>
+                      <span className="text-yellow-300 font-bold text-xs md:text-sm tracking-wide">
+                        【能力発動】発動対象のマスまたは駒を選択してください
+                      </span>
+                    </div>
+                    <button
+                      onClick={handleCancelAbilitySelection}
+                      className="bg-red-600 hover:bg-red-500 text-white font-black text-xs px-3 py-1 rounded border border-yellow-300 shadow-md transition-all active:scale-95 shrink-0 cursor-pointer"
+                    >
+                      [×] キャンセル
+                    </button>
                   </div>
                 )}
                 <GameBoard
                   board={state.board}
+                  tileBoard={state.tileBoard}
                   turn={state.turn}
                   phase={state.phase}
                   capturedPieces={state.capturedPieces}
@@ -3395,6 +3671,7 @@ export const App: React.FC = () => {
                   onSharedPieceClick={handleSharedPieceClick}
                   onHoverPiece={setHoveredPiece}
                   isResurrectActive={state.activeAbilityMode && suspendedAbility?.type === 'resurrect'}
+                  isViewerOpponent={shouldRotate}
                 />
               </div>
 
@@ -3473,6 +3750,15 @@ export const App: React.FC = () => {
           </div>
         );
       })()}
+      {/* Persona 5 / P3R Styled Cutin Overlay */}
+      <PersonaCutin
+        type={cutinState.type}
+        title={cutinState.title}
+        subtitle={cutinState.subtitle}
+        comboHits={cutinState.comboHits}
+        gambleResult={cutinState.gambleResult}
+        onComplete={handleCutinComplete}
+      />
     </div>
   );
 };
