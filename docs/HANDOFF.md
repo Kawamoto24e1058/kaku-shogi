@@ -35,5 +35,11 @@
   キーがそのまま入っている（分割して書いてもビルドで1つの文字列に戻る）。コミット履歴にも残るので、無効化以外に消す方法はない
 - 新しいキーを使う場合は Vercel の環境変数 `GEMINI_API_KEY`（Sensitive）にだけ入れ、`ENABLE_GEMINI=true` も設定する。
   Gemini API の利用規約の未成年に関する条項を確認したうえで判断する（既定は Workers AI のみ）
+- **個人情報の露出を減らす**（公開前に推奨）
+  - GitHub リポジトリを非公開にする（Settings → General → Danger Zone → Change visibility → Private）。
+    アカウント名（名字＋学籍番号）がリポジトリ名・コミットの作者名に出ているため。Vercel の自動デプロイは非公開でも続く
+  - Vercel のチーム URL（`24e1058-harus-projects`）はプレビューURLにだけ出る。気になれば Vercel → Team Settings → General で変更
+  - 運営者名（`VITE_OPERATOR_NAME`）はハンドルネーム、問い合わせ先（`VITE_CONTACT_URL`）は Google フォームかゲーム用の X アカウントにする
+  - シェア・招待リンクは `VITE_SITE_URL=https://kaku-shogi.vercel.app`（設定済み）で常に本番URLになる
 - 利用規約・プライバシーポリシーの文面確認
 - 使用量の確認先: Supabase → Usage、Cloudflare → Workers AI、Vercel → Usage
