@@ -7,22 +7,24 @@
 - 課金を有効にしない（Supabase は Free、Vercel は Hobby、Cloudflare は Workers Free のまま）。
 
 ## 済んでいること（2026-10-22 時点）
-- Supabase プロジェクト `ahwfldxicjvrosgvryxn`（東京、Free）を作成。テーブル・RLS・対戦用 RPC を適用し、
-  anon ロールで権限を確認済み（部屋を作った人と最初の入室者だけが書き換えられる。他人の書き換え・直接書き込み・秘密の読み取りは拒否）。
+- Supabase プロジェクト `ahwfldxicjvrosgvryxn`（東京、Free）に `supabase/schema.sql` を適用済み（自動掃除の pg_cron も登録済み）。
+  anon ロールで権限を確認済み: 部屋を作った人と最初の入室者だけが書き換えられ、部屋の削除は作った人だけ。
+  ランダムマッチの待ち行列は自分自身を取らず、1人は1回しか取り出されない。
+  他人の書き換え・テーブルへの直接書き込み・待ち行列や秘密の読み取り・誤ったトークンでの駒保存は拒否。
+- Security Advisor の警告「anon が SECURITY DEFINER 関数を実行できる」（12件）は設計どおり
+  （書き込みはすべてこの RPC 経由で、各関数が秘密のハッシュかサーバー用トークンを照合する）。
+  「RLS 有効・ポリシーなし」（待ち行列2表）も設計どおり（ブラウザからは読めない）。
 - サーバー用トークンを発行し、そのハッシュを `private.config` に登録済み。
 - Vercel プロジェクト `kaku-shogi` に `VITE_SUPABASE_URL`・`VITE_SUPABASE_PUBLISHABLE_KEY`・
   `SUPABASE_SERVER_TOKEN`（Sensitive）・`CRON_SECRET`（Sensitive）を登録済み。
 - Cloudflare Workers AI での生成を確認済み（10語すべて「エンジンで実行可能・盤面で効果あり」）。
 
 ## 残りの手順
-1. **Supabase の SQL Editor で `supabase/schema.sql` を実行する（利用者）**
-   削除処理を含む関数・自動掃除・権限の絞り込みが未適用。コネクタからの適用は確認待ちで止まるため、ダッシュボードで実行する。
-   何度実行しても同じ状態になる。実行後、Advisors → Security に警告が出ていないか確認する。
-2. **Vercel に `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` を登録する（利用者）**
+1. **Vercel に `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` を登録する（利用者）**
    Settings → Environment Variables。トークンは Sensitive にする。未登録だと駒は簡易生成になる。
-3. **問い合わせ先と運営者名を決めて `VITE_CONTACT_URL` / `VITE_OPERATOR_NAME` を登録する（利用者）**
-4. 作業ブランチから main へのプルリクエストを作り、Preview デプロイで確認 → 利用者の承認を得てマージ。
-5. 本番で確認: 駒生成（AI）・CPU対戦・2つのブラウザでオンライン対戦（部屋コード／ランダム）・
+2. **問い合わせ先と運営者名を決めて `VITE_CONTACT_URL` / `VITE_OPERATOR_NAME` を登録する（利用者）**
+3. 作業ブランチから main へのプルリクエストを作り、Preview デプロイで確認 → 利用者の承認を得てマージ。
+4. 本番で確認: 駒生成（AI）・CPU対戦・2つのブラウザでオンライン対戦（部屋コード／ランダム）・
    `/terms.html`・`/privacy.html`・Xに投稿したときのカード表示。
    Vercel → Cron Jobs から `/api/backfill` を手動実行し、駒が `public.pieces` に増えることを確認。
 
