@@ -5,6 +5,12 @@ import { wordKey } from '../shared/wordKey';
 import { containsNgWord } from '../shared/moderation';
 
 const AREA_SHAPE_SET = new Set<string>(AREA_SHAPES);
+// 対象マスではなく発動した駒自身に作用するアクション（範囲が自分のマスだけでも効果が出る）
+const SELF_ACTIONS = new Set<string>([
+  'STEALTH_ON', 'SHIELD_GAIN', 'GUARD_STANCE', 'OVERDRIVE_BOOST', 'GRAVITY_PULL', 'STEAL_HAND', 'BOOMERANG',
+  'EVOLUTION', 'EVOLUTION_CHECK', 'CLEAR_DEBUFF', 'LUCKY_DODGE', 'RE_ACTION', 'LEAVE_TRAIL_FIRE', 'CHARGE_TURN',
+  'SACRIFICE_COST', 'SELF_STUN', 'DELAYED_BURST',
+]);
 
 // キャッシュ用インメモリマップおよび localStorage との連携
 const memoryCache = new Map<string, PieceData>();
@@ -506,11 +512,38 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
       }
     }
 
-    parsed.range_geometry = {
-      normal_grid: norm,
-      charging_grid: chg,
-      promoted_grid: prom
+    // 中央（13文字目）は自分自身。AIが中央以外に2を書いたり中央を0にしたりするので正規化する
+    const fixCenter = (g: string) => g.split('').map((c, i) => (i === 12 ? '2' : c === '2' ? '1' : c)).join('');
+    // 通常時の移動範囲が広すぎる（全方向2マスの24マス等）と1駒で盤面を制圧できてしまうため、
+    // 動けるマスが12を超える場合は「歩数2以内（ひし形12マス）」に絞る。成った後の範囲は広いままでよい。
+    const capMobility = (g: string) => {
+      const movable = g.split('').filter(c => c === '1').length;
+      if (movable <= 12) return g;
+      return g.split('').map((c, i) => {
+        const dy = Math.floor(i / 5) - 2;
+        const dx = (i % 5) - 2;
+        return c === '1' && Math.abs(dy) + Math.abs(dx) > 2 ? '0' : c;
+      }).join('');
     };
+    parsed.range_geometry = {
+      normal_grid: capMobility(fixCenter(norm)),
+      charging_grid: fixCenter(chg),
+      promoted_grid: fixCenter(prom)
+    };
+  }
+
+  // 移動パターンの表記ゆれ（knight_jump 等）を、エンジンが解釈できる値へ寄せる
+  if (typeof parsed.logic_code === 'string') {
+    const lc = parsed.logic_code.toLowerCase();
+    const aliases: [RegExp, string][] = [
+      [/knight|keima|桂/, 'move_like_knight'], [/lance|kyosha|香/, 'move_like_lance'],
+      [/rook|hisha|飛/, 'move_like_rook'], [/bishop|kaku|角/, 'move_like_bishop'],
+      [/gold|kin|金/, 'move_like_gold'], [/cannon|砲/, 'move_like_cannon'],
+    ];
+    if (!lc.startsWith('move_like_')) {
+      const hit = aliases.find(([re]) => re.test(lc));
+      if (hit) parsed.logic_code = hit[1];
+    }
   }
 
   // Safeguard: Check if custom_moves is empty or undefined
@@ -570,6 +603,7 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
   };
   normalizeSpecActions(parsed.ability_spec);
   normalizeSpecActions(parsed.promoted_effect?.ability_spec);
+
 
   // ─── Safeguard 1: 基礎能力 (ability_spec) の優先割り当て保護 ───────────────────────
   if (!parsed.ability_spec || typeof parsed.ability_spec !== 'object' || Object.keys(parsed.ability_spec).length === 0) {
@@ -662,6 +696,22 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
     };
   }
 
+  // ─── Safeguard: 何も起きない組み合わせの補正 ───────────────────────
+  // 自動発動で範囲が POINT（自分のマスだけ）だと、敵や空きマスに作用するアクションは対象が無く不発になる。
+  // 自分に作用するアクションだけなら SELF、それ以外は周囲1マスに広げる。
+  const fixDudTargeting = (spec: any) => {
+    if (!spec || !Array.isArray(spec.actions)) return;
+    if (spec.actions.every((a: string) => SELF_ACTIONS.has(a))) {
+      spec.target_selection = 'SELF';
+      spec.area_shape = 'POINT';
+    } else if (spec.area_shape === 'POINT' && spec.target_selection !== 'CLICK_ZONE') {
+      spec.area_shape = 'SQUARE_3X3';
+      if (spec.target_selection === 'SELF') spec.target_selection = 'AUTOMATIC';
+    }
+  };
+  fixDudTargeting(parsed.ability_spec);
+  fixDudTargeting(parsed.promoted_effect?.ability_spec);
+
   // ─── Safeguard 3: custom_ability の自動補正・生成 ────────────────────────
   if (!parsed.custom_ability && parsed.ability_spec) {
     const spec = parsed.ability_spec;
@@ -672,7 +722,8 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
       ability_name: parsed.effect_name || '神秘の力',
       flavor_text: parsed.description || '',
       triggers: [spec.activation_trigger || parsed.trigger || 'ON_MOVE'],
-      targets: [spec.area_shape || 'POINT'],
+      // 自分に作用する能力はエンジンの 'SELF' 指定でないと自分のマスが対象外になる
+      targets: [spec.target_selection === 'SELF' ? 'SELF' : (spec.area_shape || 'POINT')],
       actions: actions,
       constraints: spec.affects_who === 'ALL_PIECES' ? ['MUTUAL_DAMAGE'] : [],
       remaining_uses: 3,

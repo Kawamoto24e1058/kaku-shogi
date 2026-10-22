@@ -7,7 +7,7 @@ import {
 
 const str = (description?: string) => ({ type: 'STRING', ...(description ? { description } : {}) });
 const enumOf = (values: readonly string[], description?: string) => ({ type: 'STRING', enum: [...values], ...(description ? { description } : {}) });
-const GRID_DESC = '5x5グリッドを25文字の0/1/2で表す。中央(13文字目)は自分自身で必ず2';
+const GRID_DESC = '5x5グリッド。上の行（敵陣側）から5行を / 区切りで書く（例 00100/01110/01210/00000/00000）。中央は自分自身で必ず2';
 // エンジン (getValidMoves / 自律行動) が解釈できる移動パターンだけを許可する
 const LOGIC_CODES = ['normal', 'move_like_rook', 'move_like_bishop', 'move_like_lance', 'move_like_knight', 'move_like_gold', 'move_like_queen_limit_3', 'move_like_cannon', 'runaway_drive', 'random_teleport'];
 

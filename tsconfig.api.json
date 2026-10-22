@@ -13,5 +13,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["api", "shared", "scripts/backfill.ts", "scripts/try-generate.ts"]
+  "include": ["api", "shared", "scripts/backfill.ts"]
 }

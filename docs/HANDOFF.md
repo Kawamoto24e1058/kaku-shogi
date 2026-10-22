@@ -48,6 +48,8 @@ KEY_FILE=$(mktemp) && gcloud iam service-accounts keys create "$KEY_FILE" --iam-
 ```
 
 ## 2. Cloudflare Workers AI
+- 2026-10-22 時点: クラウドセッションで、利用者のトークン（Workers AI 権限付き）による生成を確認済み。
+  10語の生成で、全語が「エンジンで実行可能・盤面で効果あり」（1語あたり約4〜8秒、5語まとめて約20〜40秒）。
 - 利用者のダッシュボード → My Profile → API Tokens で、トークンに **Account → Workers AI → Read** の権限があることを確認してもらう（無ければ追加）。
 - Account ID はダッシュボードのアカウントホームに表示される。
 - 確認: `.env.local` に `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` を書き、

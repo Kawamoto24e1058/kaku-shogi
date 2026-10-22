@@ -15,6 +15,8 @@ export type Json = Record<string, unknown>;
 
 const WORKERS_AI_MODEL = process.env.WORKERS_AI_MODEL || '@cf/google/gemma-4-26b-a4b-it';
 const WORKERS_AI_FALLBACK_MODEL = process.env.WORKERS_AI_FALLBACK_MODEL || '';
+// Gemma 4 などは既定で「思考」してから答えるため、5語まとめると90秒を超えることがある。駒生成では思考を切る
+const WORKERS_AI_THINKING = process.env.WORKERS_AI_THINKING === 'true';
 const ENABLE_GEMINI = process.env.ENABLE_GEMINI === 'true';
 const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash-lite';
@@ -138,6 +140,8 @@ interface OpenAICompatibleConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** プロバイダ固有の追加パラメータ */
+  extraBody?: Json;
 }
 
 /** OpenAI 互換の chat/completions を呼ぶ。JSONモードに非対応のモデルなら(400)、指定なしで再試行する */
@@ -152,6 +156,7 @@ async function callOpenAICompatible(config: OpenAICompatibleConfig, words: strin
         ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
         temperature: 0.9,
         max_tokens: OUTPUT_TOKENS_PER_PIECE * words.length,
+        ...(config.extraBody || {}),
       }),
     }, words.length > 1 ? BATCH_TIMEOUT_MS : TIMEOUT_MS) as { choices?: { message?: { content?: string } }[] };
     const text = data.choices?.[0]?.message?.content || '';
@@ -179,7 +184,8 @@ export function configuredProviders(): Provider[] {
   if (cfAccount && cfToken) {
     const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/ai/v1`;
     for (const model of [WORKERS_AI_MODEL, WORKERS_AI_FALLBACK_MODEL].filter((m, i, all) => m && all.indexOf(m) === i)) {
-      providers.push({ name: `workers-ai:${model}`, run: w => callOpenAICompatible({ baseUrl, apiKey: cfToken, model }, w) });
+      const extraBody = WORKERS_AI_THINKING ? undefined : { chat_template_kwargs: { enable_thinking: false } };
+      providers.push({ name: `workers-ai:${model}`, run: w => callOpenAICompatible({ baseUrl, apiKey: cfToken, model, extraBody }, w) });
     }
   }
 
