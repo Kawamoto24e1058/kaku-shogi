@@ -7,6 +7,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { configuredProviders, generatePieces } from '../api/_lib/generator.js';
 import { pieceHasNgText } from '../shared/moderation.js';
 import { SUPPORTED_ACTIONS, AREA_SHAPES } from '../shared/abilityCatalog.js';
+import type { Board, Piece } from '../src/types';
 
 // src 側（ゲームエンジン）はブラウザ前提なので、localStorage を用意してから読み込む
 (globalThis as { localStorage?: unknown }).localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
@@ -17,14 +18,15 @@ const { initializeBoard, applyAutomatedEffect } = await import('../src/gameLogic
 function simulate(raw: Record<string, unknown>, word: string): string {
   const template = initializeBoard();
   const pawn = template[6][0]!;
-  const piece = { ...sanitizePieceData(structuredClone(raw), word), id: 'me', owner: 'sente', isKing: false, isPawn: false, originalPosition: null, coolDownTurnsRemaining: 0, isRevealed: true, isPromoted: false } as any;
-  const board: any[][] = Array.from({ length: 9 }, () => Array(9).fill(null));
-  board[8][0] = { ...template[8][4], id: 'sk' };
-  board[0][8] = { ...template[0][4], id: 'gk' };
+  const piece: Piece = { ...sanitizePieceData(structuredClone(raw), word), id: 'me', owner: 'sente', isKing: false, isPawn: false, originalPosition: null, coolDownTurnsRemaining: 0, isRevealed: true, isPromoted: false };
+  const board: Board = Array.from({ length: 9 }, () => Array(9).fill(null));
+  board[8][0] = { ...template[8][4]!, id: 'sk' };
+  board[0][8] = { ...template[0][4]!, id: 'gk' };
   board[4][4] = piece;
   for (const [y, x] of [[3, 3], [3, 4], [3, 5], [4, 3], [4, 5], [2, 4], [1, 4], [7, 7]]) board[y][x] = { ...pawn, id: `e${y}${x}`, owner: 'gote', isPawn: false };
   board[5][4] = { ...pawn, id: 'ally', owner: 'sente', isPawn: false };
-  const trigger = piece.custom_ability?.triggers?.[0] === 'ALWAYS' ? 'TURN_START' : (piece.custom_ability?.triggers?.[0] ?? 'ON_MOVE');
+  const first = piece.custom_ability?.triggers?.[0];
+  const trigger = (first === 'ALWAYS' || !first ? (first ? 'TURN_START' : 'ON_MOVE') : first) as Parameters<typeof applyAutomatedEffect>[2];
   const isTrap = trigger === 'ON_TAKEN';
   if (isTrap) board[4][4] = { ...pawn, id: 'attacker', owner: 'gote', isPawn: false };
   const before = JSON.stringify(board);

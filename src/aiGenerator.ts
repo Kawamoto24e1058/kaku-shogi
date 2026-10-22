@@ -699,7 +699,7 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
   // ─── Safeguard: 何も起きない組み合わせの補正 ───────────────────────
   // 自動発動で範囲が POINT（自分のマスだけ）だと、敵や空きマスに作用するアクションは対象が無く不発になる。
   // 自分に作用するアクションだけなら SELF、それ以外は周囲1マスに広げる。
-  const fixDudTargeting = (spec: any) => {
+  const fixDudTargeting = (spec: { actions?: string[]; target_selection?: string; area_shape?: string } | undefined) => {
     if (!spec || !Array.isArray(spec.actions)) return;
     if (spec.actions.every((a: string) => SELF_ACTIONS.has(a))) {
       spec.target_selection = 'SELF';
