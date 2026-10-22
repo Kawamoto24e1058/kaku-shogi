@@ -6,6 +6,8 @@
 import { createHash } from 'node:crypto';
 import { getAdminDb } from './_lib/firebaseAdmin.js';
 import { generatePiece, NoProviderError, type Json } from './_lib/generator.js';
+import { enqueueWord, findSimilarPiece, getCachedPiece, saveCachedPiece } from './_lib/pieceCache.js';
+import { wordKey } from '../shared/wordKey.js';
 
 const MAX_WORD_LENGTH = 24;
 const PER_IP_PER_HOUR = Number(process.env.RATE_LIMIT_PER_HOUR || 10);
@@ -23,7 +25,9 @@ export function normalizeWord(raw: unknown): string | null {
   // eslint-disable-next-line no-control-regex
   const word = raw.normalize('NFKC').replace(/[\u0000-\u001f\u007f]/g, '').trim();
   if (word.length === 0 || [...word].length > MAX_WORD_LENGTH) return null;
-  if (word.includes('/') || word === '.' || word === '..' || /^__.*__$/.test(word)) return null;
+  if (word.includes('/') || /^__.*__$/.test(word)) return null;
+  const key = wordKey(word);
+  if (key.length === 0 || key === '.' || key === '..') return null;
   return word;
 }
 
@@ -78,19 +82,59 @@ async function consumeQuota(ip: string): Promise<'ok' | 'ip' | 'global'> {
   });
 }
 
-/** AI生成できなかった単語を待ち行列に積む（何度も要求された単語ほど優先してバックフィルされる） */
-async function enqueueForBackfill(word: string): Promise<void> {
-  try {
-    const db = await getAdminDb();
-    if (!db) return;
-    const { FieldValue } = await import('firebase-admin/firestore');
-    await db.collection('generation_queue').doc(word).set(
-      { word, requests: FieldValue.increment(1), lastRequestedAt: Date.now() },
-      { merge: true },
+// 同じ単語への同時リクエストは1回の生成を共有する（流行りの単語が一斉に入力されたときの無駄打ちを防ぐ）。
+// 完了後もしばらく結果を残し、キャッシュ確認とほぼ同時に届いた後続リクエストも二重に生成しないようにする。
+const SHARED_RESULT_TTL_MS = 60_000;
+const inFlight = new Map<string, Promise<{ piece: Json; provider: string }>>();
+
+function generateShared(key: string, word: string) {
+  let pending = inFlight.get(key);
+  if (!pending) {
+    pending = (async () => {
+      const result = await generatePiece(word);
+      const db = await getAdminDb();
+      if (db) {
+        await saveCachedPiece(db, key, result.piece, { provider: result.provider })
+          .catch(err => console.warn('[generate-piece] cache write failed:', err));
+      }
+      return result;
+    })();
+    const entry = pending;
+    inFlight.set(key, entry);
+    entry.then(
+      () => {
+        const timer = setTimeout(() => { if (inFlight.get(key) === entry) inFlight.delete(key); }, SHARED_RESULT_TTL_MS);
+        // このタイマーのためにプロセスの終了を待たせない
+        (timer as unknown as { unref?: () => void }).unref?.();
+      },
+      () => { if (inFlight.get(key) === entry) inFlight.delete(key); },
     );
-  } catch (err) {
-    console.warn('[generate-piece] enqueue failed:', err);
   }
+  return pending;
+}
+
+/**
+ * AI生成できなかったときの代替。単語を待ち行列に積み（後でバックフィルがAI版を作る）、
+ * 近い単語のAI駒があればそれを流用して返す。無ければエラーを返し、ブラウザ側の簡易生成に任せる。
+ */
+async function fallbackResponse(key: string, word: string, status: number, reason: string): Promise<Response> {
+  const db = await getAdminDb();
+  if (db) {
+    try {
+      await enqueueWord(db, key, word);
+      const similar = await findSimilarPiece(db, key, word);
+      if (similar) {
+        return json(200, {
+          piece: similar,
+          source: 'similar',
+          notice: `${reason}、近い言葉「${similar.similarTo}」のAI駒をもとに作成しました。「${word}」のAI版は後で登録されます。`,
+        });
+      }
+    } catch (err) {
+      console.warn('[generate-piece] fallback lookup failed:', err);
+    }
+  }
+  return json(status, { error: `${reason}、簡易生成で作成しました。${db ? '「' + word + '」のAI版は後で登録されます。' : ''}`, queued: !!db });
 }
 
 export async function handleGeneratePiece(request: Request): Promise<Response> {
@@ -111,11 +155,22 @@ export async function handleGeneratePiece(request: Request): Promise<Response> {
   const word = normalizeWord((body as Json | null)?.word);
   if (!word) return json(400, { error: `単語は1〜${MAX_WORD_LENGTH}文字で入力してください（「/」は使えません）。` });
 
+  const key = wordKey(word);
+  // 同じ単語を生成中・生成直後なら、その結果を使う（回数制限も消費しない）
+  const shared = inFlight.get(key);
+  if (shared) {
+    try {
+      const { piece } = await shared;
+      return json(200, { piece: { ...piece, word }, source: 'cache' });
+    } catch {
+      // 共有元が失敗した場合は通常の流れで処理する
+    }
+  }
+
   const db = await getAdminDb();
-  const cacheRef = db?.collection('custom_pieces').doc(word);
   try {
-    const cached = await cacheRef?.get();
-    if (cached?.exists) return json(200, { piece: cached.data() as Json, source: 'cache' });
+    const cached = db ? await getCachedPiece(db, key) : null;
+    if (cached) return json(200, { piece: { ...cached, word }, source: 'cache' });
   } catch (err) {
     console.warn('[generate-piece] cache read failed:', err);
   }
@@ -124,32 +179,18 @@ export async function handleGeneratePiece(request: Request): Promise<Response> {
     console.warn('[generate-piece] quota check failed:', err);
     return 'ok' as const;
   });
-  if (quota === 'ip') {
-    return json(429, { error: 'AI生成の回数制限に達したため、簡易生成で作成しました。少し時間をおくとAI生成に戻ります。' });
-  }
-  if (quota === 'global') {
-    await enqueueForBackfill(word);
-    return json(429, { error: '本日のAI生成枠が混雑しているため簡易生成で作成しました。この単語は後でAI版が登録されます。', queued: true });
-  }
+  if (quota === 'ip') return fallbackResponse(key, word, 429, 'AI生成の回数制限に達したため');
+  if (quota === 'global') return fallbackResponse(key, word, 429, '本日のAI生成枠が混雑しているため');
 
   try {
-    const { piece, provider } = await generatePiece(word);
-    try {
-      await cacheRef?.set({ ...piece, createdAt: Date.now(), provider });
-    } catch (err) {
-      console.warn('[generate-piece] cache write failed:', err);
-    }
-    return json(200, { piece, source: 'ai' });
+    const { piece } = await generateShared(key, word);
+    return json(200, { piece: { ...piece, word }, source: 'ai' });
   } catch (err) {
     if (err instanceof NoProviderError) {
       return json(503, { error: 'AI生成サーバーが未設定のため、簡易生成で作成しました。' });
     }
     console.error('[generate-piece] all providers failed:', (err as Error).message);
-    await enqueueForBackfill(word);
-    return json(502, {
-      error: 'AIが混雑しているため簡易生成で作成しました。この単語は後でAI版が登録されます。',
-      queued: true,
-    });
+    return fallbackResponse(key, word, 502, 'AIが混雑しているため');
   }
 }
 

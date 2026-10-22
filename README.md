@@ -25,12 +25,20 @@
 
 駒の生成は上から順に試し、どこかで失敗しても次に進むので、ゲーム自体は止まりません。
 
-1. **共有キャッシュ**（誰かが一度生成した単語・事前生成した単語）… 即時・高品質
+1. **共有キャッシュ**（誰かが一度生成した単語・事前生成した単語）… 即時・高品質。
+   「ネコ/ねこ」「ＡＩ/ai」や空白・記号の違いは同じ単語として扱う（`shared/wordKey.ts`）
 2. **Gemini**（`GEMINI_MODEL`）
-3. **Gemini 軽量モデル**（`GEMINI_FALLBACK_MODEL`）
-4. **予備の LLM**（任意。Groq / OpenRouter / Cloudflare Workers AI など OpenAI 互換 API。`FALLBACK_LLM_*`）
-5. **簡易生成**（`src/offlineGenerator.ts`）… ブラウザ内で必ず動く。17 種の能力型から単語に合うものを選ぶ。
+3. **Gemini 軽量モデル**（`GEMINI_FALLBACK_MODEL`。1日の上限はモデルごとに別枠）
+4. **Gemma**（`GEMMA_MODEL`。同じ API キーで使える予備）
+5. **予備の LLM**（任意。Groq / OpenRouter / Cloudflare Workers AI など OpenAI 互換 API。`FALLBACK_LLM_*`）
+6. **近い単語の AI 駒を流用**（例:「黒猫」→「猫」の AI 駒）。単語は待ち行列に入り、後で AI 版が登録される
+7. **簡易生成**（`src/offlineGenerator.ts`）… ブラウザ内で必ず動く。17 種の能力型から単語に合うものを選ぶ。
    全能力型がエンジン上で実際に効果を発揮することを `npm run verify:abilities` で確認できる。
+
+AI 呼び出しを節約する工夫:
+- プロンプトはエンジンが解釈する項目だけに絞って約 2,200 トークン（1 分あたりの入力トークン上限に当たりにくい）
+- 同じ単語への同時リクエストは 1 回の生成を共有する
+- バックフィルは 1 回の呼び出しで 5 語をまとめて生成する（1 日の上限は「回数」で数えられるため）
 
 AI で生成できなかった単語は `generation_queue` に積まれ、GitHub Actions（`.github/workflows/backfill.yml`, 1 日 1 回）が
 その日に余った無料枠で AI 生成して共有キャッシュに登録します。次にその単語を入れた人からは AI 版になります。

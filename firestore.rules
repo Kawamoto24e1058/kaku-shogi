@@ -16,6 +16,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // キャッシュ済み単語の一覧（近い単語の検索用）: サーバー専用
+    match /meta/{doc} {
+      allow read, write: if false;
+    }
+
     // AI生成待ちの単語（バックフィル用）: サーバー専用
     match /generation_queue/{word} {
       allow read, write: if false;

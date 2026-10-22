@@ -84,8 +84,8 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
     setWord('');
 
     try {
-      const { piece: pieceData, notice: generationNotice } = await generatePieceWithSource(target);
-      setNotice(generationNotice || '');
+      const { piece: pieceData, notice: generationNotice, source } = await generatePieceWithSource(target);
+      setNotice(generationNotice ? `${source === 'similar' ? '近い言葉のAI駒' : '簡易生成'}：${generationNotice}` : '');
 
       const newPiece: Piece = {
         ...pieceData,
@@ -285,7 +285,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
           gap: '4px'
         }}>
           {notice ? (
-            <div><strong>簡易生成：</strong>{notice}</div>
+            <div>{notice}</div>
           ) : (
             <div>
               <strong>AI駆動生成モード：</strong> 入力された単語の特徴をAI (Google Gemini) が解釈し、オリジナルの特殊能力を生成します。

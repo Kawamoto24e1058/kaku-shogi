@@ -1,6 +1,7 @@
 import type { PieceData } from './types';
 import { AREA_SHAPES, normalizeActions } from '../shared/abilityCatalog';
 import { buildOfflinePiece } from './offlineGenerator';
+import { wordKey } from '../shared/wordKey';
 
 const AREA_SHAPE_SET = new Set<string>(AREA_SHAPES);
 
@@ -23,7 +24,7 @@ try {
 }
 
 function getCacheKey(word: string): string {
-  return word.trim().toLowerCase();
+  return wordKey(word);
 }
 
 function saveToCache(word: string, data: PieceData) {
@@ -104,7 +105,7 @@ export function generateOfflinePiece(word: string): PieceData {
   return sanitizePieceData(buildOfflinePiece(word), word);
 }
 
-export type PieceSource = 'cache' | 'ai' | 'offline';
+export type PieceSource = 'cache' | 'ai' | 'similar' | 'offline';
 
 export interface GeneratedPiece {
   piece: PieceData;
@@ -142,6 +143,10 @@ export async function generatePieceWithSource(word: string): Promise<GeneratedPi
     const body = await res.json().catch(() => null);
     if (res.ok && body?.piece) {
       const piece = sanitizePieceData(body.piece, trimmed);
+      if (body.source === 'similar') {
+        // 近い単語の流用は仮のもの。後でAI版が登録されるので端末にはキャッシュしない
+        return { piece, source: 'similar', notice: body.notice };
+      }
       saveToCache(trimmed, piece);
       return { piece, source: body.source === 'cache' ? 'cache' : 'ai' };
     }

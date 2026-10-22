@@ -7,7 +7,9 @@ import {
 
 const str = (description?: string) => ({ type: 'STRING', ...(description ? { description } : {}) });
 const enumOf = (values: readonly string[], description?: string) => ({ type: 'STRING', enum: [...values], ...(description ? { description } : {}) });
-const GRID_DESC = '5x5グリッドを25文字の0/1/2で表す。中央(12文字目)は自分自身で必ず2';
+const GRID_DESC = '5x5グリッドを25文字の0/1/2で表す。中央(13文字目)は自分自身で必ず2';
+// エンジン (getValidMoves / 自律行動) が解釈できる移動パターンだけを許可する
+const LOGIC_CODES = ['normal', 'move_like_rook', 'move_like_bishop', 'move_like_lance', 'move_like_knight', 'move_like_gold', 'move_like_queen_limit_3', 'move_like_cannon', 'runaway_drive', 'random_teleport'];
 
 const abilitySpec = {
   type: 'OBJECT',
@@ -38,7 +40,7 @@ const visualEffect = {
   required: ['trajectory_type', 'particle_color', 'particle_count', 'particle_speed', 'screen_shake'],
 };
 
-export const PIECE_RESPONSE_SCHEMA = {
+const PIECE_SCHEMA = {
   type: 'OBJECT',
   properties: {
     word: str(),
@@ -77,12 +79,12 @@ export const PIECE_RESPONSE_SCHEMA = {
       properties: {
         effect_name: str(),
         description: str('80文字以内'),
-        logic_code: { type: 'STRING', nullable: true },
+        logic_code: { ...enumOf([...LOGIC_CODES, 'move_like_queen', 'teleport_move']), nullable: true },
         ability_spec: abilitySpec,
       },
       required: ['effect_name', 'description', 'ability_spec'],
     },
-    logic_code: str(),
+    logic_code: enumOf(LOGIC_CODES),
     deep_search_analysis: str('単語の特徴を能力にどう反映したか。60文字以内'),
   },
   required: [
@@ -90,4 +92,13 @@ export const PIECE_RESPONSE_SCHEMA = {
     'is_once_per_game', 'cool_down_turns', 'range_geometry', 'ability_spec', 'visual_effect',
     'description', 'promoted_effect', 'logic_code', 'deep_search_analysis',
   ],
+};
+
+/** 複数の単語をまとめて1回で生成するための形（{ pieces: [...] }） */
+export const PIECES_RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    pieces: { type: 'ARRAY', items: PIECE_SCHEMA },
+  },
+  required: ['pieces'],
 };
