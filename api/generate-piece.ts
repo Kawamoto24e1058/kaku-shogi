@@ -1,22 +1,15 @@
 // POST /api/generate-piece  { word: string } -> { piece, source }
-// Gemini APIキーはこの関数（サーバー）だけが環境変数で保持する。
-// 無料枠を守るため、共有キャッシュ → IP単位レート制限 → 全体の1日上限 の順にチェックしてから Gemini を呼ぶ。
+// LLMのAPIキーはこの関数（サーバー）だけが環境変数で保持する。
+// 処理順: 共有キャッシュ → IP単位レート制限 → 全体の1日上限 → LLM（複数プロバイダを順に試す）。
+// どれも使えない場合はエラーを返し（ブラウザ側で簡易生成に切り替わる）、単語を待ち行列に積む。
+// 待ち行列は scripts/backfill.ts（GitHub Actions で定期実行）がAI生成して共有キャッシュに登録する。
 import { createHash } from 'node:crypto';
-import { buildPrompt } from './_lib/prompt.js';
-import { PIECE_RESPONSE_SCHEMA } from './_lib/pieceSchema.js';
 import { getAdminDb } from './_lib/firebaseAdmin.js';
+import { generatePiece, NoProviderError, type Json } from './_lib/generator.js';
 
 const MAX_WORD_LENGTH = 24;
 const PER_IP_PER_HOUR = Number(process.env.RATE_LIMIT_PER_HOUR || 10);
-const GLOBAL_PER_DAY = Number(process.env.GLOBAL_DAILY_LIMIT || 200);
-const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash-lite';
-// 思考(thinking)はJSON生成の待ち時間を大きく伸ばすため既定でオフ。品質を優先したい場合は 512 などに上げる
-const THINKING_BUDGET = Number(process.env.GEMINI_THINKING_BUDGET ?? 0);
-const MAX_OUTPUT_TOKENS = 2048;
-const GEMINI_TIMEOUT_MS = 25_000;
-
-type Json = Record<string, unknown>;
+const GLOBAL_PER_DAY = Number(process.env.GLOBAL_DAILY_LIMIT || 1000);
 
 const json = (status: number, body: Json) =>
   new Response(JSON.stringify(body), {
@@ -85,52 +78,18 @@ async function consumeQuota(ip: string): Promise<'ok' | 'ip' | 'global'> {
   });
 }
 
-async function callGemini(model: string, word: string, apiKey: string, useSchema = true): Promise<Json> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+/** AI生成できなかった単語を待ち行列に積む（何度も要求された単語ほど優先してバックフィルされる） */
+async function enqueueForBackfill(word: string): Promise<void> {
   try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: 'POST',
-      // キーはURLではなくヘッダーで渡す（URLはログに残りやすいため）
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: buildPrompt(word) }] }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          ...(useSchema ? { responseSchema: PIECE_RESPONSE_SCHEMA } : {}),
-          temperature: 1.0,
-          maxOutputTokens: MAX_OUTPUT_TOKENS,
-          ...(THINKING_BUDGET >= 0 ? { thinkingConfig: { thinkingBudget: THINKING_BUDGET } } : {}),
-        },
-      }),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const detail = await res.text().catch(() => '');
-      throw Object.assign(new Error(`Gemini ${model} returned ${res.status}: ${detail.slice(0, 300)}`), { status: res.status });
-    }
-    const data = await res.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
-    const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
-    if (!text) throw new Error(`Gemini ${model} returned an empty response`);
-    return JSON.parse(text) as Json;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function generate(word: string, apiKey: string): Promise<Json> {
-  try {
-    return await callGemini(PRIMARY_MODEL, word, apiKey);
+    const db = await getAdminDb();
+    if (!db) return;
+    const { FieldValue } = await import('firebase-admin/firestore');
+    await db.collection('generation_queue').doc(word).set(
+      { word, requests: FieldValue.increment(1), lastRequestedAt: Date.now() },
+      { merge: true },
+    );
   } catch (err) {
-    // スキーマが受け付けられない(400)場合はJSONモードのみで再試行（結果はクライアントのサニタイザで補正される）
-    if ((err as { status?: number }).status === 400) {
-      console.warn('[generate-piece] schema rejected, retrying without responseSchema:', (err as Error).message);
-      return callGemini(PRIMARY_MODEL, word, apiKey, false);
-    }
-    // 混雑(429/503)・モデル廃止(404)などは軽量モデルで1回だけ再試行
-    if (!FALLBACK_MODEL || FALLBACK_MODEL === PRIMARY_MODEL) throw err;
-    console.warn('[generate-piece] primary model failed, falling back:', (err as Error).message);
-    return callGemini(FALLBACK_MODEL, word, apiKey);
+    console.warn('[generate-piece] enqueue failed:', err);
   }
 }
 
@@ -161,32 +120,35 @@ export async function handleGeneratePiece(request: Request): Promise<Response> {
     console.warn('[generate-piece] cache read failed:', err);
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return json(503, { error: 'AI生成サーバーが未設定のため、簡易生成で作成しました。' });
-
   const quota = await consumeQuota(clientIp(request)).catch(err => {
     console.warn('[generate-piece] quota check failed:', err);
     return 'ok' as const;
   });
-  if (quota === 'ip') return json(429, { error: 'AI生成の回数制限に達しました。少し時間をおいてお試しください（今回は簡易生成で作成しました）。' });
-  if (quota === 'global') return json(429, { error: '本日のAI生成枠を使い切りました。明日また試してください（今回は簡易生成で作成しました）。' });
+  if (quota === 'ip') {
+    return json(429, { error: 'AI生成の回数制限に達したため、簡易生成で作成しました。少し時間をおくとAI生成に戻ります。' });
+  }
+  if (quota === 'global') {
+    await enqueueForBackfill(word);
+    return json(429, { error: '本日のAI生成枠が混雑しているため簡易生成で作成しました。この単語は後でAI版が登録されます。', queued: true });
+  }
 
   try {
-    const piece = await generate(word, apiKey);
-    piece.word = word;
+    const { piece, provider } = await generatePiece(word);
     try {
-      await cacheRef?.set({ ...piece, createdAt: Date.now() });
+      await cacheRef?.set({ ...piece, createdAt: Date.now(), provider });
     } catch (err) {
       console.warn('[generate-piece] cache write failed:', err);
     }
     return json(200, { piece, source: 'ai' });
   } catch (err) {
-    console.error('[generate-piece] generation failed:', err);
-    const status = (err as { status?: number }).status;
+    if (err instanceof NoProviderError) {
+      return json(503, { error: 'AI生成サーバーが未設定のため、簡易生成で作成しました。' });
+    }
+    console.error('[generate-piece] all providers failed:', (err as Error).message);
+    await enqueueForBackfill(word);
     return json(502, {
-      error: status === 429
-        ? 'AIが混雑しているため、簡易生成で作成しました。'
-        : 'AI生成に失敗したため、簡易生成で作成しました。',
+      error: 'AIが混雑しているため簡易生成で作成しました。この単語は後でAI版が登録されます。',
+      queued: true,
     });
   }
 }

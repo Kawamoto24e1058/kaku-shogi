@@ -1,0 +1,28 @@
+name: Backfill AI pieces
+
+# Gemini 無料枠の1日の上限は米国太平洋時間の0時にリセットされる。
+# リセット直前（日本時間 15:30 / 16:30 頃）に実行して、その日に余った枠を事前生成に回す。
+on:
+  schedule:
+    - cron: '30 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsx scripts/backfill.ts
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FALLBACK_LLM_BASE_URL: ${{ secrets.FALLBACK_LLM_BASE_URL }}
+          FALLBACK_LLM_API_KEY: ${{ secrets.FALLBACK_LLM_API_KEY }}
+          FALLBACK_LLM_MODEL: ${{ secrets.FALLBACK_LLM_MODEL }}
+          BACKFILL_LIMIT: '20'

@@ -16,6 +16,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // AI生成待ちの単語（バックフィル用）: サーバー専用
+    match /generation_queue/{word} {
+      allow read, write: if false;
+    }
+
     // レート制限カウンタ: サーバー専用
     match /rate_limits/{id} {
       allow read, write: if false;

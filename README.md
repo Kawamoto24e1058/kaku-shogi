@@ -21,6 +21,25 @@
 - 駒は単語ごとに Firestore にキャッシュされ、2 回目以降は誰が入力しても AI を呼びません（無料枠の節約）。
 - `RATE_LIMIT_PER_HOUR`（IP ごと）と `GLOBAL_DAILY_LIMIT`（全体）で AI の呼び出し回数を制限します。
 
+### 不特定多数が遊んでも止まらないための多段構成
+
+駒の生成は上から順に試し、どこかで失敗しても次に進むので、ゲーム自体は止まりません。
+
+1. **共有キャッシュ**（誰かが一度生成した単語・事前生成した単語）… 即時・高品質
+2. **Gemini**（`GEMINI_MODEL`）
+3. **Gemini 軽量モデル**（`GEMINI_FALLBACK_MODEL`）
+4. **予備の LLM**（任意。Groq / OpenRouter / Cloudflare Workers AI など OpenAI 互換 API。`FALLBACK_LLM_*`）
+5. **簡易生成**（`src/offlineGenerator.ts`）… ブラウザ内で必ず動く。17 種の能力型から単語に合うものを選ぶ。
+   全能力型がエンジン上で実際に効果を発揮することを `npm run verify:offline` で確認できる。
+
+AI で生成できなかった単語は `generation_queue` に積まれ、GitHub Actions（`.github/workflows/backfill.yml`, 1 日 1 回）が
+その日に余った無料枠で AI 生成して共有キャッシュに登録します。次にその単語を入れた人からは AI 版になります。
+初回デプロイ後は `shared/seedWords.ts` の単語も少しずつ事前生成されます。
+
+GitHub Actions を使うには、リポジトリの Settings → Secrets and variables → Actions に
+`GEMINI_API_KEY` と `FIREBASE_SERVICE_ACCOUNT`（任意で `FALLBACK_LLM_*`）を登録してください。
+手動実行は Actions タブの「Backfill AI pieces」→「Run workflow」から行えます。
+
 ## セットアップ
 
 ### 1. Firebase（このアプリ専用のプロジェクトを推奨）
@@ -76,6 +95,9 @@ npm run build                # 型チェック (app / api) + 本番ビルド
 | `api/_lib/prompt.ts`, `api/_lib/pieceSchema.ts` | 生成プロンプトと構造化出力スキーマ |
 | `shared/abilityCatalog.ts` | エンジンが実行できる能力アクションの一覧（クライアント・サーバー共通） |
 | `src/aiGenerator.ts` | 生成結果の補正（サニタイズ）・キャッシュ・オフライン生成 |
+| `api/_lib/generator.ts` | LLM プロバイダの切り替え（Gemini → 軽量 → 予備） |
+| `src/offlineGenerator.ts` | AI が使えないときの簡易生成（能力型ライブラリ） |
+| `scripts/backfill.ts` | 待ち行列・事前生成単語の AI 生成（GitHub Actions から実行） |
 | `src/cpuAi.ts` | CPU 対戦相手の指し手選択 |
 | `src/gameLogic.ts` | 盤面・移動・能力の実行エンジン |
 | `firestore.rules` | Firestore セキュリティルール |

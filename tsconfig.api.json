@@ -13,5 +13,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["api", "shared"]
+  "include": ["api", "shared", "scripts/backfill.ts"]
 }
