@@ -44,7 +44,7 @@ export const PIECE_RESPONSE_SCHEMA = {
     word: str(),
     effect_name: str('漢字の能力名'),
     mechanics_type: enumOf(['FORCE_CRUSH', 'HACK_AND_STEAL', 'STEALTH_GHOST', 'SUPPORT_BUFF', 'SPAWNER_BUILD', 'TRAP_MINE', 'AUTOMATIC_DRIVE', 'VIRUS_INFECT', 'SPACE_WARP', 'NECROMANCY', 'UNKNOWN_HERESY']),
-    ability_genre: str('表示用の日本語ジャンル名'),
+    ability_genre: str('表示用の日本語ジャンル名（10文字以内）'),
     visual_theme: enumOf(VISUAL_THEMES),
     trigger: enumOf(ACTIVATION_TRIGGERS),
     is_once_per_game: { type: 'BOOLEAN' },
@@ -52,16 +52,16 @@ export const PIECE_RESPONSE_SCHEMA = {
     isAutonomous: { type: 'BOOLEAN' },
     range_geometry: {
       type: 'OBJECT',
+      // charging_grid（充填中の移動範囲）は全駒共通の十字移動なのでAIに出力させず、サニタイザで補完する
       properties: {
         normal_grid: str(GRID_DESC),
-        charging_grid: str(GRID_DESC),
         promoted_grid: str(GRID_DESC),
       },
-      required: ['normal_grid', 'charging_grid', 'promoted_grid'],
+      required: ['normal_grid', 'promoted_grid'],
     },
     ability_spec: abilitySpec,
     visual_effect: visualEffect,
-    description: str('【発動条件】【効果内容】【制限・代償】の3部構成'),
+    description: str('【発動条件】【効果内容】【制限・代償】の3部構成。全体で150文字以内'),
     spawn_config: {
       type: 'OBJECT',
       nullable: true,
@@ -71,19 +71,19 @@ export const PIECE_RESPONSE_SCHEMA = {
         spawn_range_geometry: { type: 'STRING', nullable: true },
       },
     },
+    // 成り後の演出(visual_effect)は通常時のものを流用するため出力させない（出力トークン削減）
     promoted_effect: {
       type: 'OBJECT',
       properties: {
         effect_name: str(),
-        description: str(),
+        description: str('80文字以内'),
         logic_code: { type: 'STRING', nullable: true },
         ability_spec: abilitySpec,
-        visual_effect: visualEffect,
       },
       required: ['effect_name', 'description', 'ability_spec'],
     },
     logic_code: str(),
-    deep_search_analysis: str('200文字程度'),
+    deep_search_analysis: str('単語の特徴を能力にどう反映したか。60文字以内'),
   },
   required: [
     'word', 'effect_name', 'mechanics_type', 'ability_genre', 'visual_theme', 'trigger',

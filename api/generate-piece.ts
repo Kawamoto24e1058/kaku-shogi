@@ -11,7 +11,9 @@ const PER_IP_PER_HOUR = Number(process.env.RATE_LIMIT_PER_HOUR || 10);
 const GLOBAL_PER_DAY = Number(process.env.GLOBAL_DAILY_LIMIT || 200);
 const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash-lite';
-const THINKING_BUDGET = Number(process.env.GEMINI_THINKING_BUDGET ?? 512);
+// 思考(thinking)はJSON生成の待ち時間を大きく伸ばすため既定でオフ。品質を優先したい場合は 512 などに上げる
+const THINKING_BUDGET = Number(process.env.GEMINI_THINKING_BUDGET ?? 0);
+const MAX_OUTPUT_TOKENS = 2048;
 const GEMINI_TIMEOUT_MS = 25_000;
 
 type Json = Record<string, unknown>;
@@ -61,7 +63,7 @@ async function consumeQuota(ip: string): Promise<'ok' | 'ip' | 'global'> {
   const ipHash = createHash('sha256').update(`kaku-shogi:${ip}`).digest('hex').slice(0, 32);
   const hour = new Date().toISOString().slice(0, 13);
   const day = hour.slice(0, 10);
-  const db = getAdminDb();
+  const db = await getAdminDb();
   if (!db) {
     if (!memoryRateLimit(`ip:${ipHash}`, PER_IP_PER_HOUR, 3_600_000)) return 'ip';
     if (!memoryRateLimit('global', GLOBAL_PER_DAY, 86_400_000)) return 'global';
@@ -97,6 +99,7 @@ async function callGemini(model: string, word: string, apiKey: string, useSchema
           responseMimeType: 'application/json',
           ...(useSchema ? { responseSchema: PIECE_RESPONSE_SCHEMA } : {}),
           temperature: 1.0,
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
           ...(THINKING_BUDGET >= 0 ? { thinkingConfig: { thinkingBudget: THINKING_BUDGET } } : {}),
         },
       }),
@@ -132,6 +135,11 @@ async function generate(word: string, apiKey: string): Promise<Json> {
 }
 
 export async function handleGeneratePiece(request: Request): Promise<Response> {
+  if (request.method === 'GET') {
+    // ウォームアップ用: インスタンスと Firestore 接続を先に用意しておく
+    await getAdminDb();
+    return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } });
+  }
   if (request.method !== 'POST') return json(405, { error: 'Method Not Allowed' });
   if (!isAllowedOrigin(request)) return json(403, { error: 'Forbidden' });
 
@@ -144,7 +152,7 @@ export async function handleGeneratePiece(request: Request): Promise<Response> {
   const word = normalizeWord((body as Json | null)?.word);
   if (!word) return json(400, { error: `単語は1〜${MAX_WORD_LENGTH}文字で入力してください（「/」は使えません）。` });
 
-  const db = getAdminDb();
+  const db = await getAdminDb();
   const cacheRef = db?.collection('custom_pieces').doc(word);
   try {
     const cached = await cacheRef?.get();

@@ -1,9 +1,17 @@
-import React, { useState } from 'react';
-import { generatePieceWithSource, clearAllCustomPieceCache } from '../aiGenerator';
+import React, { useEffect, useState } from 'react';
+import { generatePieceWithSource, clearAllCustomPieceCache, warmUpGenerator } from '../aiGenerator';
 import { openXShare } from '../share';
 import type { Piece, Player } from '../types';
 import { generateId } from '../gameLogic';
 import { PieceDetailCard } from './PieceDetailCard';
+
+const SCAN_STAGES = [
+  '深層概念マトリクス結合中...',
+  '主観的意図をマッピング中...',
+  'ゲームマスター論理コード構築中...',
+  '物理ルール干渉パラメータを算出中...',
+  '概念空間へデプロイ中...'
+];
 
 interface PieceCreatorProps {
   player: Player;
@@ -29,9 +37,11 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
   playerNames,
 }) => {
   const [word, setWord] = useState('');
-  const [loading, setLoading] = useState(false);
+  // 生成中の単語。複数の単語を並行して生成できるようにし、3枚分の待ち時間を1枚分程度に短縮する
+  const [pendingWords, setPendingWords] = useState<{ key: string; word: string }[]>([]);
+  const loading = pendingWords.length > 0;
   const [createdPieces, setCreatedPieces] = useState<Piece[]>([]);
-  const [scanStatus, setScanStatus] = useState('');
+  const [stageIdx, setStageIdx] = useState(0);
   const [notice, setNotice] = useState('');
 
   const maxPieces = 3; 
@@ -50,30 +60,33 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
 
   const playerName = leftLabel;
 
+  const slotsUsed = createdPieces.length + pendingWords.length;
+
+  useEffect(() => {
+    warmUpGenerator();
+  }, []);
+
+  // 生成中の演出テキストを一定間隔で切り替える（setState はタイマー内でのみ行う）
+  useEffect(() => {
+    if (!loading) return;
+    const statusInterval = setInterval(() => setStageIdx(i => i + 1), 900);
+    return () => clearInterval(statusInterval);
+  }, [loading]);
+  const scanStatus = SCAN_STAGES[stageIdx % SCAN_STAGES.length];
+
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!word.trim() || createdPieces.length >= maxPieces) return;
+    const target = word.trim();
+    if (!target || slotsUsed >= maxPieces) return;
 
-    setLoading(true);
-    setScanStatus('深層概念マトリクス結合中...');
-    
-    const stages = [
-      '主観的意図をマッピング中...',
-      'ゲームマスター論理コード構築中...',
-      '物理ルール干渉パラメータを算出中...',
-      '概念空間へデプロイ中...'
-    ];
-
-    let stageIdx = 0;
-    const statusInterval = setInterval(() => {
-      setScanStatus(stages[stageIdx % stages.length]);
-      stageIdx++;
-    }, 255);
+    const key = generateId();
+    setPendingWords(prev => [...prev, { key, word: target }]);
+    setWord('');
 
     try {
-      const { piece: pieceData, notice: generationNotice } = await generatePieceWithSource(word.trim());
+      const { piece: pieceData, notice: generationNotice } = await generatePieceWithSource(target);
       setNotice(generationNotice || '');
-      
+
       const newPiece: Piece = {
         ...pieceData,
         id: generateId(),
@@ -86,22 +99,17 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
         isPromoted: false,
       };
 
-      setCreatedPieces([...createdPieces, newPiece]);
-      setWord('');
+      setCreatedPieces(prev => [...prev, newPiece]);
     } catch (error) {
       console.error(error);
-      alert('概念コンパイルに失敗しました。');
+      alert(`「${target}」の生成に失敗しました。`);
     } finally {
-      clearInterval(statusInterval);
-      setLoading(false);
-      setScanStatus('');
+      setPendingWords(prev => prev.filter(p => p.key !== key));
     }
   };
 
   const handleDelete = (index: number) => {
-    const nextPieces = [...createdPieces];
-    nextPieces.splice(index, 1);
-    setCreatedPieces(nextPieces);
+    setCreatedPieces(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = () => {
@@ -288,7 +296,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
           </div>
         </div>
 
-        {(!onlineMode || !onlineSelfReady) && createdPieces.length < maxPieces && (
+        {(!onlineMode || !onlineSelfReady) && slotsUsed < maxPieces && (
           <form onSubmit={handleGenerate} className="piece-creator-form" style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
             <input
               type="text"
@@ -298,16 +306,15 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
               className="cyber-input"
               style={{ flex: 1 }}
               maxLength={24}
-              disabled={loading}
               required
             />
             <button
               type="submit"
               className="cyber-btn"
-              disabled={loading || !word.trim()}
+              disabled={!word.trim()}
               style={{ flexShrink: 0 }}
             >
-              {loading ? 'コンパイル中...' : '概念をコンパイルする'}
+              概念をコンパイルする
             </button>
           </form>
         )}
@@ -339,8 +346,11 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
                 Dynamic Runtime Compile...
               </p>
               <p style={{ fontSize: '14px', color: 'var(--text-primary)', letterSpacing: '0.15em' }}>
-                単語の本質を編纂し、独自の幾何学範囲を鋳造中…
+                {pendingWords.map(p => `「${p.word}」`).join('')} の本質を編纂中…
               </p>
+              {slotsUsed < maxPieces && (
+                <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>待っている間に次の単語も入力できます</p>
+              )}
               <p style={{ fontSize: '12px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
                 ({scanStatus})
               </p>
@@ -419,7 +429,14 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
           );
         })}
 
-        {Array.from({ length: maxPieces - createdPieces.length }).map((_, i) => (
+        {pendingWords.map(p => (
+          <div key={p.key} className="cyber-panel" style={{ padding: '15px', display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center', justifyContent: 'center', minHeight: '340px', borderStyle: 'dashed', borderColor: 'var(--color-gold)', background: 'transparent', borderRadius: '16px' }}>
+            <p style={{ color: 'var(--text-primary)', fontSize: '16px', fontWeight: 'bold' }}>「{p.word}」</p>
+            <p style={{ color: 'var(--color-gold)', fontSize: '12px', fontFamily: 'var(--font-cyber)' }}>生成中…</p>
+          </div>
+        ))}
+
+        {Array.from({ length: Math.max(0, maxPieces - slotsUsed) }).map((_, i) => (
           <div key={i} className="cyber-panel" style={{ padding: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '340px', borderStyle: 'dashed', borderColor: 'var(--text-muted)', background: 'transparent', borderRadius: '16px' }}>
             <p style={{ color: 'var(--text-muted)', fontSize: '12px', fontFamily: 'var(--font-cyber)' }}>
               空きスロット

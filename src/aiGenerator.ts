@@ -1,6 +1,4 @@
 import type { PieceData, PromotedEffect, RangeGeometry, SpawnConfig } from './types';
-import { db } from './firebase';
-import { doc, getDoc } from 'firebase/firestore';
 import { AREA_SHAPES, normalizeActions } from '../shared/abilityCatalog';
 
 const AREA_SHAPE_SET = new Set<string>(AREA_SHAPES);
@@ -72,27 +70,6 @@ export async function decrementCacheUses(word: string): Promise<void> {
     }
     saveToCache(word, piece);
   }
-}
-
-// ── Firestore キャッシュ ─────────────────────────────────────────────────────
-const FIRESTORE_COLLECTION = 'custom_pieces';
-
-/** Firestoreから駒データを取得する（存在しなければ null） */
-async function getFromFirestore(word: string): Promise<PieceData | null> {
-  try {
-    const ref = doc(db, FIRESTORE_COLLECTION, word.trim());
-    const snap = await getDoc(ref);
-    if (snap.exists()) {
-      const data = snap.data() as PieceData;
-      const sanitized = sanitizePieceData(data, word);
-      // ローカルキャッシュにも保存して次回以降を高速化
-      saveToCache(word, sanitized);
-      return sanitized;
-    }
-  } catch (e) {
-    console.warn('[Firestore] getDoc failed:', e);
-  }
-  return null;
 }
 
 /**
@@ -500,6 +477,11 @@ export interface GeneratedPiece {
 
 const API_ENDPOINT = '/api/generate-piece';
 
+/** 駒作成画面を開いた時点でサーバー関数を起こしておき、最初の生成のコールドスタートを隠す */
+export function warmUpGenerator(): void {
+  fetch(API_ENDPOINT, { method: 'GET' }).catch(() => undefined);
+}
+
 /**
  * 単語から駒を生成する。
  * Gemini APIキーはサーバー (api/generate-piece.ts) だけが保持し、ブラウザには一切渡さない。
@@ -512,11 +494,8 @@ export async function generatePieceWithSource(word: string): Promise<GeneratedPi
   const localCached = getFromCache(trimmed);
   if (localCached) return { piece: localCached, source: 'cache' };
 
-  // ② Firestore 共有キャッシュ（誰かが生成済みならAPIを消費しない）
-  const firestoreCached = await getFromFirestore(trimmed);
-  if (firestoreCached) return { piece: firestoreCached, source: 'cache' };
-
-  // ③ サーバー経由で Gemini 生成
+  // ② サーバー経由で取得（サーバー側で共有キャッシュ → Gemini 生成の順に処理する。
+  //    以前はブラウザからも Firestore を先に読んでいたが、初回接続の往復が丸ごと待ち時間になっていた）
   try {
     const res = await fetch(API_ENDPOINT, {
       method: 'POST',
@@ -1060,6 +1039,11 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
     }
   } else if (parsed.custom_ability && parsed.custom_ability.isAutonomous) {
     parsed.isAutonomous = true;
+  }
+
+  // 成り後の演出はAIに出力させていないため、通常時の演出を流用する
+  if (parsed.promoted_effect && !parsed.promoted_effect.visual_effect && parsed.visual_effect) {
+    parsed.promoted_effect.visual_effect = { ...parsed.visual_effect };
   }
 
   // ─── Safeguard: カスタム駒のフラグ保護 (標準歩兵成り化防止) ──────────────────────
