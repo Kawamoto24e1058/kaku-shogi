@@ -4,8 +4,8 @@
   "installCommand": "npm ci",
   "framework": "vite",
   "functions": {
-    "api/*.ts": { "maxDuration": 30 },
-    "api/backfill.ts": { "maxDuration": 300 }
+    "api/backfill.ts": { "maxDuration": 300 },
+    "api/*.ts": { "maxDuration": 30 }
   },
   "crons": [
     { "path": "/api/backfill", "schedule": "30 23 * * *" }
