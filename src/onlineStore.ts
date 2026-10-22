@@ -71,7 +71,7 @@ const COMPRESS_MIN_LENGTH = 1500;
 // 盤面・駒データなど。logs は DB 側で末尾に追加するため圧縮しない
 const COMPRESSED_KEYS = new Set([
   'board', 'customPieces', 'sentePieces', 'gotePieces', 'customDecksJson',
-  'destroyedPiecesJson', 'capturedPieces', 'sharedPieces',
+  'destroyedPiecesJson', 'capturedPieces', 'sharedPieces', 'tileBoardJson',
 ]);
 const canCompress = typeof CompressionStream !== 'undefined' && typeof DecompressionStream !== 'undefined';
 

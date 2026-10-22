@@ -1288,9 +1288,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 
                 {/* Piece Text - size locked with break-all to prevent cell warping */}
                 {(() => {
-                  const isPieceRotated = isMyPiece
-                    ? (shouldRotate)
-                    : (!shouldRotate);
+                  // 盤（後手視点なら180度）＋駒（相手の駒は向かい合わせ）の回転を打ち消して、文字は常に見る人に正立させる。
+                  // 盤と駒の回転は shouldRotate で必ずそろうので、文字を回すのは相手の駒だけでよい
+                  // （以前は shouldRotate も掛けていたため、後手視点で全部の文字が逆さまになっていた）
+                  const isPieceRotated = !isMyPiece;
                   return (
                     <div style={{
                       fontSize: fontSizeVal,

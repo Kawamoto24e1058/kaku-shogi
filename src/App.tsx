@@ -1459,6 +1459,8 @@ export const App: React.FC = () => {
           phase: 'playing',
           customPieces: data.customPieces,
           customDecks: data.customDecksJson ? JSON.parse(data.customDecksJson) : { sente: [], gote: [] },
+          tileBoard: data.tileBoardJson ? JSON.parse(data.tileBoardJson) : prev.tileBoard,
+          destroyedPieces: data.destroyedPiecesJson ? JSON.parse(data.destroyedPiecesJson) : prev.destroyedPieces,
           capturedPieces: JSON.parse(data.capturedPieces),
           sharedPieces: JSON.parse(data.sharedPieces),
           logs: data.logs || [],
@@ -1612,7 +1614,8 @@ export const App: React.FC = () => {
     sharedPieces: Piece[],
     customDecks: GameState['customDecks'] = state.customDecks,
     destroyedPieces: Piece[] = state.destroyedPieces,
-    logs: GameLog[] = state.logs
+    logs: GameLog[] = state.logs,
+    tileBoard: GameState['tileBoard'] = state.tileBoard
   ) => {
     if (!onlineMode || !roomCode) return;
     updateMatch(roomCode, {
@@ -1624,6 +1627,8 @@ export const App: React.FC = () => {
       sharedPieces: JSON.stringify(sharedPieces),
       customDecksJson: JSON.stringify(customDecks),
       destroyedPiecesJson: JSON.stringify(destroyedPieces),
+      // 能力で置かれた地形（炎・毒など）も相手に送る（以前は送っておらず、双方の盤面がずれていた）
+      tileBoardJson: JSON.stringify(tileBoard),
       logs: trimLogs(logs),
       lastUpdated: Date.now()
     }).catch(err => {
@@ -1632,7 +1637,7 @@ export const App: React.FC = () => {
       setMatchmakingError(describeOnlineError(err, '対戦相手との同期に失敗しました。通信状況を確認してください。'));
       alert(describeOnlineError(err, '対戦相手との同期に失敗しました。通信状況を確認してください。'));
     });
-  }, [onlineMode, roomCode, state.customDecks, state.destroyedPieces, state.logs]);
+  }, [onlineMode, roomCode, state.customDecks, state.destroyedPieces, state.logs, state.tileBoard]);
 
   // Helpers to push logs
   const addLog = (message: string, type: GameLog['type'], player: Player) => {
@@ -2197,10 +2202,12 @@ export const App: React.FC = () => {
       'playing',
       null,
       currentCaptured,
-      nextShared,
+      // 手番終了の処理で墓地に送られた駒も含める（以前は処理前の nextShared を送っていた）
+      currentShared,
       nextCustomDecks,
       currentDestroyedPieces,
-      currentLogs
+      currentLogs,
+      nextTileBoard
     );
   };
 
