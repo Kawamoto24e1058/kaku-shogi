@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { generatePieceWithSource, clearAllCustomPieceCache, warmUpGenerator } from '../aiGenerator';
+import { generatePieceWithSource, clearAllCustomPieceCache, warmUpGenerator, BlockedWordError } from '../aiGenerator';
 import { openXShare } from '../share';
 import type { Piece, Player } from '../types';
 import { generateId } from '../gameLogic';
@@ -55,7 +55,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
   const rightLabel = onlineMode
     ? `${rightRole === 'sente' ? '▲' : '▽'} ${playerNames[rightRole] || (rightRole === 'sente' ? 'プレイヤー1' : 'プレイヤー2')} (対戦相手)`
     : vsAiMode
-      ? '人工知能 (Gemini AI)'
+      ? 'CPU（思考エンジン）'
       : `${rightRole === 'sente' ? '▲' : '▽'} ${playerNames[rightRole] || 'プレイヤー2'}${rightRole === 'sente' ? ' (Player 1)' : ' (Player 2)'}`;
 
   const playerName = leftLabel;
@@ -101,8 +101,12 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
 
       setCreatedPieces(prev => [...prev, newPiece]);
     } catch (error) {
-      console.error(error);
-      alert(`「${target}」の生成に失敗しました。`);
+      if (error instanceof BlockedWordError) {
+        setNotice(`「${target}」は使えない単語です。別の単語を入力してください。`);
+      } else {
+        console.error(error);
+        alert(`「${target}」の生成に失敗しました。`);
+      }
     } finally {
       setPendingWords(prev => prev.filter(p => p.key !== key));
     }
@@ -288,11 +292,11 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
             <div>{notice}</div>
           ) : (
             <div>
-              <strong>AI駆動生成モード：</strong> 入力された単語の特徴をAI (Google Gemini) が解釈し、オリジナルの特殊能力を生成します。
+              <strong>AI駆動生成モード：</strong> 入力された単語の特徴を生成AIが解釈し、オリジナルの特殊能力を生成します。
             </div>
           )}
           <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
-            ※入力した単語は能力生成のため Google Gemini API に送信され、生成結果は他のプレイヤーとも共有されます。個人情報は入力しないでください。
+            ※入力した単語は能力生成のため外部のAIサービス（Cloudflare Workers AI など）に送信され、生成結果は他のプレイヤーとも共有されます。個人情報や他人を傷つける言葉は入力しないでください。
           </div>
         </div>
 

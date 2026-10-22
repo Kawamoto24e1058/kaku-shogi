@@ -1,10 +1,10 @@
 name: Backfill AI pieces
 
-# Gemini 無料枠の1日の上限は米国太平洋時間の0時にリセットされる。
-# リセット直前（日本時間 15:30 / 16:30 頃）に実行して、その日に余った枠を事前生成に回す。
+# Workers AI の無料枠（1日1万neuron）は UTC 0時にリセットされる。
+# リセット直前（日本時間 8:30）に実行して、その日に余った枠を事前生成に回す。
 on:
   schedule:
-    - cron: '30 6 * * *'
+    - cron: '30 23 * * *'
   workflow_dispatch:
 
 jobs:
@@ -20,7 +20,8 @@ jobs:
       - run: npm ci
       - run: npx tsx scripts/backfill.ts
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           FALLBACK_LLM_BASE_URL: ${{ secrets.FALLBACK_LLM_BASE_URL }}
           FALLBACK_LLM_API_KEY: ${{ secrets.FALLBACK_LLM_API_KEY }}

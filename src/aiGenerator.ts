@@ -2,6 +2,7 @@ import type { PieceData } from './types';
 import { AREA_SHAPES, normalizeActions } from '../shared/abilityCatalog';
 import { buildOfflinePiece } from './offlineGenerator';
 import { wordKey } from '../shared/wordKey';
+import { containsNgWord } from '../shared/moderation';
 
 const AREA_SHAPE_SET = new Set<string>(AREA_SHAPES);
 
@@ -105,7 +106,7 @@ export function generateOfflinePiece(word: string): PieceData {
   return sanitizePieceData(buildOfflinePiece(word), word);
 }
 
-export type PieceSource = 'cache' | 'ai' | 'similar' | 'offline';
+export type PieceSource = 'cache' | 'ai' | 'similar' | 'offline' | 'blocked';
 
 export interface GeneratedPiece {
   piece: PieceData;
@@ -122,18 +123,35 @@ export function warmUpGenerator(): void {
 
 /**
  * 単語から駒を生成する。
- * Gemini APIキーはサーバー (api/generate-piece.ts) だけが保持し、ブラウザには一切渡さない。
+ * AIサービスのキーはサーバー (api/generate-piece.ts) だけが保持し、ブラウザには一切渡さない。
  * 失敗時（上限到達・サーバー未設定など）はオフライン簡易生成にフォールバックする。
  */
+export class BlockedWordError extends Error {}
+
 export async function generatePieceWithSource(word: string): Promise<GeneratedPiece> {
   const trimmed = word.trim();
+  if (containsNgWord(trimmed)) throw new BlockedWordError('その単語は使えません。別の単語を入力してください。');
 
   // ① メモリ / localStorage キャッシュ（最速）
   const localCached = getFromCache(trimmed);
   if (localCached) return { piece: localCached, source: 'cache' };
 
-  // ② サーバー経由で取得（サーバー側で共有キャッシュ → Gemini 生成の順に処理する。
-  //    以前はブラウザからも Firestore を先に読んでいたが、初回接続の往復が丸ごと待ち時間になっていた）
+  // ② 共有キャッシュを GET で参照。CDN にキャッシュされるので、人気の単語は関数も Firestore も使わずに返る
+  try {
+    const res = await fetch(`${API_ENDPOINT}?k=${encodeURIComponent(wordKey(trimmed))}`);
+    if (res.ok) {
+      const body = await res.json();
+      if (body?.piece) {
+        const piece = sanitizePieceData({ ...body.piece, word: trimmed }, trimmed);
+        saveToCache(trimmed, piece);
+        return { piece, source: 'cache' };
+      }
+    }
+  } catch {
+    // 参照に失敗しても生成リクエストへ進む
+  }
+
+  // ③ サーバーで生成（共有キャッシュ → AI → 近い単語の流用 の順に処理される）
   try {
     const res = await fetch(API_ENDPOINT, {
       method: 'POST',
@@ -150,9 +168,11 @@ export async function generatePieceWithSource(word: string): Promise<GeneratedPi
       saveToCache(trimmed, piece);
       return { piece, source: body.source === 'cache' ? 'cache' : 'ai' };
     }
+    if (body?.blocked) throw new BlockedWordError(body.error);
     const notice = body?.error || `AI生成サーバーが応答しませんでした (${res.status})`;
     return { piece: generateOfflinePiece(trimmed), source: 'offline', notice };
   } catch (error) {
+    if (error instanceof BlockedWordError) throw error;
     console.error('[generate-piece] request failed:', error);
     return {
       piece: generateOfflinePiece(trimmed),

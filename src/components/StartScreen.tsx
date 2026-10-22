@@ -21,6 +21,8 @@ interface StartScreenProps {
   playerNames: { sente: string; gote: string };
   onSetPlayerNames: (names: { sente: string; gote: string }) => void;
   onStartGame: () => void;
+  /** 運営からのお知らせ（混雑・一時停止など。/api/status の SITE_NOTICE やオンライン停止の案内） */
+  siteNotice?: string;
 }
 
 interface TypeWord {
@@ -427,6 +429,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   playerNames,
   onSetPlayerNames,
   onStartGame,
+  siteNotice = '',
 }) => {
   // X等で共有された招待リンク (?room=123456) から来た場合は、部屋入室タブを開いた状態で始める
   const [inviteCode] = useState(() => readInviteRoomCode());
@@ -615,6 +618,11 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               >
                 戦場へ出陣する
               </button>
+
+              <p className="text-[11px] text-stone-500 font-bold tracking-wider">
+                遊ぶことで<a href="/terms.html" className="underline hover:text-amber-800">利用規約</a>と
+                <a href="/privacy.html" className="underline hover:text-amber-800">プライバシーポリシー</a>に同意したものとみなします
+              </p>
             </div>
           </div>
         )}
@@ -636,6 +644,12 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               </span>
             </div>
 
+            {siteNotice && (
+              <div role="status" className="w-full text-xs font-bold text-amber-950 bg-amber-100 border border-amber-900/20 rounded-xl px-4 py-3 leading-relaxed">
+                📢 {siteNotice}
+              </div>
+            )}
+
             {/* 3 Main Mode Selection Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full items-stretch">
               
@@ -656,7 +670,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 <div className="text-3xl mb-1">🤖</div>
                 <div>
                   <div className="text-lg tracking-wider font-extrabold text-stone-900 mb-1">AI対戦</div>
-                  <div className="text-[11px] font-bold text-amber-900/80 leading-snug">思考エンジンGeminiと1人ですぐ遊ぶ</div>
+                  <div className="text-[11px] font-bold text-amber-900/80 leading-snug">CPUと1人ですぐ遊ぶ</div>
                 </div>
                 <div className={`mt-3 text-xs font-bold px-4 py-1 rounded-full border transition-all ${
                   selectedTab === 'ai' && !onlineMode ? 'bg-amber-800 text-white border-amber-900' : 'bg-stone-100 text-stone-600 border-stone-200'
@@ -726,7 +740,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               {selectedTab === 'ai' && (
                 <div className="flex flex-col items-center text-center gap-4 animate-[fadeIn_0.3s_ease-out]">
                   <p className="text-sm font-bold text-stone-800 leading-relaxed max-w-lg">
-                    思考エンジン（Gemini AI）と対峙します。入力した言葉から創造された「カスタム駒」の能力を駆使して挑戦してください。
+                    CPU（思考エンジン）と対峙します。入力した言葉から創造された「カスタム駒」の能力を駆使して挑戦してください。
                   </p>
                   <button
                     type="button"

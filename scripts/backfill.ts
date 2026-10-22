@@ -4,7 +4,7 @@
 // AI生成して custom_pieces に登録する。1回の呼び出しで BACKFILL_BATCH 語をまとめて生成するので、
 // 1日の「回数」上限に対して何倍もの単語を登録できる。無料枠の上限に達したら静かに終了する。
 //
-// 実行: GEMINI_API_KEY=... FIREBASE_SERVICE_ACCOUNT='{...}' npx tsx scripts/backfill.ts
+// 実行: CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... FIREBASE_SERVICE_ACCOUNT='{...}' npx tsx scripts/backfill.ts
 // 任意: BACKFILL_LIMIT（1回の実行で登録する最大語数, 既定60）
 //       BACKFILL_BATCH（1回の呼び出しでまとめる語数, 既定5）
 //       BACKFILL_INTERVAL_MS（呼び出し間隔, 既定15000。分あたりの上限に当たらないように空ける）
@@ -13,6 +13,9 @@ import { configuredProviders, generatePieces } from '../api/_lib/generator.js';
 import { getCachedPiece, saveCachedPiece } from '../api/_lib/pieceCache.js';
 import { SEED_WORDS } from '../shared/seedWords.js';
 import { wordKey } from '../shared/wordKey.js';
+import { containsNgWord, pieceHasNgText, setExtraNgWords } from '../shared/moderation.js';
+
+setExtraNgWords((process.env.NG_WORDS || '').split(','));
 
 const LIMIT = Number(process.env.BACKFILL_LIMIT || 60);
 const BATCH = Math.max(1, Number(process.env.BACKFILL_BATCH || 5));
@@ -34,7 +37,7 @@ async function main() {
   const todo: { key: string; word: string }[] = [];
   for (const [key, word] of candidates) {
     if (todo.length >= LIMIT) break;
-    if (await getCachedPiece(db, key)) {
+    if (containsNgWord(word) || await getCachedPiece(db, key)) {
       await db.collection('generation_queue').doc(key).delete();
       continue;
     }
@@ -49,6 +52,10 @@ async function main() {
       const { pieces, provider } = await generatePieces(chunk.map(c => c.word), providers);
       for (const [j, piece] of pieces.entries()) {
         if (!piece) continue;
+        if (pieceHasNgText(piece)) {
+          console.warn(`skipped (moderation): ${chunk[j].word}`);
+          continue;
+        }
         await saveCachedPiece(db, chunk[j].key, piece, { provider, backfilled: true });
         generated++;
       }

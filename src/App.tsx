@@ -112,6 +112,29 @@ export const App: React.FC = () => {
     promotionPending: null,
   });
 
+  // 緊急スイッチ（/api/status）。取得できない場合はすべて有効として動かす
+  const [siteStatus, setSiteStatus] = useState<{ aiGeneration: boolean; onlineMatch: boolean; notice: string }>({
+    aiGeneration: true,
+    onlineMatch: true,
+    notice: '',
+  });
+  useEffect(() => {
+    fetch('/api/status')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (data && typeof data === 'object') setSiteStatus(prev => ({ ...prev, ...data }));
+      })
+      .catch(() => undefined);
+  }, []);
+  const ONLINE_PAUSED_MESSAGE = 'オンライン対戦は混雑のため一時停止しています。AI対戦はそのまま遊べます。';
+  /** Firestore の無料枠を使い切ったときなどのエラーを、利用者向けの案内に変換する */
+  const describeOnlineError = (err: unknown, fallback: string): string => {
+    const code = (err as { code?: string } | null)?.code;
+    if (code === 'resource-exhausted') return '本日のオンライン対戦の利用枠に達しました。AI対戦で遊ぶか、時間をおいてお試しください。';
+    if (code === 'permission-denied' || code === 'unauthenticated') return 'オンライン対戦に接続できませんでした。ページを再読み込みしてお試しください。';
+    return (err as Error | null)?.message && !code ? (err as Error).message : fallback;
+  };
+
   const [setupSubPhase, setSetupSubPhase] = useState<'sente_create' | 'gote_create'>('sente_create');
   const [turnChangeAlert, setTurnChangeAlert] = useState<'sente' | 'gote' | null>(null);
 
@@ -1112,6 +1135,10 @@ export const App: React.FC = () => {
   // 1. 部屋作成処理
   const handleCreateRoom = async () => {
     setMatchmakingError('');
+    if (!siteStatus.onlineMatch) {
+      setMatchmakingError(ONLINE_PAUSED_MESSAGE);
+      return;
+    }
     try {
       const uid = await ensureSignedIn();
       let code = '';
@@ -1172,13 +1199,17 @@ export const App: React.FC = () => {
       setOnlineMode(true);
     } catch (err: any) {
       console.error(err);
-      setMatchmakingError(err.message || '部屋の作成中にエラーが発生しました。');
+      setMatchmakingError(describeOnlineError(err, '部屋の作成中にエラーが発生しました。'));
     }
   };
 
   // 2. 部屋入室処理
   const handleJoinRoom = async (code: string) => {
     setMatchmakingError('');
+    if (!siteStatus.onlineMatch) {
+      setMatchmakingError(ONLINE_PAUSED_MESSAGE);
+      return;
+    }
     if (code.length !== 6) {
       setMatchmakingError('部屋コードは6桁の数字です。');
       return;
@@ -1216,13 +1247,17 @@ export const App: React.FC = () => {
       setOnlineMode(true);
     } catch (err: any) {
       console.error(err);
-      setMatchmakingError('入室中にエラーが発生しました。');
+      setMatchmakingError(describeOnlineError(err, '入室中にエラーが発生しました。'));
     }
   };
 
   // 2.5. ランダムマッチング処理 (通信ハンドシェイク ＆ 10秒タイムアウト付き)
   const handleRandomMatchmaking = async () => {
     setMatchmakingError('');
+    if (!siteStatus.onlineMatch) {
+      setMatchmakingError(ONLINE_PAUSED_MESSAGE);
+      return;
+    }
     setIsSearchingMatch(true);
     setIsConnectingHandshake(false);
 
@@ -1351,7 +1386,7 @@ export const App: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       if (matchmakingTimeoutRef.current) clearTimeout(matchmakingTimeoutRef.current);
-      setMatchmakingError(err.message || 'マッチング中にエラーが発生しました。');
+      setMatchmakingError(describeOnlineError(err, 'マッチング中にエラーが発生しました。'));
       setIsSearchingMatch(false);
       setIsConnectingHandshake(false);
     }
@@ -1638,7 +1673,12 @@ export const App: React.FC = () => {
       logsJson: JSON.stringify(logs),
       logs: logs,
       lastUpdated: Date.now()
-    }).catch(err => console.error("Error syncing online state:", err));
+    }).catch(err => {
+      console.error("Error syncing online state:", err);
+      // 同期に失敗すると相手に手が届かないので、黙って進めずに案内する
+      setMatchmakingError(describeOnlineError(err, '対戦相手との同期に失敗しました。通信状況を確認してください。'));
+      alert(describeOnlineError(err, '対戦相手との同期に失敗しました。通信状況を確認してください。'));
+    });
   }, [onlineMode, roomCode, state.customDecks, state.destroyedPieces, state.logs]);
 
   // Helpers to push logs
@@ -2858,7 +2898,7 @@ export const App: React.FC = () => {
       addLog(`${playerNames.sente || 'プレイヤー1'} の能力駒スキャンが完了しました。`, 'system', 'sente');
 
       if (vsAiMode) {
-        addLog('🤖 Gemini AI の能力駒をキャッシュから高速ロード中...', 'system', 'gote');
+        addLog('🤖 CPU の能力駒をキャッシュから高速ロード中...', 'system', 'gote');
 
         // キャッシュ済み駒をランダムに4枚取得（なければオフライン生成）
         const gotePiecesData = getRandomCachedPieces(AI_PIECE_WORDS.length);
@@ -2879,7 +2919,7 @@ export const App: React.FC = () => {
         });
 
         setPiecesToPlace(prev => ({ ...prev, gote: gotePieces }));
-        addLog(`🤖 Gemini AI の能力駒ロード完了（${gotePieces.map(p => isStealthPiece(p) ? '？' : p.word).join('・')}）`, 'system', 'gote');
+        addLog(`🤖 CPU の能力駒ロード完了（${gotePieces.map(p => isStealthPiece(p) ? '？' : p.word).join('・')}）`, 'system', 'gote');
         autoPlacePieces(pieces, gotePieces);
       } else {
         setSetupSubPhase('gote_create');
@@ -2945,7 +2985,7 @@ export const App: React.FC = () => {
 
   // AI placement logic (9x9)
   const triggerAiPlacement = (currentBoard: Board, aiPieces: Piece[]) => {
-    addLog('🤖 Gemini AI が駒を初期配置中...', 'system', 'gote');
+    addLog('🤖 CPU が駒を初期配置中...', 'system', 'gote');
     let nextBoard = currentBoard.map(row => [...row]);
     
     // Rows 0, 1, 2
@@ -2967,7 +3007,7 @@ export const App: React.FC = () => {
     });
 
     setPiecesToPlace(prev => ({ ...prev, gote: [] }));
-    addLog('🤖 Gemini AI の配置完了。対局を開始します！', 'system', 'gote');
+    addLog('🤖 CPU の配置完了。対局を開始します！', 'system', 'gote');
     
     setState(prev => ({
       ...prev,
@@ -3591,6 +3631,7 @@ export const App: React.FC = () => {
               localStorage.setItem('shogi_player_name_sente', names.sente);
               localStorage.setItem('shogi_player_name_gote', names.gote);
             }}
+            siteNotice={[siteStatus.notice, siteStatus.onlineMatch ? '' : ONLINE_PAUSED_MESSAGE].filter(Boolean).join(' ')}
             onStartGame={() => {
               setState(prev => ({ ...prev, phase: 'setup' }));
               addLog('対局準備を開始します。能力駒を作成してください。', 'system', 'sente');

@@ -1,16 +1,21 @@
 // LLM による駒生成（API と バックフィルスクリプトで共用）
-// 無料枠の上限や障害で1つのモデルが使えなくても止まらないよう、上から順に試す:
-//   1. Gemini（GEMINI_MODEL）
-//   2. Gemini 軽量モデル（GEMINI_FALLBACK_MODEL。1日の上限はモデルごとに別枠）
-//   3. Gemma（GEMMA_MODEL。同じ Gemini APIキーで使え、1日の上限が大きい。構造化出力は非対応）
-//   4. OpenAI 互換API（任意。Groq / OpenRouter / Cloudflare Workers AI など。FALLBACK_LLM_* で設定）
-// 1日の上限は「リクエスト回数」で数えられるため、複数の単語を1回でまとめて生成できるようにしている。
+// 無料枠の上限や障害で1つのモデルが使えなくても止まらないよう、設定済みのものを上から順に試す:
+//   1. Cloudflare Workers AI（既定: Gemma 4 26B。CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN）
+//   2. Workers AI の予備モデル（任意。WORKERS_AI_FALLBACK_MODEL）
+//   3. OpenAI 互換API（任意。Groq / OpenRouter など。FALLBACK_LLM_*）
+//   4. Gemini API（ENABLE_GEMINI=true のときだけ）
+// Gemini API の利用規約には「18歳未満が利用する可能性が高いサイトでの利用禁止」の条項があり、
+// 誰でも遊べる公開ゲームでは抵触するおそれがあるため、既定では使わない。
+// 1日の上限は「リクエスト回数」で数えられることが多いため、複数の単語を1回でまとめて生成できるようにしている。
 import { buildPrompt } from './prompt.js';
 import { PIECES_RESPONSE_SCHEMA } from './pieceSchema.js';
 import { wordKey } from '../../shared/wordKey.js';
 
 export type Json = Record<string, unknown>;
 
+const WORKERS_AI_MODEL = process.env.WORKERS_AI_MODEL || '@cf/google/gemma-4-26b-a4b-it';
+const WORKERS_AI_FALLBACK_MODEL = process.env.WORKERS_AI_FALLBACK_MODEL || '';
+const ENABLE_GEMINI = process.env.ENABLE_GEMINI === 'true';
 const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash-lite';
 // 空文字を設定すると Gemma を使わない
@@ -49,14 +54,23 @@ async function fetchJson(url: string, init: RequestInit, timeoutMs: number): Pro
 
 /** モデルの出力から駒の配列を取り出す（```json で囲む・配列で返す・1件だけ返す、などの揺れを吸収） */
 export function extractPieces(text: string): Json[] {
-  const start = text.search(/[[{]/);
+  // 思考過程などの前置きに { が含まれる場合に備え、"pieces" から始まる部分も候補にする
   const end = Math.max(text.lastIndexOf('}'), text.lastIndexOf(']'));
-  if (start < 0 || end <= start) throw new ProviderError('response did not contain JSON');
-  const parsed = JSON.parse(text.slice(start, end + 1)) as unknown;
-  if (Array.isArray(parsed)) return parsed as Json[];
-  const obj = parsed as Json;
-  if (Array.isArray(obj.pieces)) return obj.pieces as Json[];
-  return [obj];
+  const starts = [text.search(/[[{]/), text.lastIndexOf('{"pieces"'), text.lastIndexOf('{\n  "pieces"')]
+    .filter((i, idx, all) => i >= 0 && all.indexOf(i) === idx);
+  for (const start of starts) {
+    if (end <= start) continue;
+    try {
+      const parsed = JSON.parse(text.slice(start, end + 1)) as unknown;
+      if (Array.isArray(parsed)) return parsed as Json[];
+      const obj = parsed as Json;
+      if (Array.isArray(obj.pieces)) return obj.pieces as Json[];
+      return [obj];
+    } catch {
+      // 次の候補を試す
+    }
+  }
+  throw new ProviderError('response did not contain valid JSON');
 }
 
 /** 入力した単語の順に並べ直す。足りない分は null（呼び出し側で待ち行列へ回す） */
@@ -120,22 +134,36 @@ async function callGeminiAdaptive(model: string, words: string[], apiKey: string
   throw lastError;
 }
 
-async function callOpenAICompatible(words: string[]): Promise<Json[]> {
-  const base = (process.env.FALLBACK_LLM_BASE_URL || '').replace(/\/$/, '');
-  const data = await fetchJson(`${base}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.FALLBACK_LLM_API_KEY}` },
-    body: JSON.stringify({
-      model: process.env.FALLBACK_LLM_MODEL,
-      messages: [{ role: 'user', content: buildPrompt(words) }],
-      response_format: { type: 'json_object' },
-      temperature: 0.9,
-      max_tokens: OUTPUT_TOKENS_PER_PIECE * words.length,
-    }),
-  }, words.length > 1 ? BATCH_TIMEOUT_MS : TIMEOUT_MS) as { choices?: { message?: { content?: string } }[] };
-  const text = data.choices?.[0]?.message?.content || '';
-  if (!text) throw new ProviderError('fallback LLM returned an empty response');
-  return extractPieces(text);
+interface OpenAICompatibleConfig {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
+/** OpenAI 互換の chat/completions を呼ぶ。JSONモードに非対応のモデルなら(400)、指定なしで再試行する */
+async function callOpenAICompatible(config: OpenAICompatibleConfig, words: string[]): Promise<Json[]> {
+  const call = async (jsonMode: boolean) => {
+    const data = await fetchJson(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+      body: JSON.stringify({
+        model: config.model,
+        messages: [{ role: 'user', content: buildPrompt(words) }],
+        ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
+        temperature: 0.9,
+        max_tokens: OUTPUT_TOKENS_PER_PIECE * words.length,
+      }),
+    }, words.length > 1 ? BATCH_TIMEOUT_MS : TIMEOUT_MS) as { choices?: { message?: { content?: string } }[] };
+    const text = data.choices?.[0]?.message?.content || '';
+    if (!text) throw new ProviderError(`${config.model} returned an empty response`);
+    return extractPieces(text);
+  };
+  try {
+    return await call(true);
+  } catch (err) {
+    if (err instanceof ProviderError && err.status === 400) return call(false);
+    throw err;
+  }
 }
 
 export interface Provider {
@@ -145,8 +173,24 @@ export interface Provider {
 
 export function configuredProviders(): Provider[] {
   const providers: Provider[] = [];
+
+  const cfAccount = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const cfToken = process.env.CLOUDFLARE_API_TOKEN;
+  if (cfAccount && cfToken) {
+    const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/ai/v1`;
+    for (const model of [WORKERS_AI_MODEL, WORKERS_AI_FALLBACK_MODEL].filter((m, i, all) => m && all.indexOf(m) === i)) {
+      providers.push({ name: `workers-ai:${model}`, run: w => callOpenAICompatible({ baseUrl, apiKey: cfToken, model }, w) });
+    }
+  }
+
+  const fb = { baseUrl: process.env.FALLBACK_LLM_BASE_URL, apiKey: process.env.FALLBACK_LLM_API_KEY, model: process.env.FALLBACK_LLM_MODEL };
+  if (fb.baseUrl && fb.apiKey && fb.model) {
+    const config = fb as OpenAICompatibleConfig;
+    providers.push({ name: `fallback:${config.model}`, run: w => callOpenAICompatible(config, w) });
+  }
+
   const geminiKey = process.env.GEMINI_API_KEY;
-  if (geminiKey) {
+  if (ENABLE_GEMINI && geminiKey) {
     const models = [PRIMARY_MODEL, FALLBACK_MODEL].filter((m, i, all) => m && all.indexOf(m) === i);
     for (const model of models) {
       providers.push({ name: model, run: w => callGeminiAdaptive(model, w, geminiKey, ['schema', 'json', 'plain']) });
@@ -154,9 +198,6 @@ export function configuredProviders(): Provider[] {
     if (GEMMA_MODEL) {
       providers.push({ name: GEMMA_MODEL, run: w => callGeminiAdaptive(GEMMA_MODEL, w, geminiKey, ['plain']) });
     }
-  }
-  if (process.env.FALLBACK_LLM_BASE_URL && process.env.FALLBACK_LLM_API_KEY && process.env.FALLBACK_LLM_MODEL) {
-    providers.push({ name: `fallback:${process.env.FALLBACK_LLM_MODEL}`, run: callOpenAICompatible });
   }
   return providers;
 }
