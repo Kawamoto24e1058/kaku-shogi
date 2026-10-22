@@ -16,15 +16,14 @@
   「RLS 有効・ポリシーなし」（待ち行列2表）も設計どおり（ブラウザからは読めない）。
 - サーバー用トークンを発行し、そのハッシュを `private.config` に登録済み。
 - Vercel プロジェクト `kaku-shogi` に `VITE_SUPABASE_URL`・`VITE_SUPABASE_PUBLISHABLE_KEY`・
-  `SUPABASE_SERVER_TOKEN`（Sensitive）・`CRON_SECRET`（Sensitive）を登録済み。
+  `SUPABASE_SERVER_TOKEN`（Sensitive）・`CRON_SECRET`（Sensitive）・
+  `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN`（Sensitive。Production と Preview）を登録済み。
 - Cloudflare Workers AI での生成を確認済み（10語すべて「エンジンで実行可能・盤面で効果あり」）。
 
 ## 残りの手順
-1. **Vercel に `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` を登録する（利用者）**
-   Settings → Environment Variables。トークンは Sensitive にする。未登録だと駒は簡易生成になる。
-2. **問い合わせ先と運営者名を決めて `VITE_CONTACT_URL` / `VITE_OPERATOR_NAME` を登録する（利用者）**
-3. 作業ブランチから main へのプルリクエストを作り、Preview デプロイで確認 → 利用者の承認を得てマージ。
-4. 本番で確認: 駒生成（AI）・CPU対戦・2つのブラウザでオンライン対戦（部屋コード／ランダム）・
+1. **問い合わせ先と運営者名を決めて `VITE_CONTACT_URL` / `VITE_OPERATOR_NAME` を登録する（利用者）**
+2. 作業ブランチから main へのプルリクエストを作り、Preview デプロイで確認 → 利用者の承認を得てマージ。
+3. 本番で確認: 駒生成（AI）・CPU対戦・2つのブラウザでオンライン対戦（部屋コード／ランダム）・
    `/terms.html`・`/privacy.html`・Xに投稿したときのカード表示。
    Vercel → Cron Jobs から `/api/backfill` を手動実行し、駒が `public.pieces` に増えることを確認。
 
