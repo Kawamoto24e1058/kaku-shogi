@@ -69,11 +69,11 @@ GitHub Actions を使うには、リポジトリの Settings → Secrets and var
 3. Authentication → ログイン方法 →「匿名」を有効化。
 4. ウェブアプリを追加し、表示された設定値を `VITE_FIREBASE_*` に設定。
 5. プロジェクトの設定 → サービスアカウント →「新しい秘密鍵を生成」で JSON をダウンロードし、**1 行にして** `FIREBASE_SERVICE_ACCOUNT` に設定（このファイルは絶対にコミットしない）。
-6. ルールとインデックスをデプロイ（**匿名認証を有効化した後に**行うこと）:
-   ```bash
-   npx firebase-tools login
-   npx firebase-tools deploy --only firestore:rules,firestore:indexes --project <プロジェクトID>
-   ```
+6. ルールとインデックスは **GitHub Actions（`.github/workflows/firestore.yml`）が自動でデプロイ**します。
+   - GitHub の Settings → Secrets and variables → Actions に `FIREBASE_SERVICE_ACCOUNT`（手順5のJSON）を登録
+   - **匿名認証を有効化した後に**、Actions タブの「Firestore rules」→「Run workflow」で初回デプロイ（以後は main でルールを変えるたびに自動）
+   - 権限エラーになる場合は、Google Cloud コンソールの IAM でそのサービスアカウントに「Firebase Rules 管理者」と「Cloud Datastore インデックス管理者」のロールを追加
+   - プルリクエストでは、エミュレータ上でルールのテスト（`scripts/test-firestore-rules.mjs`、19項目）だけを実行します
 7. （任意）Firestore → TTL ポリシーで `rate_limits` コレクションの `expiresAt` を指定すると、古いカウンタが自動削除されます。
 
 ### 2. Cloudflare Workers AI（駒生成 AI）
