@@ -49,6 +49,21 @@ function saveToCache(word: string, data: PieceData) {
   }
 }
 
+/** この端末のキャッシュから単語の駒を消す（報告した駒を二度と出さないため） */
+export function forgetCachedPiece(word: string): void {
+  const key = getCacheKey(normalizeFusionWord(word.trim()));
+  memoryCache.delete(key);
+  try {
+    const cachedData = localStorage.getItem('shogi_piece_cache');
+    if (!cachedData) return;
+    const cacheObj = JSON.parse(cachedData);
+    delete cacheObj[key];
+    localStorage.setItem('shogi_piece_cache', JSON.stringify(cacheObj));
+  } catch (e) {
+    console.warn('Failed to remove piece from localStorage cache:', e);
+  }
+}
+
 function getFromCache(word: string): PieceData | null {
   const key = getCacheKey(word);
   if (memoryCache.has(key)) {

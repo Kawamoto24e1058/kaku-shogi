@@ -2630,7 +2630,30 @@ function isAutonomousPiece(p: Piece | null): boolean {
          desc.includes('気まぐれ');
 }
 
-export function applyAutomatedEffect(
+type AutomatedEffectResult = ReturnType<typeof applyAutomatedEffectUnsafe>;
+
+/**
+ * 能力の自動発動。AIが作った駒のデータは毎回違うため、想定外のデータで例外が起きても
+ * 対局が止まらないよう、その能力だけを不発として扱う。
+ */
+export function applyAutomatedEffect(...args: Parameters<typeof applyAutomatedEffectUnsafe>): AutomatedEffectResult {
+  try {
+    return applyAutomatedEffectUnsafe(...args);
+  } catch (err) {
+    console.error('[ability] failed, treated as not triggered:', err);
+    const [board, , , player, capturedPieces, , , , graveyard] = args;
+    return {
+      board,
+      capturedPieces,
+      graveyard,
+      logs: [{ player, message: '【能力エラー】能力をうまく発動できなかったため、不発になりました。', type: 'system' }],
+      triggered: false,
+      reAction: false,
+    };
+  }
+}
+
+function applyAutomatedEffectUnsafe(
   board: Board,
   position: [number, number],
   triggerType: 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' | 'ON_CAPTURE',

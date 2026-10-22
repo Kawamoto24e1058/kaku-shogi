@@ -35,7 +35,7 @@ export class OnlineError extends Error {
 function toOnlineError(err: { message?: string; code?: string; status?: number } | null | undefined): OnlineError {
   const message = err?.message || 'unknown error';
   const status = err?.status;
-  if (status === 402 || status === 429 || /quota|exceed|too many/i.test(message)) return new OnlineError('quota', message);
+  if (status === 402 || status === 429 || /quota|exceed|too many|server busy/i.test(message)) return new OnlineError('quota', message);
   if (status === 401 || status === 403 || err?.code === '42501') return new OnlineError('forbidden', message);
   if (/fetch|network|timeout/i.test(message)) return new OnlineError('network', message);
   return new OnlineError('unknown', message);
@@ -154,6 +154,12 @@ export async function deleteMatch(code: string): Promise<void> {
   await call<boolean>('delete_match', { p_code: code, p_secret: playerSecret() });
 }
 
+// ===== 不適切な駒の報告 =====
+/** 報告する。別々の人からの報告が一定数に達すると、その駒は共有キャッシュから消える。報告の累計を返す */
+export async function reportPiece(key: string): Promise<number> {
+  return call<number>('report_piece', { p_key: key, p_secret: playerSecret() });
+}
+
 // ===== ランダムマッチ =====
 /** 待っている人がいればその部屋コードを返す（同時に1人だけが取れる） */
 export async function takeWaitingMatch(): Promise<string | null> {
@@ -175,7 +181,14 @@ const POLL_INTERVAL_MS = 2500;
  * 対戦データの変更を受け取る。Realtime が使えないとき（同時接続の上限など）は、
  * updated_at が進んだときだけ取得するポーリングで代わりに受け取る。戻り値は購読の解除関数。
  */
-export function subscribeMatch(code: string, onData: (data: MatchData) => void): () => void {
+export interface PresenceOptions {
+  /** 自分の役割（先手・後手）。同じ部屋に接続中の人の役割一覧を onChange で受け取る */
+  role: 'sente' | 'gote';
+  /** 接続中の役割の一覧。Realtime が使えない（ポーリング中）ときは null = 分からない */
+  onChange: (roles: string[] | null) => void;
+}
+
+export function subscribeMatch(code: string, onData: (data: MatchData) => void, presence?: PresenceOptions): () => void {
   let stopped = false;
   let lastUpdatedAt = '';
   let chain = Promise.resolve();
@@ -208,8 +221,14 @@ export function subscribeMatch(code: string, onData: (data: MatchData) => void):
     pollTimer = setTimeout(tick, POLL_INTERVAL_MS);
   };
 
+  // 接続中かどうかは Realtime の Presence で知らせ合う（対戦データを書き換えないので転送量が増えない）
   const channel = supabase()
-    .channel(`match:${code}`)
+    .channel(`match:${code}`, presence ? { config: { presence: { key: `${presence.role}:${playerId()}` } } } : undefined)
+    .on('presence', { event: 'sync' }, () => {
+      if (!presence || stopped) return;
+      const roles = Object.keys(channel.presenceState()).map(key => key.split(':')[0]);
+      presence.onChange(roles);
+    })
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `code=eq.${code}` }, payload => {
       const row = payload.new as { data?: MatchData; updated_at?: string };
       // 1件が上限（1MB）を超えると大きな項目が省かれて届くので、そのときは取り直す
@@ -220,8 +239,12 @@ export function subscribeMatch(code: string, onData: (data: MatchData) => void):
       if (status === 'SUBSCRIBED') {
         // 購読開始までの間に起きた変更を取りこぼさないよう、一度取り直す
         fetchLatest().catch(() => undefined);
+        if (presence) channel.track({ at: Date.now() }).catch(() => undefined);
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-        if (!stopped) startPolling();
+        if (!stopped) {
+          presence?.onChange(null);
+          startPolling();
+        }
       }
     });
 

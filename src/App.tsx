@@ -44,6 +44,11 @@ import { dailyKey, dailyLabel, dailyWords } from '../shared/challenge';
 import { recordDailyResult } from './dailyRecord';
 import { chooseCpuMove } from './cpuAi';
 
+/** 対局中に再読み込みしたときに戻るための情報（sessionStorage のキー） */
+const RESUME_KEY = 'kaku_online_resume';
+/** 相手の接続が切れてから、離脱による勝ちを選べるようになるまでの秒数 */
+const OPPONENT_TIMEOUT_SEC = 90;
+
 const getOrCreateDeviceId = (): string => {
   if (typeof window === 'undefined' || !window.localStorage) {
     return Math.random().toString(36).substring(2, 11);
@@ -1511,11 +1516,78 @@ export const App: React.FC = () => {
     };
   }, [forceResyncGame]);
 
-  // リアルタイム購読（Realtime が使えないときはポーリングに切り替わる）
+  // リアルタイム購読（Realtime が使えないときはポーリングに切り替わる）。
+  // あわせて Presence で相手が接続中かを知る（null = Realtime が使えず分からない）
+  const [opponentOnline, setOpponentOnline] = useState<boolean | null>(null);
+  const [opponentOfflineSince, setOpponentOfflineSince] = useState<number | null>(null);
   useEffect(() => {
+    if (!onlineMode || !roomCode || !myRole) return;
+    const opponent = myRole === 'sente' ? 'gote' : 'sente';
+    return subscribeMatch(roomCode, updateLocalStateFromMatchData, {
+      role: myRole,
+      onChange: roles => {
+        const online = roles === null ? null : roles.includes(opponent);
+        setOpponentOnline(online);
+        setOpponentOfflineSince(prev => (online === false ? (prev ?? Date.now()) : null));
+      },
+    });
+  }, [onlineMode, roomCode, myRole, updateLocalStateFromMatchData]);
+
+  // 再読み込みしても対局に戻れるよう、参加中の部屋をこのタブに覚えておく（秘密の文字列もタブ単位なので同じ人として戻れる）
+  useEffect(() => {
+    try {
+      // 消すのは対局が終わったときと、最初の画面に戻ったとき（handleResetGame）だけ。
+      // 起動直後（まだオンラインでない状態）に消すと、下の復帰処理が読む前に消えてしまう
+      if (onlineMode && roomCode && myRole && state.phase !== 'finished') {
+        sessionStorage.setItem(RESUME_KEY, JSON.stringify({ roomCode, myRole }));
+      } else if (onlineMode && state.phase === 'finished') {
+        sessionStorage.removeItem(RESUME_KEY);
+      }
+    } catch {
+      // 保存できない環境では復帰できないだけ
+    }
+  }, [onlineMode, roomCode, myRole, state.phase]);
+
+  // 起動時: 対局中に再読み込みしていたら、その対局に戻る
+  useEffect(() => {
+    let saved: { roomCode?: string; myRole?: 'sente' | 'gote' } | null;
+    try {
+      saved = JSON.parse(sessionStorage.getItem(RESUME_KEY) || 'null');
+    } catch {
+      saved = null;
+    }
+    if (!saved?.roomCode || !saved.myRole || !onlineConfigured) return;
+    const { roomCode: code, myRole: role } = saved;
+    getMatch(code).then(match => {
+      const status = match?.data.status;
+      if (!match || status === 'finished') {
+        sessionStorage.removeItem(RESUME_KEY);
+        return;
+      }
+      setVsAiMode(false);
+      setOnlineMode(true);
+      setMyRole(role);
+      setRoomCode(code);
+      if (status === 'waiting') setIsWaitingForOpponent(true);
+    }).catch(err => console.warn('[online] resume failed:', err));
+  }, []);
+
+  // 相手の接続が切れてからの経過時間を表示するための時計（切れているときだけ動かす）
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!opponentOfflineSince) return;
+    const timer = setInterval(() => setClockNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [opponentOfflineSince]);
+
+  /** 投了・相手の離脱でオンライン対局を終わらせる */
+  const endOnlineMatch = (winner: Player, message: string) => {
     if (!onlineMode || !roomCode) return;
-    return subscribeMatch(roomCode, updateLocalStateFromMatchData);
-  }, [onlineMode, roomCode, updateLocalStateFromMatchData]);
+    const log: GameLog = { id: generateId(), timestamp: new Date().toLocaleTimeString(), player: winner, message, type: 'system' };
+    const logs = [...state.logs, log];
+    setState(prev => ({ ...prev, phase: 'finished', winner, logs }));
+    syncOnlineState(state.board, state.turn, 'finished', winner, state.capturedPieces, state.sharedPieces, state.customDecks, state.destroyedPieces, logs);
+  };
 
 
   // 4. 先手側：両者の概念構築完了検知と自動配置
@@ -3254,6 +3326,11 @@ export const App: React.FC = () => {
     setMatchDoc(null);
     setDailyChallenge(null);
     setPlayerMoves({ sente: 0, gote: 0 });
+    try {
+      sessionStorage.removeItem(RESUME_KEY);
+    } catch {
+      // 保存領域が使えない環境では何もしない
+    }
   };
 
   // AI Opponent Solver (9x9)
@@ -3695,12 +3772,46 @@ export const App: React.FC = () => {
                     : `▽ ${playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')}`;
                   const mine = isPieceOwnerHuman(state.turn) && (onlineMode || vsAiMode);
                   return (
+                    <>
                     <div className="turn-strip" role="status" aria-live="polite">
                       <span className={mine ? 'turn-strip-me' : undefined}>{mine ? 'あなたの手番' : `${turnName} の手番`}</span>
                       <span className="turn-strip-sub">
                         {mine ? '駒をタップして動かす' : vsAiMode ? 'AIが考えています…' : onlineMode ? '相手の手を待っています…' : '交代で指してください'}
                       </span>
+                      {onlineMode && myRole && state.phase === 'playing' && (
+                        <button
+                          type="button"
+                          className="turn-strip-resign"
+                          onClick={() => {
+                            if (!window.confirm('投了して負けを認めますか？')) return;
+                            const opponent: Player = myRole === 'sente' ? 'gote' : 'sente';
+                            endOnlineMatch(opponent, `${playerNames[myRole] || (myRole === 'sente' ? '先手' : '後手')} が投了しました。`);
+                          }}
+                        >
+                          投了
+                        </button>
+                      )}
                     </div>
+                    {onlineMode && myRole && opponentOnline === false && opponentOfflineSince && state.phase === 'playing' && (() => {
+                      const waited = Math.floor((clockNow - opponentOfflineSince) / 1000);
+                      const remaining = Math.max(0, OPPONENT_TIMEOUT_SEC - waited);
+                      return (
+                        <div className="opponent-offline" role="alert">
+                          <span>📡 相手の接続が切れています（{waited}秒）</span>
+                          {remaining > 0 ? (
+                            <span className="turn-strip-sub">あと{remaining}秒で勝ちを選べます</span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => endOnlineMatch(myRole, '相手の接続が一定時間切れたため、勝ちになりました。')}
+                            >
+                              勝ちにして終わる
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    </>
                   );
                 })()}
                 <GameBoard

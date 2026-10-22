@@ -119,5 +119,22 @@ await A.screenshot({ path: `${out}/online-A-2.png` });
 await B.screenshot({ path: `${out}/online-B-2.png` });
 const bTurn = await B.locator('.turn-strip').innerText().catch(() => '(no strip)');
 console.log('B turn strip:', bTurn.replace(/\s+/g, ' '));
+// ① 後手がページを再読み込みしても対局に戻れるか
+await B.reload();
+await B.waitForTimeout(6000);
+const bStrip2 = await B.locator('.turn-strip').innerText().catch(() => '(no strip)');
+console.log('B after reload:', bStrip2.replace(/\s+/g, ' '));
+await B.screenshot({ path: `${out}/online-B-3-reload.png` });
+// ② 後手が投了 → 先手に勝ちが届くか
+B.once('dialog', d => d.accept());
+B.removeAllListeners('dialog');
+B.on('dialog', d => d.accept());
+await B.getByRole('button', { name: '投了', exact: true }).click();
+await A.waitForTimeout(6000);
+console.log('status after resign', db.matches.get(code)?.data.status, 'winner', db.matches.get(code)?.data.winner);
+const aOver = await A.locator('.game-over-title').innerText().catch(() => '(no overlay)');
+const bOver = await B.locator('.game-over-title').innerText().catch(() => '(no overlay)');
+console.log('A overlay:', aOver, '/ B overlay:', bOver);
+await A.screenshot({ path: `${out}/online-A-4-resign.png` });
 console.log('stats', JSON.stringify(stats));
 await browser.close();

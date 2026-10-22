@@ -258,8 +258,8 @@ export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHover
         </div>
       )}
 
-      {/* Promoted Effect */}
-      {piece.promoted_effect && (
+      {/* Promoted Effect（能力プログラムの駒は「成っていれば」の条件で能力に含まれるので、旧形式の自動説明は出さない） */}
+      {piece.promoted_effect && !isProgram && (
         <div style={{
           paddingLeft: '10px',
           borderLeft: '2px solid var(--color-gold)',

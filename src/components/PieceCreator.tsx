@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { generatePieceWithSource, clearAllCustomPieceCache, warmUpGenerator, BlockedWordError } from '../aiGenerator';
+import { generatePieceWithSource, clearAllCustomPieceCache, warmUpGenerator, BlockedWordError, forgetCachedPiece } from '../aiGenerator';
+import { onlineConfigured, reportPiece } from '../onlineStore';
+import { wordKey } from '../../shared/wordKey';
 import { openXShare } from '../share';
 import type { Piece, Player } from '../types';
 import { generateId } from '../gameLogic';
 import { PieceDetailCard } from './PieceDetailCard';
 import { ProgramAbilityList } from './ProgramAbilityList';
-import { FUSION_MARK } from '../../shared/challenge';
+import { FUSION_MARK, normalizeFusionWord } from '../../shared/challenge';
 
 const SCAN_STAGES = [
   '深層概念マトリクス結合中...',
@@ -127,6 +129,22 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
       }
     } finally {
       setPendingWords(prev => prev.filter(p => p.key !== key));
+    }
+  };
+
+  // 不適切な駒の報告。報告した駒はこの端末では二度と出さず、デッキからも外す
+  const handleReport = async (index: number) => {
+    const piece = createdPieces[index];
+    if (!piece) return;
+    if (!window.confirm(`「${piece.word}」の駒に不適切な内容（差別・性的・暴力的な表現など）がありますか？\n報告すると、この駒はデッキから外れます。`)) return;
+    forgetCachedPiece(piece.word);
+    setCreatedPieces(prev => prev.filter((_, i) => i !== index));
+    try {
+      await reportPiece(wordKey(normalizeFusionWord(piece.word)));
+      setNotice(`「${piece.word}」を報告しました。ご協力ありがとうございます。複数の報告が集まった駒は自動で削除されます。`);
+    } catch (err) {
+      console.warn('[report] failed:', err);
+      setNotice(`「${piece.word}」をデッキから外しました（報告の送信には失敗しました）。`);
     }
   };
 
@@ -426,7 +444,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
       <div className="piece-creator-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px', marginBottom: '30px' }}>
         {createdPieces.map((piece, index) => {
           return (
-            <div key={piece.id} style={{ position: 'relative', display: 'flex', width: '100%' }}>
+            <div key={piece.id} style={{ position: 'relative', display: 'flex', flexDirection: 'column', width: '100%' }}>
               <button
                 onClick={() => handleDelete(index)}
                 style={{
@@ -446,7 +464,16 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
                 ×
               </button>
               <PieceDetailCard piece={piece} />
-              {piece.abilities?.length ? <div style={{ marginBottom: '40px' }}><ProgramAbilityList piece={piece as Piece} /></div> : null}
+              {onlineConfigured && (
+                <button
+                  type="button"
+                  onClick={() => handleReport(index)}
+                  style={{ position: 'absolute', bottom: '12px', left: '12px', zIndex: 10, padding: '4px 10px', borderRadius: '999px', border: '1px solid rgba(185, 28, 28, 0.3)', background: '#fff', color: '#b91c1c', fontSize: '11px', fontWeight: 700 }}
+                >
+                  ⚠ 不適切な内容を報告
+                </button>
+              )}
+              {piece.abilities?.length ? <div style={{ margin: '8px 0 44px' }}><ProgramAbilityList piece={piece as Piece} /></div> : null}
               <button
                 onClick={() => openXShare(`「${piece.word}」から能力駒《${piece.effect_name}》が生まれた！\n${piece.ability_genre || ''}`)}
                 style={{

@@ -85,7 +85,8 @@ AI で生成できなかった単語は `generation_queue` に積まれ、Vercel
 ### 1. Supabase（DB とリアルタイム同期）
 
 1. [Supabase](https://supabase.com/) で無料プロジェクトを作成（リージョンは Tokyo）。
-2. SQL Editor に `supabase/schema.sql` の中身を貼り付けて Run（何度実行しても同じ状態になる）。
+2. SQL Editor に `supabase/schema.sql`、続けて `supabase/02_launch_safety.sql` の中身を貼り付けて Run（どちらも何度実行しても同じ状態になる）。
+   後者は対戦データの大きさ・同時対局数の上限、放置された対局の早めの掃除、不適切な駒の報告（別々の3人の報告で共有キャッシュから削除）。
 3. サーバー用トークンを作る: `openssl rand -hex 32` で作った値を `SUPABASE_SERVER_TOKEN` に設定し、
    その SHA-256 を `private.config` に登録（`schema.sql` 末尾のコメント参照）。トークン本体は DB に保存しない。
 4. Project Settings → API の URL と Publishable key を `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` に設定（公開前提の値）。

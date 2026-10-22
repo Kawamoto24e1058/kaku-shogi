@@ -1825,3 +1825,38 @@ button, input, [role="button"] {
   font-weight: 700;
   font-size: 13px;
 }
+
+/* オンライン対局: 投了ボタンと、相手の接続が切れたときの案内 */
+.turn-strip-resign {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(158, 42, 43, 0.4);
+  background: #fff;
+  color: var(--color-shinku);
+  font-size: 12px;
+  font-weight: 700;
+}
+.opponent-offline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #7c2d12;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+}
+.opponent-offline button {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: none;
+  background: #c2410c;
+  color: #fff;
+  font-weight: 700;
+}
