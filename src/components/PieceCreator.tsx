@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { generatePieceFromWord, clearAllCustomPieceCache } from '../aiGenerator';
+import { generatePieceWithSource, clearAllCustomPieceCache } from '../aiGenerator';
+import { openXShare } from '../share';
 import type { Piece, Player } from '../types';
 import { generateId } from '../gameLogic';
 import { PieceDetailCard } from './PieceDetailCard';
@@ -7,7 +8,6 @@ import { PieceDetailCard } from './PieceDetailCard';
 interface PieceCreatorProps {
   player: Player;
   onPiecesReady: (pieces: Piece[]) => void;
-  geminiApiKey: string;
   vsAiMode: boolean;
   setupSubPhase: 'sente_create' | 'gote_create';
   onlineMode?: boolean;
@@ -20,7 +20,6 @@ interface PieceCreatorProps {
 export const PieceCreator: React.FC<PieceCreatorProps> = ({
   player,
   onPiecesReady,
-  geminiApiKey,
   vsAiMode,
   setupSubPhase,
   onlineMode = false,
@@ -33,6 +32,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
   const [loading, setLoading] = useState(false);
   const [createdPieces, setCreatedPieces] = useState<Piece[]>([]);
   const [scanStatus, setScanStatus] = useState('');
+  const [notice, setNotice] = useState('');
 
   const maxPieces = 3; 
   const leftRole = onlineMode ? (myRole || 'sente') : player;
@@ -71,7 +71,8 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
     }, 255);
 
     try {
-      const pieceData = await generatePieceFromWord(word.trim(), geminiApiKey);
+      const { piece: pieceData, notice: generationNotice } = await generatePieceWithSource(word.trim());
+      setNotice(generationNotice || '');
       
       const newPiece: Piece = {
         ...pieceData,
@@ -112,13 +113,13 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
   const [resettingCache, setResettingCache] = useState(false);
 
   const handleResetFirebaseCache = async () => {
-    if (!window.confirm('過去に記録・生成されたすべてのカスタム駒データをFirebaseおよびローカルキャッシュから完全消去・リセットしますか？')) {
+    if (!window.confirm('この端末に保存された駒データのキャッシュを消去しますか？（他のプレイヤーには影響しません）')) {
       return;
     }
     setResettingCache(true);
     try {
       const count = await clearAllCustomPieceCache();
-      alert(`Firestoreおよびキャッシュから計 ${count} 件のカスタム駒データを消去・リセットしました！次回から新しいプロンプトで再錬成されます。`);
+      alert(`この端末のキャッシュから ${count} 件の駒データを消去しました。`);
     } catch (e) {
       console.error(e);
       alert('リセット処理中にエラーが発生しました。');
@@ -174,9 +175,9 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
                 cursor: resettingCache ? 'not-allowed' : 'pointer',
                 transition: 'all 0.2s'
               }}
-              title="Firebaseおよびローカルキャッシュに保存された過去のすべてのカスタム駒データを完全消去して初期リセットします"
+              title="この端末に保存された駒データのキャッシュを消去します"
             >
-              {resettingCache ? '🔥 消去中...' : '🔥 全カスタム駒リセット'}
+              {resettingCache ? '消去中...' : '端末キャッシュを消去'}
             </button>
             <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
               {onlineMode ? '※お互いのデバイスから同時に駒の作成が可能です' : !vsAiMode && '※1台のデバイスを交互に操作して対戦します'}
@@ -263,42 +264,29 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
           戦場に召喚するオリジナルのカスタム駒を **{maxPieces}枚** 作成してください。単語の本質をハックし、ルールそのものを書き換える**【完全に新しい特殊能力】**をゼロから創造・ダイナミックコンパイルします。
         </p>
 
-        {!geminiApiKey || geminiApiKey.trim() === '' ? (
-          <div style={{
-            background: 'rgba(212, 175, 55, 0.03)',
-            border: '1px solid rgba(212, 175, 55, 0.15)',
-            borderRadius: '12px',
-            padding: '12px 16px',
-            marginBottom: '20px',
-            fontSize: '12px',
-            color: 'var(--color-gold)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '4px'
-          }}>
+        <div style={{
+          background: notice ? 'rgba(212, 175, 55, 0.03)' : 'rgba(47, 82, 51, 0.03)',
+          border: `1px solid ${notice ? 'rgba(212, 175, 55, 0.15)' : 'rgba(47, 82, 51, 0.15)'}`,
+          borderRadius: '12px',
+          padding: '12px 16px',
+          marginBottom: '20px',
+          fontSize: '12px',
+          color: notice ? 'var(--color-gold)' : 'var(--color-matsuba)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '4px'
+        }}>
+          {notice ? (
+            <div><strong>簡易生成：</strong>{notice}</div>
+          ) : (
             <div>
-              <strong>オフライン簡易生成モード動作中：</strong> Gemini API キーが設定されていません。
-              簡易テンプレートが適用されます。
+              <strong>AI駆動生成モード：</strong> 入力された単語の特徴をAI (Google Gemini) が解釈し、オリジナルの特殊能力を生成します。
             </div>
+          )}
+          <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+            ※入力した単語は能力生成のため Google Gemini API に送信され、生成結果は他のプレイヤーとも共有されます。個人情報は入力しないでください。
           </div>
-        ) : (
-          <div style={{
-            background: 'rgba(47, 82, 51, 0.03)',
-            border: '1px solid rgba(47, 82, 51, 0.15)',
-            borderRadius: '12px',
-            padding: '12px 16px',
-            marginBottom: '20px',
-            fontSize: '12px',
-            color: 'var(--color-matsuba)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '4px'
-          }}>
-            <div>
-              <strong>AI駆動生成モード有効：</strong> Gemini API を使用して、入力された単語の特徴を深く解釈したオリジナルの特殊能力をリアルタイムでゼロから創造します。
-            </div>
-          </div>
-        )}
+        </div>
 
         {(!onlineMode || !onlineSelfReady) && createdPieces.length < maxPieces && (
           <form onSubmit={handleGenerate} className="piece-creator-form" style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
@@ -309,7 +297,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
               placeholder="任意の単語（例：山、忍者、大砲、仏）"
               className="cyber-input"
               style={{ flex: 1 }}
-              maxLength={20}
+              maxLength={24}
               disabled={loading}
               required
             />
@@ -407,6 +395,26 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
                 ×
               </button>
               <PieceDetailCard piece={piece} />
+              <button
+                onClick={() => openXShare(`「${piece.word}」から能力駒《${piece.effect_name}》が生まれた！\n${piece.ability_genre || ''}`)}
+                style={{
+                  position: 'absolute',
+                  bottom: '12px',
+                  right: '12px',
+                  background: '#111',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '9999px',
+                  padding: '4px 12px',
+                  fontSize: '11px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  zIndex: 10,
+                }}
+                title="この駒をXでシェア"
+              >
+                𝕏 シェア
+              </button>
             </div>
           );
         })}

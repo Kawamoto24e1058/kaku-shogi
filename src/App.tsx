@@ -11,7 +11,6 @@ import {
   getCellLabel,
   getPieceLogicCode,
   getPieceAbilitySpec,
-  getPieceTrigger,
   isTriggerMatching,
   generateId,
   getValidDropCells,
@@ -33,8 +32,10 @@ import { getRandomCachedPieces } from './aiGenerator';
 import { StartScreen } from './components/StartScreen';
 import { SakuraShower } from './components/SakuraShower';
 import { PersonaCutin, type CutinType } from './components/PersonaCutin';
-import { db } from './firebase';
+import { db, ensureSignedIn } from './firebase';
 import { doc, getDoc, setDoc, updateDoc, onSnapshot, arrayUnion, collection, query, where, orderBy, limit, getDocs, deleteDoc } from 'firebase/firestore';
+import { openXShare } from './share';
+import { chooseCpuMove } from './cpuAi';
 
 const getOrCreateDeviceId = (): string => {
   if (typeof window === 'undefined' || !window.localStorage) {
@@ -49,11 +50,6 @@ const getOrCreateDeviceId = (): string => {
 };
 
 const AI_PIECE_WORDS = ['賢い人間', '訓練された猟犬', '防護プレート', '延焼ダイナマイト'];
-
-const k1 = 'AQ.Ab8RN6';
-const k2 = 'IgROzcO0hWqYuoeB9Olf';
-const k3 = 'R-sjK6i76fvZomSfj2mvmDzw';
-const geminiDefaultKey = k1 + k2 + k3;
 
 export interface AbilityAnimationState {
   source: [number, number] | null;
@@ -111,7 +107,6 @@ export const App: React.FC = () => {
     winner: null,
     logs: [],
     historyStates: [],
-    geminiApiKey: geminiDefaultKey,
     playerNames: { sente: savedSenteName, gote: savedGoteName },
     promotionPending: null,
   });
@@ -1121,6 +1116,7 @@ export const App: React.FC = () => {
   const handleCreateRoom = async () => {
     setMatchmakingError('');
     try {
+      const uid = await ensureSignedIn();
       let code = '';
       let isUnique = false;
       let attempts = 0;
@@ -1148,6 +1144,8 @@ export const App: React.FC = () => {
         status: 'waiting',
         senteDeviceId: clientDeviceId,
         goteDeviceId: null,
+        senteUid: uid,
+        goteUid: null,
         senteName: senteName,
         goteName: '',
         senteWords: [],
@@ -1189,6 +1187,7 @@ export const App: React.FC = () => {
       return;
     }
     try {
+      const uid = await ensureSignedIn();
       const docRef = doc(db, 'matches', code);
       const snap = await getDoc(docRef);
       if (!snap.exists()) {
@@ -1207,6 +1206,7 @@ export const App: React.FC = () => {
       await updateDoc(docRef, {
         status: 'setup',
         goteDeviceId: clientDeviceId,
+        goteUid: uid,
         goteName: goteName,
         logs: arrayUnion({ player: 'system', message: `${goteName} が入室しました。能力駒の構築を開始します。`, type: 'system' }),
         lastUpdated: Date.now()
@@ -1240,6 +1240,7 @@ export const App: React.FC = () => {
     }, 10000);
 
     try {
+      const uid = await ensureSignedIn();
       const queueRef = collection(db, 'matchmaking_queue');
       const q = query(queueRef, where('status', '==', 'waiting'), orderBy('createdAt', 'asc'), limit(1));
       const querySnapshot = await getDocs(q);
@@ -1267,6 +1268,7 @@ export const App: React.FC = () => {
         await updateDoc(docRef, {
           status: 'connecting',
           goteDeviceId: clientDeviceId,
+          goteUid: uid,
           goteName: goteName,
           goteReadyHandshake: true,
           logs: arrayUnion({ player: 'system', message: `${goteName} が入室しました。通信同期中…`, type: 'system' }),
@@ -1307,6 +1309,8 @@ export const App: React.FC = () => {
           status: 'waiting',
           senteDeviceId: clientDeviceId,
           goteDeviceId: null,
+          senteUid: uid,
+          goteUid: null,
           senteName: senteName,
           goteName: '',
           senteReadyHandshake: true,
@@ -1333,6 +1337,7 @@ export const App: React.FC = () => {
         const myQueueRef = doc(db, 'matchmaking_queue', clientDeviceId);
         await setDoc(myQueueRef, {
           deviceId: clientDeviceId,
+          uid,
           roomCode: code,
           status: 'waiting',
           createdAt: Date.now()
@@ -3241,79 +3246,17 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!vsAiMode || state.turn !== 'gote' || state.phase !== 'playing' || state.winner) return;
 
+    let cancelled = false;
     const runAiTurn = async () => {
       await new Promise(r => setTimeout(r, 1200));
 
+      if (cancelled) return;
       const board = state.board;
-      let aiMoves: {
-        type: 'move' | 'action' | 'drop' | 'shared_drop' | 'custom_deck_drop';
-        from?: [number, number];
-        to: [number, number];
-        weight: number;
-        piece?: Piece;
-        index?: number;
-      }[] = [];
-
-      for (let y = 0; y < BOARD_SIZE; y++) {
-        for (let x = 0; x < BOARD_SIZE; x++) {
-          const piece = board[y][x];
-          if (piece && piece.owner === 'gote') {
-            // 1. Regular Moves
-            const moves = getValidMoves(y, x, board);
-            moves.forEach(([ny, nx]) => {
-              const target = board[ny][nx];
-              let weight = 10;
-              if (target) {
-                if (target.isKing) weight = 1000;
-                else if (target.isHisha || target.isKaku) weight = 200; // 大駒の捕獲価値
-                else if (!target.isPawn) weight = 100; // カスタム駒の捕獲価値
-                else if (getPieceTrigger(target) === 'ON_TAKEN' && getPieceLogicCode(target) === 'kill_adjacent') {
-                  weight = 1; // 罠の自爆は避ける
-                } else {
-                  weight = 40; // 歩兵などの捕獲価値
-                }
-              }
-              aiMoves.push({ type: 'move', from: [y, x], to: [ny, nx], weight });
-            });
-          }
-        }
-      }
-
-      // 3. Drop pieces from hand
-      const aiHand = state.capturedPieces.gote;
-      if (aiHand.length > 0) {
-        aiHand.forEach((piece, index) => {
-          const validDropSpots = getValidDropCells(board, piece, 'gote');
-          validDropSpots.forEach(([ey, ex]) => {
-            let weight = 8;
-            if (ey >= 3) weight += 5; // drop closer to Sente front
-            aiMoves.push({ type: 'drop', to: [ey, ex], piece, index, weight });
-          });
-        });
-      }
-
-      // 3.5. Drop pieces from custom deck
-      const aiCustomDeck = state.customDecks.gote;
-      if (aiCustomDeck && aiCustomDeck.length > 0) {
-        aiCustomDeck.forEach((piece, index) => {
-          const validDropSpots = getValidDropCells(board, piece, 'gote');
-          validDropSpots.forEach(([ey, ex]) => {
-            let weight = 15; // Give slightly higher weight to playing custom pieces!
-            if (ey >= 3) weight += 5; // drop closer to Sente front
-            aiMoves.push({ type: 'custom_deck_drop', to: [ey, ex], piece, index, weight });
-          });
-        });
-      }
-
-      if (aiMoves.length === 0) {
+      const chosenMove = chooseCpuMove(board, state.capturedPieces.gote, state.customDecks.gote || []);
+      if (!chosenMove) {
         handlePassTurn();
         return;
       }
-
-      aiMoves.sort((a, b) => b.weight - a.weight);
-      const maxWeight = aiMoves[0].weight;
-      const bestMoves = aiMoves.filter(m => m.weight === maxWeight);
-      const chosenMove = bestMoves[Math.floor(Math.random() * bestMoves.length)];
 
       // Execute AI
       if (chosenMove.type === 'move' && chosenMove.from) {
@@ -3452,6 +3395,9 @@ export const App: React.FC = () => {
     };
 
     runAiTurn();
+    return () => {
+      cancelled = true;
+    };
   }, [state.turn, state.phase, vsAiMode]);
 
   // CSS positioning for laser
@@ -3643,7 +3589,6 @@ export const App: React.FC = () => {
           <PieceCreator
             player={state.turn}
             onPiecesReady={handlePiecesCreated}
-            geminiApiKey={state.geminiApiKey}
             vsAiMode={vsAiMode}
             setupSubPhase={setupSubPhase}
             onlineMode={onlineMode}
@@ -3889,6 +3834,18 @@ export const App: React.FC = () => {
               </p>
               <button className="cyber-btn game-over-btn" onClick={handleResetGame}>
                 再起動 (REBOOT SYSTEM)
+              </button>
+              <button
+                className="cyber-btn game-over-btn"
+                style={{ marginTop: '12px', background: '#111', color: '#fff' }}
+                onClick={() => {
+                  const side = onlineMode ? (myRole || 'sente') : 'sente';
+                  const words = state.customPieces[side].map(p => `「${p.word}」`).join('');
+                  const head = isUserWinner === true ? '勝利！' : isUserWinner === false ? '敗北…' : `${winnerName} の勝利！`;
+                  openXShare(`架空将棋で${head}${words ? `\n使った駒: ${words}` : ''}\n単語からAIが能力駒を作る将棋で遊んでみて`);
+                }}
+              >
+                𝕏 結果をシェア
               </button>
             </div>
           </div>

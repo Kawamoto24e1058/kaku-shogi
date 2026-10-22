@@ -236,7 +236,6 @@ export interface GameState {
   winner: Player | null;
   logs: GameLog[];
   historyStates: HistoryState[]; // Snapshots of previous turns for time rewind
-  geminiApiKey: string;
   playerNames: {
     sente: string;
     gote: string;

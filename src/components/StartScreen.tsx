@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { readInviteRoomCode, clearInviteParam, openXShare, roomInviteUrl } from '../share';
 import * as THREE from 'three';
 import { SakuraShower } from './SakuraShower';
 
@@ -427,9 +428,21 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   onSetPlayerNames,
   onStartGame,
 }) => {
-  const [inputCode, setInputCode] = useState('');
-  const [currentStep, setCurrentStep] = useState<'title' | 'mode_select'>('title');
-  const [selectedTab, setSelectedTab] = useState<'ai' | 'random' | 'custom'>('ai');
+  // X等で共有された招待リンク (?room=123456) から来た場合は、部屋入室タブを開いた状態で始める
+  const [inviteCode] = useState(() => readInviteRoomCode());
+  const [inputCode, setInputCode] = useState(inviteCode || '');
+  const [currentStep, setCurrentStep] = useState<'title' | 'mode_select'>(inviteCode ? 'mode_select' : 'title');
+  const [selectedTab, setSelectedTab] = useState<'ai' | 'random' | 'custom'>(inviteCode ? 'custom' : 'ai');
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!inviteCode) return;
+    onSetVsAiMode(false);
+    onSetOnlineMode(true);
+    clearInviteParam();
+    // 初回マウント時のみ実行
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [showRuleModal, setShowRuleModal] = useState(false);
 
   // Background Koma particles animation
@@ -797,6 +810,30 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                         {roomCode}
                       </div>
                       <p className="text-[11px] text-stone-500 font-bold">相手が入室すると自動的に同期対局へ進みます。</p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openXShare(`架空将棋で対戦相手募集中！\n部屋コード: ${roomCode}`, roomInviteUrl(roomCode))}
+                          className="flex-1 py-2 bg-stone-900 hover:bg-black text-white rounded-lg text-xs tracking-widest font-bold transition-all cursor-pointer"
+                        >
+                          𝕏 で募集する
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(roomInviteUrl(roomCode));
+                              setCopied(true);
+                              setTimeout(() => setCopied(false), 1500);
+                            } catch {
+                              window.prompt('招待リンクをコピーしてください', roomInviteUrl(roomCode));
+                            }
+                          }}
+                          className="flex-1 py-2 bg-white hover:bg-stone-50 text-stone-800 border border-stone-300 rounded-lg text-xs tracking-widest font-bold transition-all cursor-pointer"
+                        >
+                          {copied ? 'コピーしました' : '招待リンクをコピー'}
+                        </button>
+                      </div>
                       <button
                         type="button"
                         onClick={onCancelMatchmaking}
