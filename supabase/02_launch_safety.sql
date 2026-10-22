@@ -2,6 +2,7 @@
 -- 1. 対戦データの大きさ・同時に存在できる対局数に上限を付け、無料枠（500MB）を荒らしで埋められないようにする
 -- 2. 放置された対局を早めに消す
 -- 3. 不適切な駒の報告。別々の3人から報告された駒は共有キャッシュから消える（次に誰かが入力するとAIが作り直す）
+-- 4. AI生成の回数制限を全サーバー共通で数える（IP・端末ID・サイト全体の1日の上限）
 
 -- 上限値（変えたいときはこの表の値を書き換える）
 insert into private.config (name, value) values
@@ -45,16 +46,6 @@ begin
   update public.matches set data = merged, updated_at = now() where code = p_code;
 end $$;
 
--- ===== 放置された対局の掃除（毎時17分） =====
--- 相手待ち・接続中・終わった対局は1時間、対局中でも1日動きがなければ消す
-select cron.schedule('kaku-shogi-cleanup', '17 * * * *', $c$
-  delete from public.matches
-  where updated_at < now() - interval '1 day'
-     or (data->>'status' in ('waiting', 'connecting', 'finished') and updated_at < now() - interval '1 hour');
-  delete from public.matchmaking_queue where created_at < now() - interval '15 minutes';
-  delete from public.piece_reports where created_at < now() - interval '30 days';
-$c$);
-
 -- ===== 不適切な駒の報告 =====
 create table if not exists public.piece_reports (
   key text not null,
@@ -91,3 +82,49 @@ end $$;
 revoke execute on function private.config_int(text, integer) from public, anon, authenticated;
 revoke execute on function public.report_piece(text, text) from public;
 grant execute on function public.report_piece(text, text) to anon, authenticated;
+
+-- ===== AI生成の回数制限（全サーバー共通で1日の回数を数える） =====
+-- バケツ名の例: ip:<IPのハッシュ>:2026-10-22 / dev:<端末IDのハッシュ>:2026-10-22 / global:2026-10-22
+create table if not exists private.rate_limits (
+  bucket text primary key,
+  count integer not null default 0,
+  expires_at timestamptz not null
+);
+
+-- すべてのバケツが上限未満なら全部に1足して 0 を返す。上限に達したバケツがあれば、その番号（1始まり）を返して何も足さない
+create or replace function public.server_consume_quota(p_token text, p_buckets text[], p_limits integer[])
+returns integer language plpgsql security definer set search_path = '' as $$
+declare
+  i integer;
+  current_count integer;
+begin
+  if not private.is_server(p_token) then raise exception 'forbidden' using errcode = '42501'; end if;
+  if coalesce(array_length(p_buckets, 1), 0) = 0 or array_length(p_buckets, 1) <> array_length(p_limits, 1) or array_length(p_buckets, 1) > 5 then
+    raise exception 'invalid request';
+  end if;
+  -- 同じバケツへの同時アクセスで数え漏れが出ないよう、行を作ってからロックして数える
+  for i in 1 .. array_length(p_buckets, 1) loop
+    insert into private.rate_limits (bucket, count, expires_at) values (p_buckets[i], 0, now() + interval '2 days')
+    on conflict (bucket) do nothing;
+  end loop;
+  for i in 1 .. array_length(p_buckets, 1) loop
+    select count into current_count from private.rate_limits where bucket = p_buckets[i] for update;
+    if current_count >= p_limits[i] then return i; end if;
+  end loop;
+  update private.rate_limits set count = count + 1 where bucket = any (p_buckets);
+  return 0;
+end $$;
+
+revoke execute on function public.server_consume_quota(text, text[], integer[]) from public;
+grant execute on function public.server_consume_quota(text, text[], integer[]) to anon, authenticated;
+
+-- ===== 古いデータの掃除（毎時17分） =====
+-- 相手待ち・接続中・終わった対局は1時間、対局中でも1日動きがなければ消す。古い報告・回数記録も消す
+select cron.schedule('kaku-shogi-cleanup', '17 * * * *', $c$
+  delete from public.matches
+  where updated_at < now() - interval '1 day'
+     or (data->>'status' in ('waiting', 'connecting', 'finished') and updated_at < now() - interval '1 hour');
+  delete from public.matchmaking_queue where created_at < now() - interval '15 minutes';
+  delete from public.piece_reports where created_at < now() - interval '30 days';
+  delete from private.rate_limits where expires_at < now();
+$c$);

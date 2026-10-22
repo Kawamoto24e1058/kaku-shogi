@@ -46,6 +46,21 @@ export async function saveCachedPiece(key: string, piece: Json, meta: { provider
   });
 }
 
+/**
+ * 1日の回数を全サーバー共通で数える（supabase/02_launch_safety.sql の server_consume_quota）。
+ * 全部の上限に余裕があれば 0、上限に達したものがあればその番号（1始まり）を返す。
+ * DB 側が未設定・障害のときは null（呼び出し側はメモリでの概算に切り替える）
+ */
+export async function consumeSharedQuota(buckets: string[], limits: number[]): Promise<number | null> {
+  if (!storeConfigured()) return null;
+  try {
+    return await rpc('server_consume_quota', { p_token: SERVER_TOKEN, p_buckets: buckets, p_limits: limits }) as number;
+  } catch (err) {
+    console.warn('[quota] shared counter unavailable, falling back to memory:', (err as Error).message);
+    return null;
+  }
+}
+
 /** AI生成できなかった単語を待ち行列に積む（何度も要求された単語ほど優先してバックフィルされる） */
 export async function enqueueWord(key: string, word: string): Promise<void> {
   await rpc('server_enqueue_word', { p_token: SERVER_TOKEN, p_key: key, p_word: word });

@@ -18,8 +18,10 @@ const WORKERS_AI_FALLBACK_MODEL = process.env.WORKERS_AI_FALLBACK_MODEL || '';
 // Gemma 4 などは既定で「思考」してから答えるため、5語まとめると90秒を超えることがある。駒生成では思考を切る
 const WORKERS_AI_THINKING = process.env.WORKERS_AI_THINKING === 'true';
 const ENABLE_GEMINI = process.env.ENABLE_GEMINI === 'true';
-const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash-lite';
+// gemini-3.5-flash は非推奨で、後継モデルに自動で振り替えられる（2026年10月時点の公式ドキュメント）。
+// モデル名は変わりやすいので、環境変数 GEMINI_MODEL / GEMINI_FALLBACK_MODEL で差し替えられるようにしている
+const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.1-flash-lite';
 // 空文字を設定すると Gemma を使わない
 const GEMMA_MODEL = process.env.GEMMA_MODEL ?? 'gemma-3-27b-it';
 // 思考(thinking)はJSON生成の待ち時間を大きく伸ばすため既定でオフ。品質を優先したい場合は 512 などに上げる
@@ -214,18 +216,33 @@ export interface BatchResult {
   provider: string;
 }
 
-/** 設定済みのプロバイダを順に試し、最初に成功した結果を返す。全滅なら最後のエラーを投げる */
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/** 一時的な混雑・上限（429 / 503 / 500 / 502 / 504）。少し待てば通ることがある */
+function isTransient(err: unknown): boolean {
+  return err instanceof ProviderError && [429, 500, 502, 503, 504].includes(err.status ?? 0);
+}
+
+/**
+ * 設定済みのプロバイダを順に試し、最初に成功した結果を返す。全滅なら最後のエラーを投げる。
+ * 混雑（429 / 503 など）で失敗したプロバイダは、少し待って1回だけ再試行してから次へ進む。
+ * 全体で待つ時間は関数の時間制限に収まるよう短くしている。
+ */
 export async function generatePieces(words: string[], providers = configuredProviders()): Promise<BatchResult> {
   if (providers.length === 0) throw new NoProviderError('no LLM provider is configured');
   let lastError: unknown;
   for (const provider of providers) {
-    try {
-      const pieces = alignToWords(words, await provider.run(words));
-      if (pieces.every(p => p === null)) throw new ProviderError(`${provider.name} returned no usable piece`);
-      return { pieces, provider: provider.name };
-    } catch (err) {
-      lastError = err;
-      console.warn(`[generator] ${provider.name} failed:`, (err as Error).message);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const pieces = alignToWords(words, await provider.run(words));
+        if (pieces.every(p => p === null)) throw new ProviderError(`${provider.name} returned no usable piece`);
+        return { pieces, provider: provider.name };
+      } catch (err) {
+        lastError = err;
+        console.warn(`[generator] ${provider.name} failed (attempt ${attempt + 1}):`, (err as Error).message);
+        if (!isTransient(err) || attempt > 0) break;
+        await sleep(800 + Math.floor(Math.random() * 700));
+      }
     }
   }
   throw lastError;

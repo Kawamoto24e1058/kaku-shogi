@@ -31,6 +31,9 @@
    Vercel → Cron Jobs から `/api/backfill` を手動実行し、駒が `public.pieces` に増えることを確認。
 
 ## 利用者に依頼すること（自動化できない）
-- 古い Gemini APIキーの無効化（Google AI Studio。旧コードの git 履歴に残っているため）
+- **最優先: 古い Gemini APIキーの無効化**（Google AI Studio）。main ブランチと、main から作られた本番サイトの JavaScript に
+  キーがそのまま入っている（分割して書いてもビルドで1つの文字列に戻る）。コミット履歴にも残るので、無効化以外に消す方法はない
+- 新しいキーを使う場合は Vercel の環境変数 `GEMINI_API_KEY`（Sensitive）にだけ入れ、`ENABLE_GEMINI=true` も設定する。
+  Gemini API の利用規約の未成年に関する条項を確認したうえで判断する（既定は Workers AI のみ）
 - 利用規約・プライバシーポリシーの文面確認
 - 使用量の確認先: Supabase → Usage、Cloudflare → Workers AI、Vercel → Usage

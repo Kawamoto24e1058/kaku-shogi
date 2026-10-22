@@ -32,6 +32,23 @@ try {
   console.warn('Failed to clean up localStorage cache:', e);
 }
 
+/**
+ * 回数制限用の端末ID（App と同じ localStorage の値）。サーバーではハッシュにしてから数える。
+ * 消せば作り直されるので本人確認ではなく、同じ回線の別の人を巻き込みにくくするための補助
+ */
+function deviceHeader(): Record<string, string> {
+  try {
+    let id = localStorage.getItem('shogi_client_device_id');
+    if (!id) {
+      id = Math.random().toString(36).substring(2, 11);
+      localStorage.setItem('shogi_client_device_id', id);
+    }
+    return { 'x-kaku-device': id };
+  } catch {
+    return {};
+  }
+}
+
 function getCacheKey(word: string): string {
   return wordKey(word);
 }
@@ -179,7 +196,7 @@ export async function generatePieceWithSource(word: string): Promise<GeneratedPi
   try {
     const res = await fetch(API_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...deviceHeader() },
       body: JSON.stringify({ word: trimmed }),
     });
     const body = await res.json().catch(() => null);
