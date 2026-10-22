@@ -16,14 +16,21 @@ import { getFirestore } from 'firebase/firestore';
 // Vite 以外（テストやスクリプト）から読み込まれても落ちないようにする
 const env: Partial<ImportMetaEnv> = import.meta.env ?? {};
 
-const firebaseConfig = {
-  apiKey:            env.VITE_FIREBASE_API_KEY            || "AIzaSyDpxTkNODuBshHk6ltZwjuMwKhQ49r6J6U",
-  authDomain:        env.VITE_FIREBASE_AUTH_DOMAIN        || "bushitu-nyushitu.firebaseapp.com",
-  projectId:         env.VITE_FIREBASE_PROJECT_ID         || "bushitu-nyushitu",
-  storageBucket:     env.VITE_FIREBASE_STORAGE_BUCKET     || "bushitu-nyushitu.firebasestorage.app",
-  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || "675447397511",
-  appId:             env.VITE_FIREBASE_APP_ID             || "1:675447397511:web:3e59d24ff5c1ee69ac2c22",
-};
+// 以前は未設定時に別アプリのプロジェクトへ接続していたため、その予備値は削除した。
+// 未設定の間はオンライン対戦を「準備中」として無効化する（App.tsx の firebaseConfigured 参照）。
+export const firebaseConfigured = Boolean(env.VITE_FIREBASE_API_KEY && env.VITE_FIREBASE_PROJECT_ID && env.VITE_FIREBASE_APP_ID);
+
+const firebaseConfig = firebaseConfigured
+  ? {
+      apiKey: env.VITE_FIREBASE_API_KEY,
+      authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
+      projectId: env.VITE_FIREBASE_PROJECT_ID,
+      storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
+      messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+      appId: env.VITE_FIREBASE_APP_ID,
+    }
+  // 未設定時は通信しないダミー（オンライン機能は無効化されるので実際には使われない）
+  : { apiKey: 'unconfigured', projectId: 'demo-unconfigured', appId: 'unconfigured' };
 
 // 重複初期化を防ぐ
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];

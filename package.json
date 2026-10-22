@@ -9,7 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "backfill": "tsx scripts/backfill.ts",
-    "verify:abilities": "tsx scripts/verify-abilities.ts"
+    "verify:abilities": "tsx scripts/verify-abilities.ts",
+    "try:generate": "tsx scripts/try-generate.ts",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-kaku \"node scripts/test-firestore-rules.mjs\""
   },
   "dependencies": {
     "firebase": "^12.14.0",

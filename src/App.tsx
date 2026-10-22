@@ -33,7 +33,7 @@ import { getRandomCachedPieces } from './aiGenerator';
 import { StartScreen } from './components/StartScreen';
 import { SakuraShower } from './components/SakuraShower';
 import { PersonaCutin, type CutinType } from './components/PersonaCutin';
-import { db, ensureSignedIn } from './firebase';
+import { db, ensureSignedIn, firebaseConfigured } from './firebase';
 import { doc, getDoc, setDoc, updateDoc, onSnapshot, arrayUnion, collection, query, where, orderBy, limit, getDocs, deleteDoc } from 'firebase/firestore';
 import { openXShare } from './share';
 import { chooseCpuMove } from './cpuAi';
@@ -115,18 +115,22 @@ export const App: React.FC = () => {
   // 緊急スイッチ（/api/status）。取得できない場合はすべて有効として動かす
   const [siteStatus, setSiteStatus] = useState<{ aiGeneration: boolean; onlineMatch: boolean; notice: string }>({
     aiGeneration: true,
-    onlineMatch: true,
+    onlineMatch: firebaseConfigured,
     notice: '',
   });
   useEffect(() => {
     fetch('/api/status')
       .then(res => (res.ok ? res.json() : null))
       .then(data => {
-        if (data && typeof data === 'object') setSiteStatus(prev => ({ ...prev, ...data }));
+        if (data && typeof data === 'object') {
+          setSiteStatus(prev => ({ ...prev, ...data, onlineMatch: Boolean(data.onlineMatch) && firebaseConfigured }));
+        }
       })
       .catch(() => undefined);
   }, []);
-  const ONLINE_PAUSED_MESSAGE = 'オンライン対戦は混雑のため一時停止しています。AI対戦はそのまま遊べます。';
+  const ONLINE_PAUSED_MESSAGE = firebaseConfigured
+    ? 'オンライン対戦は混雑のため一時停止しています。AI対戦はそのまま遊べます。'
+    : 'オンライン対戦は準備中です。AI対戦はそのまま遊べます。';
   /** Firestore の無料枠を使い切ったときなどのエラーを、利用者向けの案内に変換する */
   const describeOnlineError = (err: unknown, fallback: string): string => {
     const code = (err as { code?: string } | null)?.code;
