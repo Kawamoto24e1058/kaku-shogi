@@ -5059,6 +5059,8 @@ export function applyCoreActionEffect(
     }
 
     case 'FREEZE': {
+      // 玉将は凍結しない（動けない玉はすぐ取られてしまう）
+      if (victim.isKing) return;
       BoardManager.setPiece(board, targetPos, {
         ...victim,
         isFrozen: true,

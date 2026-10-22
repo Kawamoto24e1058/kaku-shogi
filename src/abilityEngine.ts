@@ -36,8 +36,19 @@ export function programTriggerMatches(piece: Piece, event: ProgramTriggerEvent):
   return (piece.abilities ?? []).some((a, i) => abilityMatchesEvent(a, event) && (piece.abilityCooldowns?.[i] ?? 0) === 0);
 }
 
-/** 駒のおおよその価値（STRONGEST / WEAKEST の選択用） */
-function pieceStrength(p: Piece): number {
+function isNextToEnemyKing(board: Board, pos: Position, player: Player): boolean {
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const y = pos.y + dy;
+    const x = pos.x + dx;
+    const p = inBounds(y, x) ? board[y][x] : null;
+    if (p?.isKing && p.owner !== player) return true;
+  }
+  return false;
+}
+
+/** 駒のおおよその価値（STRONGEST / WEAKEST の選択用）。空きマスは 0（空きマスを対象に「最も強い」を選ぶ能力もある） */
+function pieceStrength(p: Piece | null): number {
+  if (!p) return 0;
   if (p.isKing) return 100;
   let v = p.isHisha || p.isKaku ? 8 : p.isPawn ? 1 : (p.abilities || p.custom_ability || p.ability_spec) ? 6 : 4;
   if (p.isPromoted) v += 2;
@@ -131,8 +142,8 @@ function resolveTargets(board: Board, target: ProgramTarget, origin: Position, p
   switch (target.pick) {
     case 'NEAREST': ordered.sort((a, b) => dist(a) - dist(b) || byPos(a, b)); break;
     case 'FARTHEST': ordered.sort((a, b) => dist(b) - dist(a) || byPos(a, b)); break;
-    case 'STRONGEST': ordered.sort((a, b) => pieceStrength(board[b.y][b.x]!) - pieceStrength(board[a.y][a.x]!) || byPos(a, b)); break;
-    case 'WEAKEST': ordered.sort((a, b) => pieceStrength(board[a.y][a.x]!) - pieceStrength(board[b.y][b.x]!) || byPos(a, b)); break;
+    case 'STRONGEST': ordered.sort((a, b) => pieceStrength(board[b.y][b.x]) - pieceStrength(board[a.y][a.x]) || byPos(a, b)); break;
+    case 'WEAKEST': ordered.sort((a, b) => pieceStrength(board[a.y][a.x]) - pieceStrength(board[b.y][b.x]) || byPos(a, b)); break;
     case 'RANDOM': ordered = ordered.map(c => ({ c, r: Math.random() })).sort((a, b) => a.r - b.r).map(o => o.c); break;
     default: break;
   }
@@ -298,14 +309,15 @@ function applyEffect(state: RunState, effect: ProgramEffect, target: ResolvedTar
       return true;
     }
 
+    // 玉将は凍結・麻痺しない（動けない玉はすぐ取られ、数手で決着してしまう。自動対局で5〜7手の決着が出た）
     case 'FREEZE':
-      if (!victim || isObstacle(victim) || (enemyVictim && guarded(state, victim, pos))) return false;
+      if (!victim || victim.isKing || isObstacle(victim) || (enemyVictim && guarded(state, victim, pos))) return false;
       setVictim({ isFrozen: true, frozenDuration: value });
       log(state, `${label} を${value}手番凍結させました！`);
       return true;
 
     case 'STUN':
-      if (!victim || isObstacle(victim) || (enemyVictim && guarded(state, victim, pos))) return false;
+      if (!victim || victim.isKing || isObstacle(victim) || (enemyVictim && guarded(state, victim, pos))) return false;
       setVictim({ stunTurnsRemaining: Math.max(victim.stunTurnsRemaining ?? 0, value) });
       log(state, `${label} を${value}手番麻痺させました！`);
       return true;
@@ -367,7 +379,8 @@ function applyEffect(state: RunState, effect: ProgramEffect, target: ResolvedTar
       return true;
 
     case 'SPAWN': {
-      if (victim) return false;
+      // 敵玉のすぐ隣に分身を出すと、出した瞬間に玉を取れる位置に駒が湧く（自動対局で勝率100%）
+      if (victim || isNextToEnemyKing(board, pos, state.player)) return false;
       const template = {
         ...state.piece,
         spawn_piece_name: `${state.piece.word}の分身`,
@@ -377,7 +390,8 @@ function applyEffect(state: RunState, effect: ProgramEffect, target: ResolvedTar
     }
 
     case 'WALL': {
-      if (victim || !core(state, 'WALL_CREATE', pos)) return false;
+      // 敵玉の周り8マスには壁を置かない。玉を閉じ込めると、どの範囲指定でも即勝ちに近くなる（自動対局で勝率93%）
+      if (victim || isNextToEnemyKing(board, pos, state.player) || !core(state, 'WALL_CREATE', pos)) return false;
       const wall = board[pos.y][pos.x];
       if (wall) board[pos.y][pos.x] = { ...wall, duration: value };
       return true;
@@ -386,6 +400,8 @@ function applyEffect(state: RunState, effect: ProgramEffect, target: ResolvedTar
     case 'TILE': {
       // 敵のいるマス・空きマス・自分自身のマス（足元に残す）に置ける。味方の駒がいるマスには置かない
       if (victim && !enemyVictim && victim.id !== state.piece.id) return false;
+      // 敵玉の周りに罠などを敷き詰めると玉が逃げられなくなる（自動対局で罠が勝率82%）
+      if (isNextToEnemyKing(board, pos, state.player)) return false;
       const kind = effect.tile ?? 'FIRE';
       queueTilePlacement(pos.y, pos.x, {
         effectType: TILE_TYPES[kind],

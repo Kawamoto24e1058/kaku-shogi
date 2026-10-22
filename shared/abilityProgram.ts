@@ -109,7 +109,8 @@ export const OP_SPECS: Record<ProgramOp, OpSpec> = {
   GUARD: { value: [1, 3, 1], cost: 1.2, perValue: 0.8, label: '手番、能力による効果を受けなくする' },
   STEALTH: { value: null, cost: 1.2, self: true, label: '姿を隠す' },
   CLEANSE: { value: null, cost: 0.8, label: '状態異常を治す' },
-  EXTRA_ACTION: { value: null, cost: 6, self: true, label: 'もう一度行動できる' },
+  // 自動対局で勝率59%と強めだったので、充填手番が長くなるよう重めに見積もる
+  EXTRA_ACTION: { value: null, cost: 12, self: true, label: 'もう一度行動できる' },
   SPAWN: { value: [1, 3, 1], cost: 1.5, perValue: 1.5, label: '体の分身を呼び出す' },
   WALL: { value: [1, 4, 2], cost: 0.6, perValue: 0.2, label: '手番残る壁を置く' },
   TILE: { value: [1, 5, 3], cost: 0.8, perValue: 0.2, label: '手番残る地形を置く' },
@@ -205,7 +206,27 @@ function normalizeEffect(raw: unknown): ProgramEffect | null {
 }
 
 /** 効果の組み合わせに合わせて対象を直す（空きマスにしか置けない部品、駒にしか効かない部品など） */
+/**
+ * 駒を盤から取り除く・奪う部品。1回の発動で何体にでも効くと「盤上の敵を全部消す」で即勝ちになるため
+ * （自動対局で勝率98%）、対象は最大 MAX_REMOVAL_TARGETS 体に絞る
+ */
+const REMOVAL_OPS = new Set<ProgramOp>(['DESTROY', 'CAPTURE', 'TRANSFORM_PAWN', 'CONTROL', 'DOOM']);
+export const MAX_REMOVAL_TARGETS = 2;
+
 function reconcileTarget(target: ProgramTarget, effects: ProgramEffect[]): ProgramTarget {
+  const reconciled = reconcileTargetKind(target, effects);
+  if (effects.some(e => REMOVAL_OPS.has(e.op)) && reconciled.area !== 'SELF' && reconciled.area !== 'ATTACKER') {
+    return {
+      ...reconciled,
+      // 「全員」は「近い順に2体」にする。選び方の指定（最も強い・ランダムなど）はそのまま
+      pick: reconciled.pick === 'ALL' ? 'NEAREST' : reconciled.pick,
+      count: Math.min(reconciled.pick === 'ALL' ? MAX_REMOVAL_TARGETS : reconciled.count, MAX_REMOVAL_TARGETS),
+    };
+  }
+  return reconciled;
+}
+
+function reconcileTargetKind(target: ProgramTarget, effects: ProgramEffect[]): ProgramTarget {
   const needsEmpty = effects.some(e => e.op === 'SPAWN' || e.op === 'WALL' || e.op === 'TELEPORT');
   const allSelf = effects.every(e => OP_SPECS[e.op].self);
   if (allSelf) return { area: 'SELF', who: 'ALLY', pick: 'ALL', count: 1 };
@@ -280,6 +301,15 @@ export function abilityPower(a: AbilityProgram): number {
     power += spec.self ? base : base * targets;
   }
   power *= TRIGGER_WEIGHT[a.trigger];
+  // 自動対局での実測に合わせた補正:
+  // 動かずに手番開始で遠くの駒を取り除ける能力は、繰り返すだけで駒得が積み上がる（「盤上の近い2体を消す」が勝率96%）
+  const removes = a.effects.some(e => REMOVAL_OPS.has(e.op));
+  const passive = a.trigger === 'TURN_START' || a.trigger === 'EVERY_N_TURNS';
+  const remote = !['SELF', 'ADJACENT', 'ATTACKER'].includes(a.target.area);
+  if (removes && passive && remote) power *= 2;
+  else if (removes && remote) power *= 1.4;
+  // 盤上全体・敵玉の周りを狙えること自体が強い
+  if (a.target.area === 'ALL' || a.target.area === 'ENEMY_KING_AROUND') power *= 1.5;
   if (a.condition === 'CHANCE') power *= (a.condition_value ?? 50) / 100;
   else if (a.condition !== 'NONE') power *= 0.75;
   return Math.round(power * 10) / 10;

@@ -101,7 +101,12 @@ for (const op of PROGRAM_OPS) {
   const [weak] = normalizeAbilityPrograms([{ name: '小突き', trigger: 'ON_MOVE', target: { area: 'ADJACENT', who: 'ENEMY', pick: 'NEAREST', count: 1 }, effects: [{ op: 'PUSH', value: 1 }] }])!;
   check(weak.cooldown === 0, '弱い能力は毎回使える');
   const [huge] = normalizeAbilityPrograms([{ name: '終末', trigger: 'TURN_START', target: { area: 'ALL', who: 'ENEMY', pick: 'ALL' }, effects: [{ op: 'DESTROY' }] }])!;
-  check(huge.cooldown === 99, '盤上全体を消すような能力は1ゲーム1回になる');
+  check(huge.target.pick === 'NEAREST' && huge.target.count === 2 && huge.cooldown >= 3,
+    '盤上全体を消すような能力は「近い2体まで」に絞られ、充填手番が付く', describeAbilities([huge]));
+  const [frozenAll] = normalizeAbilityPrograms([{ trigger: 'TURN_START', target: { area: 'ALL', who: 'ENEMY', pick: 'ALL' }, effects: [{ op: 'FREEZE', value: 3 }] }])!;
+  check(frozenAll.cooldown === 99, '盤上全体を凍らせるような強い能力は1ゲーム1回になる');
+  const [hit] = normalizeAbilityPrograms([{ trigger: 'ON_MOVE', target: { area: 'RADIUS_2', who: 'ENEMY', pick: 'RANDOM', count: 5 }, effects: [{ op: 'CAPTURE' }] }])!;
+  check(hit.target.count === 2 && hit.target.pick === 'RANDOM', '取り除く・奪う能力は1回2体まで（選び方は保つ）');
 }
 {
   // 条件: 敵陣にいるときだけ
@@ -167,6 +172,15 @@ for (const op of PROGRAM_OPS) {
   const fixed = normalizeAbilityPrograms([{ trigger: 'ON_TAKEN', target: { area: 'ADJACENT', who: 'EMPTY' }, effects: [{ op: 'TELEPORT' }] },
     { trigger: 'ON_TAKEN', target: { area: 'ATTACKER', who: 'ENEMY' }, effects: [{ op: 'TELEPORT' }, { op: 'FREEZE', value: 1 }] }]);
   check(!!fixed && fixed.length === 1 && fixed[0].effects.map(e => e.op).join() === 'FREEZE', '取られたときの瞬間移動などは取り除く');
+}
+
+{
+  // 敵玉の周りには壁を置けない（自動対局で玉を閉じ込める組み合わせが勝率93%だった）
+  const abilities = program({ trigger: 'ON_MOVE', target: { area: 'ENEMY_KING_AROUND', who: 'EMPTY', pick: 'ALL' }, effects: [{ op: 'WALL', value: 3 }] });
+  const board = setup(abilities);
+  const res = applyAutomatedEffect(board, [4, 4], 'ON_MOVE', 'sente', [], [5, 4]);
+  const wallsNearKing = [[0, 7], [1, 7], [1, 8]].filter(([y, x]) => res.board[y][x]?.type === 'wall').length;
+  check(!res.triggered && wallsNearKing === 0, '敵玉の周りには壁を置けない');
 }
 
 // ===== 3. 合体駒・今日のお題 =====
