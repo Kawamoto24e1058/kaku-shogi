@@ -1,61 +1,72 @@
-// 共有キャッシュ（Firestore）まわり。API とバックフィルスクリプトで共用する。
-//   custom_pieces/{wordKey}     … AI生成済みの駒
-//   meta/word_index             … キャッシュ済みキーの一覧（近い単語の検索用。読み取り1回で済ませるため1文書にまとめる）
-//   generation_queue/{wordKey}  … AI生成できなかった単語（バックフィル待ち）
-import type { Firestore } from 'firebase-admin/firestore';
+// 共有キャッシュ（Supabase）まわり。API・バックフィルで共用する。スキーマは supabase/schema.sql。
+//   public.pieces            … AI生成済みの駒（誰でも読める）
+//   public.generation_queue  … AI生成できなかった単語（バックフィル待ち）
+// 書き込みは RPC 経由だけで、SUPABASE_SERVER_TOKEN を持つサーバーしか実行できない。
+// 起動を軽くするため supabase-js は使わず、PostgREST を fetch で直接呼ぶ。
+// 未設定の場合は storeConfigured() が false になり、呼び出し側はキャッシュ無しで動作する。
 import type { Json } from './generator.js';
 
-const PIECES = 'custom_pieces';
-const INDEX_REF = ['meta', 'word_index'] as const;
-const QUEUE = 'generation_queue';
+const URL_BASE = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
+const API_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
+const SERVER_TOKEN = process.env.SUPABASE_SERVER_TOKEN || '';
+const TIMEOUT_MS = 8_000;
 
-export async function getCachedPiece(db: Firestore, key: string): Promise<Json | null> {
-  const snap = await db.collection(PIECES).doc(key).get();
-  return snap.exists ? (snap.data() as Json) : null;
+export function storeConfigured(): boolean {
+  return !!(URL_BASE && API_KEY && SERVER_TOKEN);
 }
 
-export async function saveCachedPiece(db: Firestore, key: string, piece: Json, meta: Json): Promise<void> {
-  const { FieldValue } = await import('firebase-admin/firestore');
-  const batch = db.batch();
-  batch.set(db.collection(PIECES).doc(key), { ...piece, ...meta, createdAt: Date.now() });
-  batch.set(db.collection(INDEX_REF[0]).doc(INDEX_REF[1]), { keys: FieldValue.arrayUnion(key) }, { merge: true });
-  batch.delete(db.collection(QUEUE).doc(key));
-  await batch.commit();
+async function rest(path: string, init: RequestInit = {}): Promise<unknown> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(`${URL_BASE}/rest/v1/${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: { apikey: API_KEY, Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json', ...init.headers },
+    });
+    if (!res.ok) throw new Error(`supabase ${path.split('?')[0]} returned ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`);
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const rpc = (name: string, args: Json) => rest(`rpc/${name}`, { method: 'POST', body: JSON.stringify(args) });
+
+export async function getCachedPiece(key: string): Promise<Json | null> {
+  const rows = await rest(`pieces?select=data&key=eq.${encodeURIComponent(key)}&limit=1`) as { data: Json }[];
+  return rows[0]?.data ?? null;
+}
+
+export async function saveCachedPiece(key: string, piece: Json, meta: { provider: string; backfilled?: boolean }): Promise<void> {
+  await rpc('server_save_piece', {
+    p_token: SERVER_TOKEN, p_key: key, p_word: String(piece.word ?? key).slice(0, 64),
+    p_data: piece, p_provider: meta.provider, p_backfilled: !!meta.backfilled,
+  });
 }
 
 /** AI生成できなかった単語を待ち行列に積む（何度も要求された単語ほど優先してバックフィルされる） */
-export async function enqueueWord(db: Firestore, key: string, word: string): Promise<void> {
-  const { FieldValue } = await import('firebase-admin/firestore');
-  await db.collection(QUEUE).doc(key).set(
-    { word, requests: FieldValue.increment(1), lastRequestedAt: Date.now() },
-    { merge: true },
-  );
+export async function enqueueWord(key: string, word: string): Promise<void> {
+  await rpc('server_enqueue_word', { p_token: SERVER_TOKEN, p_key: key, p_word: word });
+}
+
+export async function listQueue(limit: number): Promise<{ key: string; word: string; requests: number }[]> {
+  return await rpc('server_list_queue', { p_token: SERVER_TOKEN, p_limit: limit }) as { key: string; word: string; requests: number }[];
+}
+
+export async function deleteQueued(key: string): Promise<void> {
+  await rpc('server_delete_queue', { p_token: SERVER_TOKEN, p_key: key });
 }
 
 /**
- * 近い単語のキャッシュ済みキーを探す。
- * 入力に含まれるキャッシュ語（例: 「黒猫」→「猫」）を最優先し、長い一致ほど近いとみなす。
- * 次に、入力を含むキャッシュ語（例: 「猫」→「招き猫」）のうち短いものを選ぶ。
+ * 近い単語のAI駒を、入力された単語用に作り替えて返す。
+ * 「黒猫」→「猫」のように入力に含まれるキャッシュ語を優先する（探し方は find_similar_key を参照）。
  */
-export function pickSimilarKey(key: string, cachedKeys: string[]): string | null {
-  let best: string | null = null;
-  for (const k of cachedKeys) {
-    if (k && k !== key && key.includes(k) && (!best || k.length > best.length)) best = k;
-  }
-  if (best) return best;
-  for (const k of cachedKeys) {
-    if (k && k !== key && key.length >= 2 && k.includes(key) && (!best || k.length < best.length)) best = k;
-  }
-  return best;
-}
-
-/** 近い単語のAI駒を、入力された単語用に作り替えて返す */
-export async function findSimilarPiece(db: Firestore, key: string, word: string): Promise<Json | null> {
-  const index = await db.collection(INDEX_REF[0]).doc(INDEX_REF[1]).get();
-  const keys = (index.get('keys') as string[] | undefined) ?? [];
-  const similarKey = pickSimilarKey(key, keys);
+export async function findSimilarPiece(key: string, word: string): Promise<Json | null> {
+  const similarKey = await rpc('find_similar_key', { p_key: key }) as string | null;
   if (!similarKey) return null;
-  const base = await getCachedPiece(db, similarKey);
+  const base = await getCachedPiece(similarKey);
   if (!base) return null;
   const baseWord = typeof base.word === 'string' ? base.word : similarKey;
   const replaceWord = (v: unknown) => (typeof v === 'string' ? v.split(baseWord).join(word) : v);

@@ -33,8 +33,10 @@ import { getRandomCachedPieces } from './aiGenerator';
 import { StartScreen } from './components/StartScreen';
 import { SakuraShower } from './components/SakuraShower';
 import { PersonaCutin, type CutinType } from './components/PersonaCutin';
-import { db, ensureSignedIn, firebaseConfigured } from './firebase';
-import { doc, getDoc, setDoc, updateDoc, onSnapshot, arrayUnion, collection, query, where, orderBy, limit, getDocs, deleteDoc } from 'firebase/firestore';
+import {
+  onlineConfigured, OnlineError, getMatch, createMatch, joinMatch, updateMatch, deleteMatch,
+  takeWaitingMatch, enqueueMatch, dequeueMatch, subscribeMatch, trimLogs,
+} from './onlineStore';
 import { openXShare } from './share';
 import { chooseCpuMove } from './cpuAi';
 
@@ -80,11 +82,6 @@ export const App: React.FC = () => {
     gote: savedGoteName,
   });
 
-  const sanitizeForFirestore = <T,>(obj: T): T => {
-    if (obj === undefined || obj === null) return obj;
-    return JSON.parse(JSON.stringify(obj));
-  };
-
   const getPlayerName = (owner: 'sente' | 'gote') => {
     return owner === 'sente'
       ? (playerNames.sente || 'プレイヤー1')
@@ -115,7 +112,7 @@ export const App: React.FC = () => {
   // 緊急スイッチ（/api/status）。取得できない場合はすべて有効として動かす
   const [siteStatus, setSiteStatus] = useState<{ aiGeneration: boolean; onlineMatch: boolean; notice: string }>({
     aiGeneration: true,
-    onlineMatch: firebaseConfigured,
+    onlineMatch: onlineConfigured,
     notice: '',
   });
   useEffect(() => {
@@ -123,20 +120,22 @@ export const App: React.FC = () => {
       .then(res => (res.ok ? res.json() : null))
       .then(data => {
         if (data && typeof data === 'object') {
-          setSiteStatus(prev => ({ ...prev, ...data, onlineMatch: Boolean(data.onlineMatch) && firebaseConfigured }));
+          setSiteStatus(prev => ({ ...prev, ...data, onlineMatch: Boolean(data.onlineMatch) && onlineConfigured }));
         }
       })
       .catch(() => undefined);
   }, []);
-  const ONLINE_PAUSED_MESSAGE = firebaseConfigured
+  const ONLINE_PAUSED_MESSAGE = onlineConfigured
     ? 'オンライン対戦は混雑のため一時停止しています。AI対戦はそのまま遊べます。'
     : 'オンライン対戦は準備中です。AI対戦はそのまま遊べます。';
-  /** Firestore の無料枠を使い切ったときなどのエラーを、利用者向けの案内に変換する */
+  /** 無料枠を使い切ったときなどのエラーを、利用者向けの案内に変換する */
   const describeOnlineError = (err: unknown, fallback: string): string => {
-    const code = (err as { code?: string } | null)?.code;
-    if (code === 'resource-exhausted') return '本日のオンライン対戦の利用枠に達しました。AI対戦で遊ぶか、時間をおいてお試しください。';
-    if (code === 'permission-denied' || code === 'unauthenticated') return 'オンライン対戦に接続できませんでした。ページを再読み込みしてお試しください。';
-    return (err as Error | null)?.message && !code ? (err as Error).message : fallback;
+    if (!(err instanceof OnlineError)) return (err as Error | null)?.message || fallback;
+    if (err.code === 'quota') return 'オンライン対戦が混雑しています。AI対戦で遊ぶか、時間をおいてお試しください。';
+    if (err.code === 'forbidden') return 'オンライン対戦に接続できませんでした。ページを再読み込みしてお試しください。';
+    if (err.code === 'network') return '通信に失敗しました。通信状況を確認してお試しください。';
+    if (err.code === 'unconfigured') return err.message;
+    return fallback;
   };
 
   const [setupSubPhase, setSetupSubPhase] = useState<'sente_create' | 'gote_create'>('sente_create');
@@ -1134,7 +1133,7 @@ export const App: React.FC = () => {
     }
   }, [showCheckOverlay]);
 
-  // ─── Firebase オンライン対局同期 ───
+  // ─── オンライン対局同期（Supabase。src/onlineStore.ts） ───
 
   // 1. 部屋作成処理
   const handleCreateRoom = async () => {
@@ -1144,36 +1143,15 @@ export const App: React.FC = () => {
       return;
     }
     try {
-      const uid = await ensureSignedIn();
-      let code = '';
-      let isUnique = false;
-      let attempts = 0;
-      while (!isUnique && attempts < 10) {
-        code = Math.floor(100000 + Math.random() * 900000).toString();
-        const docRef = doc(db, 'matches', code);
-        const snap = await getDoc(docRef);
-        if (!snap.exists()) {
-          isUnique = true;
-        }
-        attempts++;
-      }
-
-      if (!isUnique) {
-        throw new Error('部屋コードの生成に失敗しました。もう一度お試しください。');
-      }
-
       const clientDeviceId = getOrCreateDeviceId();
       const initialB = initializeBoard();
       const senteName = playerNames.sente || 'プレイヤー1';
 
-      const docRef = doc(db, 'matches', code);
-      await setDoc(docRef, {
+      const code = await createMatch(code => ({
         id: code,
         status: 'waiting',
         senteDeviceId: clientDeviceId,
         goteDeviceId: null,
-        senteUid: uid,
-        goteUid: null,
         senteName: senteName,
         goteName: '',
         senteWords: [],
@@ -1185,7 +1163,6 @@ export const App: React.FC = () => {
         board: JSON.stringify(initialB),
         turn: 'sente',
         winner: null,
-        logsJson: JSON.stringify([]),
         capturedPieces: JSON.stringify({ sente: [], gote: [] }),
         sharedPieces: JSON.stringify([]),
         logs: [
@@ -1193,7 +1170,7 @@ export const App: React.FC = () => {
           { player: 'system', message: '対戦相手の入室を待っています…', type: 'system' }
         ],
         lastUpdated: Date.now()
-      });
+      }));
 
       setRoomCode(code);
       setMyRole('sente');
@@ -1219,15 +1196,13 @@ export const App: React.FC = () => {
       return;
     }
     try {
-      const uid = await ensureSignedIn();
-      const docRef = doc(db, 'matches', code);
-      const snap = await getDoc(docRef);
-      if (!snap.exists()) {
+      const match = await getMatch(code);
+      if (!match) {
         setMatchmakingError('指定された対局室が見つかりません。');
         return;
       }
 
-      const data = snap.data();
+      const data = match.data;
       if (data.status !== 'waiting') {
         setMatchmakingError('この対局室はすでに満室か、対局が開始されています。');
         return;
@@ -1235,14 +1210,16 @@ export const App: React.FC = () => {
 
       const clientDeviceId = getOrCreateDeviceId();
       const goteName = playerNames.gote || 'プレイヤー2';
-      await updateDoc(docRef, {
+      const joined = await joinMatch(code, {
         status: 'setup',
         goteDeviceId: clientDeviceId,
-        goteUid: uid,
         goteName: goteName,
-        logs: arrayUnion({ player: 'system', message: `${goteName} が入室しました。能力駒の構築を開始します。`, type: 'system' }),
         lastUpdated: Date.now()
-      });
+      }, [{ player: 'system', message: `${goteName} が入室しました。能力駒の構築を開始します。`, type: 'system' }]);
+      if (!joined) {
+        setMatchmakingError('この対局室はすでに満室か、対局が開始されています。');
+        return;
+      }
 
       setRoomCode(code);
       setMyRole('gote');
@@ -1276,41 +1253,27 @@ export const App: React.FC = () => {
     }, 10000);
 
     try {
-      const uid = await ensureSignedIn();
-      const queueRef = collection(db, 'matchmaking_queue');
-      const q = query(queueRef, where('status', '==', 'waiting'), orderBy('createdAt', 'asc'), limit(1));
-      const querySnapshot = await getDocs(q);
-      
       const clientDeviceId = getOrCreateDeviceId();
-      
-      if (!querySnapshot.empty) {
-        const opponentDoc = querySnapshot.docs[0];
-        const opponentData = opponentDoc.data();
-        const code = opponentData.roomCode;
-        
-        if (opponentData.deviceId === clientDeviceId) {
-          await deleteDoc(doc(db, 'matchmaking_queue', opponentDoc.id));
-          setIsSearchingMatch(false);
-          handleRandomMatchmaking();
-          return;
-        }
+      const goteName = playerNames.gote || 'プレイヤー2';
 
-        await deleteDoc(doc(db, 'matchmaking_queue', opponentDoc.id));
-        
-        const docRef = doc(db, 'matches', code);
-        const goteName = playerNames.gote || 'プレイヤー2';
-        
+      // 待っている人がいれば、その部屋に後手として入る（取り出しは DB 側で1人ずつ）。
+      // 取り出した直後に相手がキャンセルしていた場合は、次の人を探す
+      let code: string | null = null;
+      for (let attempt = 0; attempt < 3 && !code; attempt++) {
+        const candidate = await takeWaitingMatch();
+        if (!candidate) break;
         // 接続確立中 (connecting) & ゲスト側ハンドシェイク済みを記録
-        await updateDoc(docRef, {
+        const joined = await joinMatch(candidate, {
           status: 'connecting',
           goteDeviceId: clientDeviceId,
-          goteUid: uid,
           goteName: goteName,
           goteReadyHandshake: true,
-          logs: arrayUnion({ player: 'system', message: `${goteName} が入室しました。通信同期中…`, type: 'system' }),
           lastUpdated: Date.now()
-        });
-        
+        }, [{ player: 'system', message: `${goteName} が入室しました。通信同期中…`, type: 'system' }]);
+        if (joined) code = candidate;
+      }
+
+      if (code) {
         setRoomCode(code);
         setMyRole('gote');
         setIsRandomMatch(false);
@@ -1319,34 +1282,14 @@ export const App: React.FC = () => {
         setIsSearchingMatch(false);
         setIsConnectingHandshake(true);
       } else {
-        let code = '';
-        let isUnique = false;
-        let attempts = 0;
-        while (!isUnique && attempts < 10) {
-          code = Math.floor(100000 + Math.random() * 900000).toString();
-          const docRef = doc(db, 'matches', code);
-          const snap = await getDoc(docRef);
-          if (!snap.exists()) {
-            isUnique = true;
-          }
-          attempts++;
-        }
-
-        if (!isUnique) {
-          throw new Error('部屋コードの生成に失敗しました。もう一度お試しください。');
-        }
-
         const initialB = initializeBoard();
         const senteName = playerNames.sente || '先手プレイヤー';
 
-        const matchRef = doc(db, 'matches', code);
-        await setDoc(matchRef, {
+        const code = await createMatch(code => ({
           id: code,
           status: 'waiting',
           senteDeviceId: clientDeviceId,
           goteDeviceId: null,
-          senteUid: uid,
-          goteUid: null,
           senteName: senteName,
           goteName: '',
           senteReadyHandshake: true,
@@ -1360,7 +1303,6 @@ export const App: React.FC = () => {
           board: JSON.stringify(initialB),
           turn: 'sente',
           winner: null,
-          logsJson: JSON.stringify([]),
           capturedPieces: JSON.stringify({ sente: [], gote: [] }),
           sharedPieces: JSON.stringify([]),
           logs: [
@@ -1368,16 +1310,9 @@ export const App: React.FC = () => {
             { player: 'system', message: 'ランダムな対戦相手の入室を待っています…', type: 'system' }
           ],
           lastUpdated: Date.now()
-        });
+        }));
 
-        const myQueueRef = doc(db, 'matchmaking_queue', clientDeviceId);
-        await setDoc(myQueueRef, {
-          deviceId: clientDeviceId,
-          uid,
-          roomCode: code,
-          status: 'waiting',
-          createdAt: Date.now()
-        });
+        await enqueueMatch(code);
 
         setRoomCode(code);
         setMyRole('sente');
@@ -1407,16 +1342,13 @@ export const App: React.FC = () => {
     setIsRandomMatch(false);
     setIsConnectingHandshake(false);
     
-    const clientDeviceId = getOrCreateDeviceId();
-    
     try {
-      await deleteDoc(doc(db, 'matchmaking_queue', clientDeviceId));
-      
+      if (onlineConfigured) await dequeueMatch();
+
       if (roomCode && myRole === 'sente') {
-        const matchRef = doc(db, 'matches', roomCode);
-        const snap = await getDoc(matchRef);
-        if (snap.exists() && (snap.data().status === 'waiting' || snap.data().status === 'connecting')) {
-          await deleteDoc(matchRef);
+        const match = await getMatch(roomCode);
+        if (match && (match.data.status === 'waiting' || match.data.status === 'connecting')) {
+          await deleteMatch(roomCode);
         }
       }
     } catch (err) {
@@ -1428,7 +1360,7 @@ export const App: React.FC = () => {
     setOnlineMode(false);
   };
 
-  // 3. リアルタイムFirestoreリスナーおよび再同期ロジック (Mutual Confirmation)
+  // 3. リアルタイム購読および再同期ロジック (Mutual Confirmation)
   const updateLocalStateFromMatchData = useCallback((data: any) => {
     setMatchDoc(data);
 
@@ -1445,10 +1377,10 @@ export const App: React.FC = () => {
       setIsConnectingHandshake(true);
       // 先手側も後手側入室を確認した時点で senteReadyHandshake を記録
       if (myRole === 'sente' && !data.senteReadyHandshake && roomCode) {
-        updateDoc(doc(db, 'matches', roomCode), {
+        updateMatch(roomCode, {
           senteReadyHandshake: true,
           status: 'setup'
-        });
+        }).catch(err => console.error('Error confirming handshake:', err));
       }
     }
 
@@ -1519,11 +1451,9 @@ export const App: React.FC = () => {
   const forceResyncGame = useCallback(async () => {
     if (!onlineMode || !roomCode) return;
     try {
-      const docRef = doc(db, 'matches', roomCode);
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        const data = snap.data();
-        updateLocalStateFromMatchData(data);
+      const match = await getMatch(roomCode);
+      if (match) {
+        updateLocalStateFromMatchData(match.data);
         console.log('--- [📱スマホ復帰検知] データベースから最新の盤面を強制再同期します ---');
       }
     } catch (err) {
@@ -1547,19 +1477,10 @@ export const App: React.FC = () => {
     };
   }, [forceResyncGame]);
 
-  // リアルタイムFirestoreリスナー
+  // リアルタイム購読（Realtime が使えないときはポーリングに切り替わる）
   useEffect(() => {
     if (!onlineMode || !roomCode) return;
-
-    const docRef = doc(db, 'matches', roomCode);
-    const unsubscribe = onSnapshot(docRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        updateLocalStateFromMatchData(data);
-      }
-    });
-
-    return () => unsubscribe();
+    return subscribeMatch(roomCode, updateLocalStateFromMatchData);
   }, [onlineMode, roomCode, updateLocalStateFromMatchData]);
 
 
@@ -1628,14 +1549,13 @@ export const App: React.FC = () => {
         return initializedPiece;
       });
 
-      const nextLogs = [
+      const nextLogs = trimLogs([
         ...matchDoc.logs,
         { player: 'system', message: '能力駒が自陣地にランダム配置されました。', type: 'system' },
         { player: 'system', message: '対局を開始します！', type: 'system' }
-      ];
+      ]);
 
-      const docRef = doc(db, 'matches', roomCode);
-      updateDoc(docRef, sanitizeForFirestore({
+      updateMatch(roomCode, {
         status: 'playing',
         board: JSON.stringify(nextBoard),
         customPieces: { sente: initializedSente, gote: initializedGote },
@@ -1645,9 +1565,8 @@ export const App: React.FC = () => {
         sharedPieces: JSON.stringify([]),
         turn: 'sente',
         logs: nextLogs,
-        logsJson: JSON.stringify(nextLogs),
         lastUpdated: Date.now()
-      })).catch(err => console.error("Error setting up online board:", err));
+      }).catch(err => console.error("Error setting up online board:", err));
     }
   }, [onlineMode, roomCode, myRole, matchDoc]);
 
@@ -1664,8 +1583,7 @@ export const App: React.FC = () => {
     logs: GameLog[] = state.logs
   ) => {
     if (!onlineMode || !roomCode) return;
-    const docRef = doc(db, 'matches', roomCode);
-    updateDoc(docRef, {
+    updateMatch(roomCode, {
       board: JSON.stringify(board),
       turn: turn,
       status: phase,
@@ -1674,8 +1592,7 @@ export const App: React.FC = () => {
       sharedPieces: JSON.stringify(sharedPieces),
       customDecksJson: JSON.stringify(customDecks),
       destroyedPiecesJson: JSON.stringify(destroyedPieces),
-      logsJson: JSON.stringify(logs),
-      logs: logs,
+      logs: trimLogs(logs),
       lastUpdated: Date.now()
     }).catch(err => {
       console.error("Error syncing online state:", err);
@@ -2879,20 +2796,16 @@ export const App: React.FC = () => {
   // Setup Phase: Piece creator callbacks
   const handlePiecesCreated = async (pieces: Piece[]) => {
     if (onlineMode) {
-      const docRef = doc(db, 'matches', roomCode);
-      const sanitizedPieces = sanitizeForFirestore(pieces);
       if (myRole === 'sente') {
-        await updateDoc(docRef, {
-          sentePieces: sanitizedPieces,
+        await updateMatch(roomCode, {
+          sentePieces: pieces,
           sentePiecesReady: true,
-          logs: arrayUnion({ player: 'system', message: `▲ ${playerNames.sente || 'プレイヤー1'} が能力駒の構築を完了しました！`, type: 'system' })
-        });
+        }, [{ player: 'system', message: `▲ ${playerNames.sente || 'プレイヤー1'} が能力駒の構築を完了しました！`, type: 'system' }]);
       } else {
-        await updateDoc(docRef, {
-          gotePieces: sanitizedPieces,
+        await updateMatch(roomCode, {
+          gotePieces: pieces,
           gotePiecesReady: true,
-          logs: arrayUnion({ player: 'system', message: `▽ ${playerNames.gote || 'プレイヤー2'} が能力駒の構築を完了しました！`, type: 'system' })
-        });
+        }, [{ player: 'system', message: `▽ ${playerNames.gote || 'プレイヤー2'} が能力駒の構築を完了しました！`, type: 'system' }]);
       }
       return;
     }
