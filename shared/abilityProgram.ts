@@ -76,6 +76,7 @@ export interface PieceAppearance {
 export const AURAS = ['NONE', 'GLOW', 'FLAME', 'SPARK', 'MIST', 'RIPPLE', 'SHADOW'] as const;
 
 const MAX_ABILITIES = 3;
+const NEEDS_SELF_ON_BOARD = new Set<ProgramOp>(['SWAP', 'TELEPORT', 'STEALTH', 'EXTRA_ACTION']);
 const MAX_EFFECTS = 4;
 
 // ===== 値の範囲 =====
@@ -225,14 +226,16 @@ function reconcileTarget(target: ProgramTarget, effects: ProgramEffect[]): Progr
 function normalizeAbility(raw: unknown, index: number): AbilityProgram | null {
   if (!raw || typeof raw !== 'object') return null;
   const a = raw as Record<string, unknown>;
+  const trigger = oneOf(PROGRAM_TRIGGERS, a.trigger, 'ON_MOVE');
   const effects = (Array.isArray(a.effects) ? a.effects : [])
     .map(normalizeEffect)
     .filter((e): e is ProgramEffect => e !== null)
+    // 取られたときは自分はもう盤上にいないので、自分が動く・自分に掛ける部品は使えない
+    .filter(e => trigger !== 'ON_TAKEN' || !NEEDS_SELF_ON_BOARD.has(e.op))
     // 同じ部品の重複は1つにまとめる
     .filter((e, i, all) => all.findIndex(o => o.op === e.op && o.tile === e.tile) === i)
     .slice(0, MAX_EFFECTS);
   if (effects.length === 0) return null;
-  const trigger = oneOf(PROGRAM_TRIGGERS, a.trigger, 'ON_MOVE');
   const condition = oneOf(PROGRAM_CONDITIONS, a.condition, 'NONE');
   const selfOnly = effects.every(e => OP_SPECS[e.op].self);
   let target = reconcileTarget(normalizeTarget(a.target, selfOnly), effects);

@@ -12,6 +12,17 @@ export function roomInviteUrl(roomCode: string): string {
   return `${siteUrl()}/?room=${encodeURIComponent(roomCode)}`;
 }
 
+/** 「今日のお題」を開くリンク（シェアから来た人が同じお題にすぐ挑戦できる） */
+export function dailyShareUrl(): string {
+  return `${siteUrl()}/?daily=1`;
+}
+
+/** URL に ?daily があれば「今日のお題」から始める */
+export function readDailyParam(): boolean {
+  if (typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location.search).has('daily');
+}
+
 /** X の投稿画面を新しいタブで開く */
 export function openXShare(text: string, url: string = siteUrl()): void {
   const params = new URLSearchParams({ text, url, hashtags: HASHTAG });

@@ -4,6 +4,7 @@ import { buildOfflinePiece } from './offlineGenerator';
 import { wordKey } from '../shared/wordKey';
 import { containsNgWord } from '../shared/moderation';
 import { normalizeAbilityPrograms, describeAbilities, normalizeAppearance } from '../shared/abilityProgram';
+import { normalizeFusionWord } from '../shared/challenge';
 
 const AREA_SHAPE_SET = new Set<string>(AREA_SHAPES);
 // 対象マスではなく発動した駒自身に作用するアクション（範囲が自分のマスだけでも効果が出る）
@@ -136,7 +137,8 @@ export function warmUpGenerator(): void {
 export class BlockedWordError extends Error {}
 
 export async function generatePieceWithSource(word: string): Promise<GeneratedPiece> {
-  const trimmed = word.trim();
+  // 「猫+新幹線」などは「猫×新幹線」にそろえ、合体駒として同じキャッシュを使う
+  const trimmed = normalizeFusionWord(word.trim());
   if (containsNgWord(trimmed)) throw new BlockedWordError('その単語は使えません。別の単語を入力してください。');
 
   // ① メモリ / localStorage キャッシュ（最速）

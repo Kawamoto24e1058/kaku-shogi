@@ -8,6 +8,7 @@ import { deleteQueued, getCachedPiece, listQueue, saveCachedPiece, storeConfigur
 import { SEED_WORDS } from '../../shared/seedWords.js';
 import { wordKey } from '../../shared/wordKey.js';
 import { containsNgWord, pieceHasNgText } from '../../shared/moderation.js';
+import { dailyKey, dailyWords } from '../../shared/challenge.js';
 
 export interface BackfillOptions {
   /** 1回の実行で登録する最大語数 */
@@ -30,7 +31,10 @@ export async function runBackfill({ limit, batch, intervalMs, deadline = Infinit
 
   // 候補: 待ち行列（要求回数の多い順）→ 事前生成リスト。キーで重複を除き、キャッシュ済みは飛ばす
   const candidates = new Map<string, string>();
-  for (const q of await listQueue(limit * 2)) candidates.set(q.key, q.word || q.key);
+  // 今日と明日の「今日のお題」（合体駒は毎日1つ新しくなる）を最優先で用意しておく
+  const tomorrow = dailyKey(new Date(Date.now() + 86_400_000));
+  for (const word of [...dailyWords(), ...dailyWords(tomorrow)]) candidates.set(wordKey(word), word);
+  for (const q of await listQueue(limit * 2)) if (!candidates.has(q.key)) candidates.set(q.key, q.word || q.key);
   for (const word of SEED_WORDS) if (!candidates.has(wordKey(word))) candidates.set(wordKey(word), word);
 
   const todo: { key: string; word: string }[] = [];

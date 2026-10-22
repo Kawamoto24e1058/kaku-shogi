@@ -1814,3 +1814,14 @@ button, input, [role="button"] {
     color: #6b4f2a;
   }
 }
+
+/* 対局終了画面: 今日のお題の結果 */
+.game-over-daily {
+  margin: 4px 0 14px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(217, 119, 6, 0.12);
+  border: 1px solid rgba(217, 119, 6, 0.35);
+  font-weight: 700;
+  font-size: 13px;
+}

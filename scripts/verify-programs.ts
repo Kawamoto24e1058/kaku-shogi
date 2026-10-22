@@ -7,6 +7,7 @@ import { initializeBoard, applyAutomatedEffect, drainTilePlacements, isTriggerMa
 import { tickAbilityCooldowns } from '../src/abilityEngine';
 import { PROGRAM_OPS, normalizeAbilityPrograms, describeAbilities, type AbilityProgram, type ProgramOp } from '../shared/abilityProgram';
 import type { Board, Piece } from '../src/types';
+import { normalizeFusionWord, dailyWords, dailyKey } from '../shared/challenge';
 
 const template = initializeBoard();
 const pawn = template[6][0]!;
@@ -159,6 +160,29 @@ for (const op of PROGRAM_OPS) {
   check(!!fixed && fixed[0].trigger === 'ON_MOVE' && fixed[0].effects.length === 1 && fixed[0].effects[0].value === 3,
     '未知の値は既定値・範囲内に直し、未知の効果は捨てる');
   check(normalizeAbilityPrograms([{ effects: [{ op: 'NUKE' }] }]) === null, '使える効果が無ければ null（従来の能力にフォールバック）');
+}
+
+{
+  // 取られたときに自分が動く効果は捨てる（実際の AI 出力で見つかった不発）
+  const fixed = normalizeAbilityPrograms([{ trigger: 'ON_TAKEN', target: { area: 'ADJACENT', who: 'EMPTY' }, effects: [{ op: 'TELEPORT' }] },
+    { trigger: 'ON_TAKEN', target: { area: 'ATTACKER', who: 'ENEMY' }, effects: [{ op: 'TELEPORT' }, { op: 'FREEZE', value: 1 }] }]);
+  check(!!fixed && fixed.length === 1 && fixed[0].effects.map(e => e.op).join() === 'FREEZE', '取られたときの瞬間移動などは取り除く');
+}
+
+// ===== 3. 合体駒・今日のお題 =====
+{
+  const cases: [string, string][] = [
+    ['猫+新幹線', '猫×新幹線'], ['猫 ＋ 新幹線', '猫×新幹線'], ['猫x新幹線', '猫×新幹線'], ['猫×新幹線', '猫×新幹線'],
+    ['box', 'box'], ['Max', 'Max'], ['猫', '猫'], ['a+b+c', 'a+b+c'], ['+猫', '+猫'],
+  ];
+  const bad = cases.filter(([input, want]) => normalizeFusionWord(input) !== want);
+  check(bad.length === 0, '合体駒の表記をそろえる（英単語の x は区切りにしない）', bad.map(([i]) => `${i}→${normalizeFusionWord(i)}`).join(', '));
+  const a = dailyWords('2026-10-22');
+  const b = dailyWords('2026-10-22');
+  const c = dailyWords('2026-10-23');
+  check(JSON.stringify(a) === JSON.stringify(b) && JSON.stringify(a) !== JSON.stringify(c) && a.length === 3 && a[2].includes('×') && new Set(a).size === 3,
+    '今日のお題は日付で決まり、毎日変わる（3枚目は合体駒）', `${a.join(' / ')} → 翌日 ${c.join(' / ')}`);
+  check(dailyKey(new Date('2026-10-22T15:30:00Z')) === '2026-10-23', '今日のお題は日本時間の0時で切り替わる');
 }
 
 console.log(failed === 0 ? '\nすべて成功' : `\n${failed} 件失敗`);

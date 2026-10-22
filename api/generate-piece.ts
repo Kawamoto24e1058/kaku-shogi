@@ -12,6 +12,7 @@ import { enqueueWord, findSimilarPiece, getCachedPiece, saveCachedPiece, storeCo
 import { wordKey } from '../shared/wordKey.js';
 import { containsNgWord, pieceHasNgText, setExtraNgWords } from '../shared/moderation.js';
 import { featureFlags } from './_lib/flags.js';
+import { normalizeFusionWord } from '../shared/challenge.js';
 
 setExtraNgWords((process.env.NG_WORDS || '').split(','));
 
@@ -29,7 +30,7 @@ const json = (status: number, body: Json) =>
 export function normalizeWord(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   // eslint-disable-next-line no-control-regex
-  const word = raw.normalize('NFKC').replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  const word = normalizeFusionWord(raw.normalize('NFKC').replace(/[\u0000-\u001f\u007f]/g, '').trim());
   if (word.length === 0 || [...word].length > MAX_WORD_LENGTH) return null;
   if (word.includes('/') || /^__.*__$/.test(word)) return null;
   const key = wordKey(word);

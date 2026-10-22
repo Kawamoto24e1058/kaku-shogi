@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { generatePieceWithSource, clearAllCustomPieceCache, warmUpGenerator, BlockedWordError } from '../aiGenerator';
 import { openXShare } from '../share';
 import type { Piece, Player } from '../types';
 import { generateId } from '../gameLogic';
 import { PieceDetailCard } from './PieceDetailCard';
 import { ProgramAbilityList } from './ProgramAbilityList';
+import { FUSION_MARK } from '../../shared/challenge';
 
 const SCAN_STAGES = [
   '深層概念マトリクス結合中...',
@@ -24,6 +25,8 @@ interface PieceCreatorProps {
   onlineOpponentReady?: boolean;
   onlineSelfReady?: boolean;
   playerNames: { sente: string; gote: string };
+  /** 「今日のお題」のように、作る単語が決まっているとき（自動で生成し、入力欄は出さない） */
+  presetWords?: string[];
 }
 
 export const PieceCreator: React.FC<PieceCreatorProps> = ({
@@ -36,6 +39,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
   onlineOpponentReady = false,
   onlineSelfReady = false,
   playerNames,
+  presetWords,
 }) => {
   const [word, setWord] = useState('');
   // 生成中の単語。複数の単語を並行して生成できるようにし、3枚分の待ち時間を1枚分程度に短縮する
@@ -79,10 +83,23 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
     e.preventDefault();
     const target = word.trim();
     if (!target || slotsUsed >= maxPieces) return;
+    setWord('');
+    await generateWord(target);
+  };
 
+  // 決まった単語（今日のお題）は画面を開いたら自動で作る。StrictMode の二重実行でも1回だけ
+  const presetStarted = useRef(false);
+  useEffect(() => {
+    if (!presetWords?.length || presetStarted.current) return;
+    presetStarted.current = true;
+    presetWords.slice(0, maxPieces).forEach(w => { void generateWord(w); });
+    // generateWord は毎回作り直される関数だが、最初の1回だけ使えばよい
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetWords]);
+
+  const generateWord = async (target: string) => {
     const key = generateId();
     setPendingWords(prev => [...prev, { key, word: target }]);
-    setWord('');
 
     try {
       const { piece: pieceData, notice: generationNotice, source } = await generatePieceWithSource(target);
@@ -301,13 +318,21 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
           </div>
         </div>
 
-        {(!onlineMode || !onlineSelfReady) && slotsUsed < maxPieces && (
+        {presetWords?.length ? (
+          <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '12px', background: 'rgba(217, 119, 6, 0.08)', border: '1px solid rgba(217, 119, 6, 0.25)', fontSize: '13px', lineHeight: 1.7 }}>
+            📅 <strong>今日のお題</strong>：{presetWords.map(w => `「${w}」`).join('')}
+            <br />全員が同じ3枚で戦います。できるだけ少ない手数でCPUに勝とう！
+          </div>
+        ) : null}
+
+        {!presetWords?.length && (!onlineMode || !onlineSelfReady) && slotsUsed < maxPieces && (
+          <>
           <form onSubmit={handleGenerate} className="piece-creator-form" style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
             <input
               type="text"
               value={word}
               onChange={(e) => setWord(e.target.value)}
-              placeholder="任意の単語（例：山、忍者、大砲、仏）"
+              placeholder="単語（例：忍者）や 2語の合体（例：猫×新幹線）"
               className="cyber-input"
               style={{ flex: 1 }}
               maxLength={24}
@@ -322,6 +347,17 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
               概念をコンパイルする
             </button>
           </form>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', margin: '-8px 0 20px', fontSize: '12px', color: 'var(--text-muted)' }}>
+            <button
+              type="button"
+              onClick={() => setWord(w => (w.includes(FUSION_MARK) ? w : `${w.trim()}${FUSION_MARK}`))}
+              style={{ padding: '4px 10px', borderRadius: '999px', border: '1px solid rgba(139, 92, 26, 0.3)', background: '#fff', fontWeight: 700, color: '#92400e' }}
+            >
+              ＋ 合体（{FUSION_MARK}）
+            </button>
+            <span>2つの言葉を {FUSION_MARK} でつなぐと、両方の性質を持つ合体駒になります</span>
+          </div>
+          </>
         )}
 
         {/* Dynamic Compile Status Card */}

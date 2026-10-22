@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { readInviteRoomCode, clearInviteParam, openXShare, roomInviteUrl } from '../share';
+import { dailyKey, dailyLabel, dailyWords } from '../../shared/challenge';
+import { getDailyBest } from '../dailyRecord';
+import { readInviteRoomCode, readDailyParam, clearInviteParam, openXShare, roomInviteUrl } from '../share';
 import * as THREE from 'three';
 import { SakuraShower } from './SakuraShower';
 
@@ -21,6 +23,8 @@ interface StartScreenProps {
   playerNames: { sente: string; gote: string };
   onSetPlayerNames: (names: { sente: string; gote: string }) => void;
   onStartGame: () => void;
+  /** 「今日のお題」（全員共通の3枚でCPUに挑む）を始める */
+  onStartDaily: () => void;
   /** 運営からのお知らせ（混雑・一時停止など。/api/status の SITE_NOTICE やオンライン停止の案内） */
   siteNotice?: string;
 }
@@ -429,12 +433,15 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   playerNames,
   onSetPlayerNames,
   onStartGame,
+  onStartDaily,
   siteNotice = '',
 }) => {
   // X等で共有された招待リンク (?room=123456) から来た場合は、部屋入室タブを開いた状態で始める
   const [inviteCode] = useState(() => readInviteRoomCode());
+  // シェアされた「今日のお題」のリンク（?daily=1）から来た人は、名乗り入力を飛ばしてお題がすぐ見える画面から始める
+  const [fromDailyShare] = useState(() => readDailyParam());
   const [inputCode, setInputCode] = useState(inviteCode || '');
-  const [currentStep, setCurrentStep] = useState<'title' | 'mode_select'>(inviteCode ? 'mode_select' : 'title');
+  const [currentStep, setCurrentStep] = useState<'title' | 'mode_select'>(inviteCode || fromDailyShare ? 'mode_select' : 'title');
   const [selectedTab, setSelectedTab] = useState<'ai' | 'random' | 'custom'>(inviteCode ? 'custom' : 'ai');
   const [copied, setCopied] = useState(false);
 
@@ -447,6 +454,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [showRuleModal, setShowRuleModal] = useState(false);
+  const [todayBest] = useState(() => getDailyBest(dailyKey()));
 
   // Background Koma particles animation
   useEffect(() => {
@@ -549,7 +557,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
 
       {/* Header */}
       <header className="w-full max-w-3xl flex justify-between items-center border-b border-amber-900/10 pb-4 mb-6 md:mb-10 z-10">
-        <h1 className="font-serif text-lg tracking-[0.2em] font-bold text-amber-950">拡張将棋</h1>
+        <h1 className="font-serif text-lg tracking-[0.2em] font-bold text-amber-950">架空将棋</h1>
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -588,7 +596,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
             <div className="relative text-center mb-8 w-full">
               <div className="absolute inset-x-0 sm:-inset-x-10 top-1/2 -translate-y-1/2 h-12 bg-amber-400/20 blur-2xl rounded-full"></div>
               <h2 className="relative z-10 text-4xl md:text-5xl font-serif font-black tracking-[0.25em] text-amber-950 drop-shadow-xs">
-                AI駆動・拡張将棋
+                AI駆動・架空将棋
               </h2>
               <p className="text-xs font-serif font-bold text-amber-900 tracking-[0.2em] mt-4 bg-amber-100/70 px-4 py-2 rounded-full backdrop-blur-xs inline-block border border-amber-900/15">
                 言葉から能力を創造し、九×九の戦場をハックせよ
@@ -649,6 +657,27 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 📢 {siteNotice}
               </div>
             )}
+
+            {/* 今日のお題（毎日変わる共通の3枚でCPUに挑戦。Xでのシェア用） */}
+            <button
+              type="button"
+              onClick={onStartDaily}
+              className="w-full text-left rounded-2xl border-2 border-amber-600 bg-gradient-to-r from-amber-100 to-orange-50 px-5 py-4 shadow-md hover:shadow-lg transition-all cursor-pointer"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-base font-extrabold text-amber-950">📅 今日のお題（{dailyLabel()}）</div>
+                  <div className="text-sm font-bold text-amber-900 mt-1 break-words">
+                    {dailyWords().map(w => `「${w}」`).join('')}
+                  </div>
+                  <div className="text-xs text-stone-600 mt-1">
+                    全員同じ3枚でCPUに挑戦。少ない手数で勝つほど上位！
+                    {todayBest !== null && <span className="font-bold text-amber-800">（自己ベスト {todayBest}手）</span>}
+                  </div>
+                </div>
+                <span className="shrink-0 text-sm font-extrabold text-white bg-amber-800 rounded-full px-4 py-2">挑戦</span>
+              </div>
+            </button>
 
             {/* 3 Main Mode Selection Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full items-stretch">

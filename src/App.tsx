@@ -39,7 +39,9 @@ import {
   onlineConfigured, OnlineError, getMatch, createMatch, joinMatch, updateMatch, deleteMatch,
   takeWaitingMatch, enqueueMatch, dequeueMatch, subscribeMatch, trimLogs,
 } from './onlineStore';
-import { openXShare } from './share';
+import { openXShare, dailyShareUrl } from './share';
+import { dailyKey, dailyLabel, dailyWords } from '../shared/challenge';
+import { recordDailyResult } from './dailyRecord';
 import { chooseCpuMove } from './cpuAi';
 
 const getOrCreateDeviceId = (): string => {
@@ -171,6 +173,10 @@ export const App: React.FC = () => {
   }, [phaseGroup]);
   // どの画面で開いたかも持っておき、画面が変わったら（前の対局の駒を）出さない
   const [inspected, setInspected] = useState<{ piece: Piece; phaseGroup: string } | null>(null);
+  // 人が指した手数（今日のお題の記録とシェアに使う。CPU の手は数えない）
+  const [playerMoves, setPlayerMoves] = useState<Record<Player, number>>({ sente: 0, gote: 0 });
+  // 今日のお題で遊んでいるときの日付キー
+  const [dailyChallenge, setDailyChallenge] = useState<{ key: string; gameId: string } | null>(null);
   const inspectedPiece = inspected?.phaseGroup === phaseGroup ? inspected.piece : null;
   const setInspectedPiece = (piece: Piece | null) => setInspected(piece ? { piece, phaseGroup } : null);
   const [validMoves, setValidMoves] = useState<[number, number][]>([]);
@@ -980,6 +986,7 @@ export const App: React.FC = () => {
     let res;
     try {
       res = executeMove(state.board, [sy, sx], [y, x], state.turn, promote, playerNames, vsAiMode, true, state.capturedPieces);
+      setPlayerMoves(prev => ({ ...prev, [state.turn]: prev[state.turn] + 1 }));
     } catch (err) {
       console.error("Failed to execute move:", err);
       setState(prev => ({
@@ -3009,6 +3016,7 @@ export const App: React.FC = () => {
         message: `${targetPiece.word}を${selectedCapturedPiece ? '持ち駒' : (selectedSharedPiece ? '共有プール' : 'カスタムデッキ')}から打ちました。`,
         type: 'move'
       };
+      setPlayerMoves(prev => ({ ...prev, [state.turn]: prev[state.turn] + 1 }));
       const nextCaptured = {
         ...state.capturedPieces,
         [state.turn]: nextHand,
@@ -3237,6 +3245,8 @@ export const App: React.FC = () => {
     setIsWaitingForOpponent(false);
     setMatchmakingError('');
     setMatchDoc(null);
+    setDailyChallenge(null);
+    setPlayerMoves({ sente: 0, gote: 0 });
   };
 
   // AI Opponent Solver (9x9)
@@ -3573,14 +3583,15 @@ export const App: React.FC = () => {
       )}
 
       {/* Header */}
-      <header className="cyber-panel" style={{ padding: '12px 24px', margin: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
+      {/* スタート画面は独自の見出しがあるので、共通ヘッダーは出さない（スマホで見出しが二重になっていた） */}
+      {state.phase !== 'start' && <header className="cyber-panel" style={{ padding: '12px 24px', margin: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
         <h1 className="cyber-title app-header-title" style={{ fontSize: '20px', borderBottom: 'none', paddingBottom: 0 }}>
-          拡張将棋
+          架空将棋
         </h1>
         <div className="app-header-subtitle" style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-cyber)' }}>
           SAPIENS RUNTIME v3.0.0
         </div>
-      </header>
+      </header>}
 
       {/* Main Container */}
       <main className="main-content">
@@ -3609,8 +3620,18 @@ export const App: React.FC = () => {
             }}
             siteNotice={[siteStatus.notice, siteStatus.onlineMatch ? '' : ONLINE_PAUSED_MESSAGE].filter(Boolean).join(' ')}
             onStartGame={() => {
+              setDailyChallenge(null);
+              setPlayerMoves({ sente: 0, gote: 0 });
               setState(prev => ({ ...prev, phase: 'setup' }));
               addLog('対局準備を開始します。能力駒を作成してください。', 'system', 'sente');
+            }}
+            onStartDaily={() => {
+              setVsAiMode(true);
+              setOnlineMode(false);
+              setDailyChallenge({ key: dailyKey(), gameId: generateId() });
+              setPlayerMoves({ sente: 0, gote: 0 });
+              setState(prev => ({ ...prev, phase: 'setup' }));
+              addLog(`今日のお題（${dailyLabel()}）に挑戦します。`, 'system', 'sente');
             }}
           />
         ) : state.phase === 'setup' ? (
@@ -3632,6 +3653,7 @@ export const App: React.FC = () => {
                 : false
             }
             playerNames={playerNames}
+            presetWords={dailyChallenge ? dailyWords(dailyChallenge.key) : undefined}
           />
         ) : (
           <div className="game-board-container">
@@ -3863,6 +3885,10 @@ export const App: React.FC = () => {
           detailsText = `${winnerName} が ${loserName} に勝利しました。卓越した戦略による完全勝利です。`;
         }
 
+        // 今日のお題: 勝ったら手数を記録し、自己ベストと比べる
+        const daily = dailyChallenge && vsAiMode ? recordDailyResult(dailyChallenge.key, dailyChallenge.gameId, isUserWinner === true, playerMoves.sente) : null;
+        const abilityCount = state.logs.filter(l => l.type === 'ability' && l.player === (onlineMode ? myRole : 'sente')).length;
+
         return (
           <div className={`game-over-overlay ${themeClass}`}>
             <div className="game-over-panel">
@@ -3876,6 +3902,12 @@ export const App: React.FC = () => {
                 {winnerName} が {loserName} に勝利しました。<br />
                 {detailsText}
               </p>
+              {daily && (
+                <div className="game-over-daily">
+                  📅 今日のお題 {dailyLabel(dailyChallenge!.key)}：{isUserWinner ? `${playerMoves.sente}手で勝利` : '敗北'}
+                  {daily.best !== null && <>（自己ベスト {daily.best}手{daily.isNewBest ? ' 🎉 更新！' : ''}）</>}
+                </div>
+              )}
               <button className="cyber-btn game-over-btn" onClick={handleResetGame}>
                 再起動 (REBOOT SYSTEM)
               </button>
@@ -3885,8 +3917,17 @@ export const App: React.FC = () => {
                 onClick={() => {
                   const side = onlineMode ? (myRole || 'sente') : 'sente';
                   const words = state.customPieces[side].map(p => `「${p.word}」`).join('');
-                  const head = isUserWinner === true ? '勝利！' : isUserWinner === false ? '敗北…' : `${winnerName} の勝利！`;
-                  openXShare(`架空将棋で${head}${words ? `\n使った駒: ${words}` : ''}\n単語からAIが能力駒を作る将棋で遊んでみて`);
+                  const stats = `⚡能力発動 ${abilityCount}回`;
+                  if (daily) {
+                    const result = isUserWinner ? `🏆 ${playerMoves.sente}手でCPUに勝利` : '💀 CPUに敗北…';
+                    openXShare(
+                      `📅 架空将棋 今日のお題 ${dailyLabel(dailyChallenge!.key)}\n${words}\n${result}\n${stats}\nあなたは何手で勝てる？`,
+                      dailyShareUrl(),
+                    );
+                    return;
+                  }
+                  const head = isUserWinner === true ? `🏆 ${playerMoves[side]}手で勝利！` : isUserWinner === false ? '💀 敗北…' : `${winnerName} の勝利！`;
+                  openXShare(`架空将棋で${head}${words ? `\n使った駒: ${words}` : ''}\n${stats}\n単語からAIが能力駒を作る将棋で遊んでみて`);
                 }}
               >
                 𝕏 結果をシェア
