@@ -1,9 +1,9 @@
 // Gemini の構造化出力 (responseSchema) 定義
-// enum でエンジンが実行できる値だけに制限し、「説明文はあるのに効果が不発」を防ぐ。
+// enum でエンジンが実行できる値だけに制限する（能力は shared/abilityProgram.ts の部品）。
+import { TRAJECTORIES, VISUAL_THEMES } from '../../shared/abilityCatalog.js';
 import {
-  SUPPORTED_ACTIONS, AREA_SHAPES, ACTIVATION_TRIGGERS, TARGET_SELECTIONS,
-  AFFECTS_WHO, ACTIVATION_TYPES, TRAJECTORIES, VISUAL_THEMES,
-} from '../../shared/abilityCatalog.js';
+  PROGRAM_TRIGGERS, PROGRAM_CONDITIONS, PROGRAM_OPS, TARGET_WHO, TARGET_PICKS, TILE_KINDS, AURAS,
+} from '../../shared/abilityProgram.js';
 
 const str = (description?: string) => ({ type: 'STRING', ...(description ? { description } : {}) });
 const enumOf = (values: readonly string[], description?: string) => ({ type: 'STRING', enum: [...values], ...(description ? { description } : {}) });
@@ -11,21 +11,42 @@ const GRID_DESC = '5x5グリッド。上の行（敵陣側）から5行を / 区
 // エンジン (getValidMoves / 自律行動) が解釈できる移動パターンだけを許可する
 const LOGIC_CODES = ['normal', 'move_like_rook', 'move_like_bishop', 'move_like_lance', 'move_like_knight', 'move_like_gold', 'move_like_queen_limit_3', 'move_like_cannon', 'runaway_drive', 'random_teleport'];
 
-const abilitySpec = {
+// 能力プログラム（shared/abilityProgram.ts）。area は名前付きの範囲か 5x5 のマス目なので文字列のまま受け、サニタイザで検証する
+const abilityProgram = {
   type: 'OBJECT',
   properties: {
-    activation_type: enumOf(ACTIVATION_TYPES),
-    activation_trigger: enumOf(ACTIVATION_TRIGGERS),
-    range: { type: 'INTEGER', description: '射程 1〜5' },
-    target_selection: enumOf(TARGET_SELECTIONS),
-    area_shape: enumOf(AREA_SHAPES),
-    effect_type: enumOf(SUPPORTED_ACTIONS),
-    actions: { type: 'ARRAY', items: enumOf(SUPPORTED_ACTIONS), description: '1〜3個。配列順に連続実行' },
-    affects_who: enumOf(AFFECTS_WHO),
-    cooldown_turns: { type: 'INTEGER', description: '0〜4。1ゲーム1回の場合は99' },
-    success_rate: { type: 'NUMBER', description: '確率系アクションのみ 0.1〜0.9' },
+    name: str('2〜6文字の漢字の技名'),
+    trigger: enumOf(PROGRAM_TRIGGERS),
+    every: { type: 'INTEGER', description: 'EVERY_N_TURNS の間隔 2〜5' },
+    condition: enumOf(PROGRAM_CONDITIONS),
+    condition_value: { type: 'INTEGER' },
+    target: {
+      type: 'OBJECT',
+      properties: {
+        area: str('SELF/ADJACENT/RADIUS_2/FRONT_LINE/LINES_8/DIAGONALS/CROSS/ROW/COLUMN/ALL/ENEMY_KING_AROUND/ATTACKER または 5x5 のマス目'),
+        who: enumOf(TARGET_WHO),
+        pick: enumOf(TARGET_PICKS),
+        count: { type: 'INTEGER' },
+      },
+      required: ['area', 'who', 'pick'],
+    },
+    effects: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: { op: enumOf(PROGRAM_OPS), value: { type: 'INTEGER' }, tile: enumOf(TILE_KINDS) },
+        required: ['op'],
+      },
+    },
+    cooldown: { type: 'INTEGER' },
   },
-  required: ['activation_type', 'activation_trigger', 'range', 'target_selection', 'area_shape', 'effect_type', 'actions', 'affects_who', 'cooldown_turns'],
+  required: ['name', 'trigger', 'condition', 'target', 'effects', 'cooldown'],
+};
+
+const appearance = {
+  type: 'OBJECT',
+  properties: { color: str('#rrggbb'), accent: str('#rrggbb'), emblem: str('1〜2文字'), aura: enumOf(AURAS) },
+  required: ['color', 'accent', 'emblem', 'aura'],
 };
 
 const visualEffect = {
@@ -48,9 +69,6 @@ const PIECE_SCHEMA = {
     mechanics_type: enumOf(['FORCE_CRUSH', 'HACK_AND_STEAL', 'STEALTH_GHOST', 'SUPPORT_BUFF', 'SPAWNER_BUILD', 'TRAP_MINE', 'AUTOMATIC_DRIVE', 'VIRUS_INFECT', 'SPACE_WARP', 'NECROMANCY', 'UNKNOWN_HERESY']),
     ability_genre: str('表示用の日本語ジャンル名（10文字以内）'),
     visual_theme: enumOf(VISUAL_THEMES),
-    trigger: enumOf(ACTIVATION_TRIGGERS),
-    is_once_per_game: { type: 'BOOLEAN' },
-    cool_down_turns: { type: 'INTEGER' },
     isAutonomous: { type: 'BOOLEAN' },
     range_geometry: {
       type: 'OBJECT',
@@ -61,36 +79,21 @@ const PIECE_SCHEMA = {
       },
       required: ['normal_grid', 'promoted_grid'],
     },
-    ability_spec: abilitySpec,
+    abilities: { type: 'ARRAY', items: abilityProgram, description: '1〜3個' },
+    appearance,
     visual_effect: visualEffect,
-    description: str('【発動条件】【効果内容】【制限・代償】の3部構成。全体で150文字以内'),
-    spawn_config: {
-      type: 'OBJECT',
-      nullable: true,
-      properties: {
-        spawn_piece_name: { type: 'STRING', nullable: true },
-        max_limit: { type: 'INTEGER' },
-        spawn_range_geometry: { type: 'STRING', nullable: true },
-      },
-    },
-    // 成り後の演出(visual_effect)は通常時のものを流用するため出力させない（出力トークン削減）
+    description: str('単語の特徴を能力にどう込めたか。80文字以内'),
     promoted_effect: {
       type: 'OBJECT',
-      properties: {
-        effect_name: str(),
-        description: str('80文字以内'),
-        logic_code: { ...enumOf([...LOGIC_CODES, 'move_like_queen', 'teleport_move']), nullable: true },
-        ability_spec: abilitySpec,
-      },
-      required: ['effect_name', 'description', 'ability_spec'],
+      properties: { effect_name: str(), description: str('40文字以内') },
+      required: ['effect_name', 'description'],
     },
     logic_code: enumOf(LOGIC_CODES),
     deep_search_analysis: str('単語の特徴を能力にどう反映したか。60文字以内'),
   },
   required: [
-    'word', 'effect_name', 'mechanics_type', 'ability_genre', 'visual_theme', 'trigger',
-    'is_once_per_game', 'cool_down_turns', 'range_geometry', 'ability_spec', 'visual_effect',
-    'description', 'promoted_effect', 'logic_code', 'deep_search_analysis',
+    'word', 'effect_name', 'mechanics_type', 'ability_genre', 'visual_theme', 'range_geometry',
+    'abilities', 'appearance', 'visual_effect', 'description', 'promoted_effect', 'logic_code', 'deep_search_analysis',
   ],
 };
 

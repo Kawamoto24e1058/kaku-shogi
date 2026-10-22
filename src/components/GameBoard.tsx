@@ -3,6 +3,29 @@ import type { Board, Piece, Player, GamePhase, VisualEffect, TileState } from '.
 import { BOARD_SIZE, getPieceLogicCode, getPieceTrigger, getEffectCells, getBoardPiece } from '../gameLogic';
 import type { AbilityAnimationState } from '../App';
 
+// 駒の見た目（appearance.aura）ごとの光り方。accent は駒の縁の色
+const AURA_SHADOWS: Record<string, ((accent: string) => string) | undefined> = {
+  GLOW: accent => `0 0 8px ${accent}aa`,
+  FLAME: () => '0 0 10px rgba(249, 115, 22, 0.7), 0 -2px 8px rgba(239, 68, 68, 0.5)',
+  SPARK: () => '0 0 7px rgba(250, 204, 21, 0.85)',
+  MIST: () => '0 0 12px rgba(148, 163, 184, 0.85)',
+  RIPPLE: accent => `0 0 0 2px ${accent}55, 0 0 10px ${accent}55`,
+  SHADOW: () => '0 0 10px rgba(30, 27, 75, 0.75)',
+};
+
+/** 地の色の明るさから、読みやすい文字色（黒か白）を選ぶ */
+function readableTextColor(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  // 地は左上を白く混ぜたグラデーションなので、やや明るい側に寄せて判定する
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.42 ? '#1A1A1A' : '#FAFAFA';
+}
+
+/** 能力プログラムの駒で、すべての能力が充填中か */
+function isProgramCharging(p: Piece): boolean {
+  return !!p.abilities?.length && !!p.abilityCooldowns && p.abilityCooldowns.length > 0 && p.abilityCooldowns.every(c => c > 0);
+}
+
 interface GameBoardProps {
   board: Board;
   tileBoard?: (TileState | null)[][];
@@ -979,6 +1002,19 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           innerPadding = '4px 4px 8px 4px';
         }
 
+        // AIが決めた駒の見た目（地の色・縁の色・オーラ）。状態異常などの表示は下でこれより優先される
+        const look = isCustom ? activePiece.appearance : undefined;
+        if (look) {
+          baseBg = `linear-gradient(135deg, #ffffffd9 0%, ${look.color} 75%)`;
+          borderColorVal = `${look.accent}99`;
+          borderTopColorStyle = borderColorVal;
+          borderBottomColorStyle = borderColorVal;
+          borderLeftColorStyle = borderColorVal;
+          borderRightColorStyle = borderColorVal;
+          const aura = AURA_SHADOWS[look.aura]?.(look.accent);
+          if (aura) boxShadowStyle = `${aura}, ${insetShadow}`;
+        }
+
         // Apply dynamic runtime overlays / state overrides
         let opacityVal = 1.0;
         let animationStyle = '';
@@ -1014,7 +1050,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           borderLeftColorStyle = '#a3a3a3';
           borderRightColorStyle = '#a3a3a3';
           opacityVal = 0.65;
-        } else if (activePiece.coolDownTurnsRemaining > 0) {
+        } else if (activePiece.coolDownTurnsRemaining > 0 || isProgramCharging(activePiece)) {
           baseBg = '#D2D0C8';
           borderTopColorStyle = '#8A8880';
           borderBottomColorStyle = '#8A8880';
@@ -1111,9 +1147,9 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         }
 
         const triggerLetter = getPieceTrigger(activePiece).substring(0, 1);
-        const isSpent = activePiece.coolDownTurnsRemaining > 0;
+        const isSpent = activePiece.coolDownTurnsRemaining > 0 || isProgramCharging(activePiece);
 
-        let textColor = activePiece.coolDownTurnsRemaining > 0 ? '#7A7870' : 'var(--color-kurogane)';
+        let textColor = isSpent ? '#7A7870' : (look ? readableTextColor(look.color) : 'var(--color-kurogane)');
         if (activePiece.coolDownTurnsRemaining <= 0) {
           if (activePiece.isPromoted) {
             textColor = 'var(--color-shinku)';
@@ -1169,6 +1205,23 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           <div key={`${activePiece.id}_${y}_${x}`} className="relative transition-all duration-500" style={{ filter: 'drop-shadow(0 6px 10px rgba(139, 92, 26, 0.14))', display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%' }}>
             <div style={pieceStyle}>
               <div style={innerStyle}>
+                {/* 紋章（AIが決めた1〜2文字）を背景に薄く表示 */}
+                {look?.emblem && (
+                  <div aria-hidden style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '24px',
+                    fontWeight: 900,
+                    color: look.accent,
+                    opacity: 0.16,
+                    pointerEvents: 'none',
+                  }}>
+                    {look.emblem}
+                  </div>
+                )}
                 {/* Trigger Badge */}
                 {!activePiece.isKing && !activePiece.isPawn && (
                   <div style={{

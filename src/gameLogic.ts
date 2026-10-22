@@ -1,5 +1,6 @@
 import type { Board, Piece, Player, GameLog, AbilityEvent, AbilitySpec, CustomAbility, Position, TileEffectType, TileState, ActivationType } from './types';
 import { decrementCacheUses } from './aiGenerator';
+import { programTriggerMatches, runAbilityPrograms } from './abilityEngine';
 
 export const BOARD_SIZE = 9;
 
@@ -60,6 +61,8 @@ export function getPieceAbilitySpec(piece: Piece): AbilitySpec | undefined {
 }
 
 export function getPieceActivationType(piece: Piece): ActivationType {
+  // 能力プログラムはすべて自動で発動する（手動で対象を選ぶ能力は無い）
+  if (piece.abilities?.length) return 'AUTO_TRIGGER';
   const spec = getPieceAbilitySpec(piece);
   if (spec && spec.activation_type) return spec.activation_type;
   if (piece.custom_ability && piece.custom_ability.activation_type) return piece.custom_ability.activation_type;
@@ -86,6 +89,7 @@ export function getPieceActivationType(piece: Piece): ActivationType {
  */
 export function requiresTargeting(ability: any): boolean {
   if (!ability) return false;
+  if (Array.isArray(ability.abilities) && ability.abilities.length > 0) return false;
 
   // Piece または CustomAbility または AbilitySpec を吸収
   const spec = ability.ability_spec
@@ -147,6 +151,11 @@ const TILE_TYPE_BY_ACTION: Record<string, TileEffectType> = {
 // 能力の実行中に置かれた地形効果。能力の戻り値の型を全経路で変えずに済むよう、ここに溜めて
 // 手番の確定時 (App の finalizeTurn) に drainTilePlacements() で取り出して GameState.tileBoard に反映する。
 let pendingTilePlacements: { y: number; x: number; tile: TileState }[] = [];
+
+/** 能力プログラム（src/abilityEngine.ts）から地形効果を置くための入口 */
+export function queueTilePlacement(y: number, x: number, tile: TileState): void {
+  pendingTilePlacements.push({ y, x, tile });
+}
 
 export function drainTilePlacements(): { y: number; x: number; tile: TileState }[] {
   const drained = pendingTilePlacements;
@@ -260,6 +269,8 @@ export function applyTileEffects(
 }
 
 export function getPieceDescription(piece: Piece): string {
+  // 能力プログラムの駒は、データから作った効果の説明を先に出し、AIの文章は雰囲気の説明として添える
+  if (piece.rules_text) return [piece.rules_text, piece.description].filter(Boolean).join('\n\n');
   if (piece.isPromoted && piece.promoted_effect) {
     return piece.promoted_effect.description || '';
   }
@@ -341,13 +352,15 @@ export function hasPromotedAutomatedAbility(piece: Piece): boolean {
 }
 
 export function getPieceTrigger(piece: Piece): 'ALWAYS' | 'ON_MOVE' | 'TURN_START' | 'ON_TAKEN' | 'ON_APPROACH' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' {
+  const first = piece.abilities?.[0]?.trigger;
+  if (first) return first === 'EVERY_N_TURNS' ? 'TURN_START' : first === 'ON_CAPTURE' ? 'ON_MOVE' : first;
   if (piece.isPromoted && piece.promoted_effect && piece.promoted_effect.ability_spec) {
     return piece.promoted_effect.ability_spec.activation_trigger;
   }
   return piece.trigger || 'ALWAYS';
 }
 
-type TriggerType = 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE';
+type TriggerType = 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' | 'ON_CAPTURE';
 
 /** 能力の発動条件 (trigger) がイベントに一致するか。「常時 (ALWAYS)」は毎手番の開始時に1回発動として扱う */
 function triggerMatches(trigger: string | undefined, triggerType: TriggerType): boolean {
@@ -384,6 +397,7 @@ export function getActiveCustomAbility(piece: Piece): CustomAbility | undefined 
 }
 
 export function isTriggerMatching(piece: Piece, triggerType: TriggerType): boolean {
+  if (piece.abilities?.length) return programTriggerMatches(piece, triggerType);
   if (piece.isPromoted && piece.promoted_effect?.ability_spec) {
     return triggerMatches(piece.promoted_effect.ability_spec.activation_trigger, triggerType);
   }
@@ -2619,7 +2633,7 @@ function isAutonomousPiece(p: Piece | null): boolean {
 export function applyAutomatedEffect(
   board: Board,
   position: [number, number],
-  triggerType: 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE',
+  triggerType: 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' | 'ON_CAPTURE',
   player: Player,
   capturedPieces: Piece[],
   fromPosition?: [number, number],
@@ -2649,6 +2663,11 @@ export function applyAutomatedEffect(
   }
   if (piece.isSilenced) {
     return { board, capturedPieces, graveyard, logs: [], triggered: false, reAction: false };
+  }
+
+  // ── 能力プログラム（v2）を持つ駒は、そちらだけを実行する ──
+  if (piece.abilities?.length) {
+    return runAbilityPrograms(board, position, triggerType, player, capturedPieces, graveyard, opponentCapturedPieces, deadPiece);
   }
 
   let nextBoard = board.map(row => [...row]);

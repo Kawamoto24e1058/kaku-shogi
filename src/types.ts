@@ -1,3 +1,4 @@
+import type { AbilityProgram, PieceAppearance } from '../shared/abilityProgram';
 import type { SupportedAction } from '../shared/abilityCatalog';
 
 export type Player = 'sente' | 'gote';
@@ -138,6 +139,12 @@ export interface PieceData {
   effect_offsets?: EffectOffset[];
   isAutonomous?: boolean; // 暴走・自動行動フラグ
   activation_type?: ActivationType;
+  /** 能力プログラム（v2）。あれば ability_spec / custom_ability より優先して実行する（shared/abilityProgram.ts） */
+  abilities?: AbilityProgram[];
+  /** abilities から機械的に作った効果の説明 */
+  rules_text?: string;
+  /** 駒の見た目（色・紋章・オーラ） */
+  appearance?: PieceAppearance;
 }
 
 
@@ -187,6 +194,11 @@ export interface Piece extends PieceData {
   isSilenced?: boolean;
   silenceDuration?: number;
   isOverdrive?: boolean;
+
+  /** abilities ごとの残り充填手番（99 = 使用済みの1ゲーム1回） */
+  abilityCooldowns?: number[];
+  /** 洗脳（CONTROL）の残り手番。手番終了ごとに1減り、0で元の持ち主に戻る */
+  controlDuration?: number;
 }
 
 export type Board = (Piece | null)[][]; // 9x9 grid
@@ -254,7 +266,7 @@ export interface GameState {
 export interface AbilityEvent {
   id: string;
   priority: number; // 1 = Traps (ON_TAKEN, ON_APPROACH), 2 = Moving piece abilities (ON_MOVE), 3 = Turn start / environmental (TURN_START)
-  triggerType: 'ON_TAKEN' | 'ON_APPROACH' | 'ON_MOVE' | 'TURN_START' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE';
+  triggerType: 'ON_TAKEN' | 'ON_APPROACH' | 'ON_MOVE' | 'TURN_START' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' | 'ON_CAPTURE';
   pieceId: string; // The ID of the piece triggering the event (to check if it's still alive/valid)
   position: [number, number]; // Position of the triggering piece on the board
   owner: Player;

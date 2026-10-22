@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "backfill": "tsx scripts/backfill.ts",
     "verify:abilities": "tsx scripts/verify-abilities.ts",
+    "verify:programs": "tsx scripts/verify-programs.ts",
     "try:generate": "tsx scripts/try-generate.ts"
   },
   "dependencies": {

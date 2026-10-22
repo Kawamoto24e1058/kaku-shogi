@@ -3,6 +3,7 @@ import { AREA_SHAPES, normalizeActions } from '../shared/abilityCatalog';
 import { buildOfflinePiece } from './offlineGenerator';
 import { wordKey } from '../shared/wordKey';
 import { containsNgWord } from '../shared/moderation';
+import { normalizeAbilityPrograms, describeAbilities, normalizeAppearance } from '../shared/abilityProgram';
 
 const AREA_SHAPE_SET = new Set<string>(AREA_SHAPES);
 // 対象マスではなく発動した駒自身に作用するアクション（範囲が自分のマスだけでも効果が出る）
@@ -758,6 +759,18 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
   if (parsed.promoted_effect && !parsed.promoted_effect.visual_effect && parsed.visual_effect) {
     parsed.promoted_effect.visual_effect = { ...parsed.visual_effect };
   }
+
+  // ─── 能力プログラム（v2）: 検証・強さの自動調整・説明文の生成 ─────────────
+  // 使える部品が1つも無ければ消し、従来の ability_spec / custom_ability で動かす
+  const programs = normalizeAbilityPrograms(parsed.abilities);
+  if (programs) {
+    parsed.abilities = programs;
+    parsed.rules_text = describeAbilities(programs);
+  } else {
+    delete parsed.abilities;
+    delete parsed.rules_text;
+  }
+  parsed.appearance = normalizeAppearance(parsed.appearance, String(parsed.effect_name || parsed.word || ''));
 
   // ─── Safeguard: カスタム駒のフラグ保護 (標準歩兵成り化防止) ──────────────────────
   parsed.isPawn = false;

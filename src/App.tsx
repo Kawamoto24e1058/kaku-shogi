@@ -26,6 +26,7 @@ import {
   applyTileEffects,
   drainTilePlacements
 } from './gameLogic';
+import { tickAbilityCooldowns } from './abilityEngine';
 import { PieceCreator } from './components/PieceCreator';
 import { GameBoard } from './components/GameBoard';
 import { ControlPanel } from './components/ControlPanel';
@@ -502,8 +503,9 @@ export const App: React.FC = () => {
         const tempBoard = boardState.map(row => [...row]);
         tempBoard[ty][tx] = { ...trapPiece, isRevealed: true };
         
+        // 能力プログラムの駒は盤上に戻さず、取った駒がいる盤面のまま「取られたマス」を中心に発動させる
         const trapEffectRes = applyAutomatedEffect(
-          tempBoard,
+          trapPiece.abilities?.length ? boardState : tempBoard,
           [ty, tx],
           'ON_TAKEN',
           event.owner,
@@ -1043,6 +1045,18 @@ export const App: React.FC = () => {
             id: generateId(),
             priority: 2,
             triggerType: 'ON_MOVE',
+            pieceId: landingPiece.id,
+            position: [y, x],
+            owner: landingPiece.owner,
+            fromPosition: [sy, sx]
+          });
+        }
+        // 敵駒を取ったとき（能力プログラムの ON_CAPTURE）
+        if (res.capturedPiece && isTriggerMatching(landingPiece, 'ON_CAPTURE')) {
+          events.push({
+            id: generateId(),
+            priority: 2,
+            triggerType: 'ON_CAPTURE',
             pieceId: landingPiece.id,
             position: [y, x],
             owner: landingPiece.owner,
@@ -1871,6 +1885,7 @@ export const App: React.FC = () => {
               updated.coolDownTurnsRemaining = nextCD;
               updated.cooldownTurnsRemaining = nextCD;
             }
+            updated.abilityCooldowns = tickAbilityCooldowns(updated).abilityCooldowns;
           }
         }
         
@@ -1934,8 +1949,11 @@ export const App: React.FC = () => {
             }
           }
 
-          // Mind Control Reversion
-          if (updated.isMindControlled && updated.originalPlayer) {
+          // Mind Control Reversion（能力プログラムの CONTROL は controlDuration の手番数だけ続く）
+          if (updated.isMindControlled && updated.originalPlayer && (updated.controlDuration ?? 0) > 1) {
+            updated.controlDuration = (updated.controlDuration ?? 0) - 1;
+          } else if (updated.isMindControlled && updated.originalPlayer) {
+            updated.controlDuration = undefined;
             updatedLogsList.push({
               id: generateId(),
               timestamp: new Date().toLocaleTimeString(),
@@ -3306,6 +3324,17 @@ export const App: React.FC = () => {
             id: generateId(),
             priority: 2,
             triggerType: 'ON_MOVE',
+            pieceId: landingPiece.id,
+            position: [chosenMove.to[0], chosenMove.to[1]],
+            owner: 'gote',
+            fromPosition: chosenMove.from
+          });
+        }
+        if (landingPiece && landingPiece.owner === 'gote' && res.capturedPiece && isTriggerMatching(landingPiece, 'ON_CAPTURE')) {
+          events.push({
+            id: generateId(),
+            priority: 2,
+            triggerType: 'ON_CAPTURE',
             pieceId: landingPiece.id,
             position: [chosenMove.to[0], chosenMove.to[1]],
             owner: 'gote',

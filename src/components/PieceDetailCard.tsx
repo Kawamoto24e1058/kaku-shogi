@@ -220,7 +220,8 @@ export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHover
         backgroundColor: boxBg,
         padding: '12px',
         borderRadius: '2px',
-        border: `1px solid ${boxBorder}`
+        border: `1px solid ${boxBorder}`,
+        whiteSpace: 'pre-line'
       }}>
         {getPieceDescription(piece as Piece)}
       </div>
