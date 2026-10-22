@@ -83,7 +83,7 @@ export async function decrementCacheUses(word: string): Promise<void> {
 
 /**
  * この端末のローカルキャッシュを消去する。
- * 共有キャッシュ（Firestore）はサーバーのみが書き込めるため、クライアントからは消去しない
+ * 共有キャッシュ（Supabase）はサーバーのみが書き込めるため、クライアントからは消去しない
  * （以前は誰でも全員分の駒データを削除できてしまっていた）。
  */
 export async function clearAllCustomPieceCache(): Promise<number> {
@@ -142,7 +142,7 @@ export async function generatePieceWithSource(word: string): Promise<GeneratedPi
   const localCached = getFromCache(trimmed);
   if (localCached) return { piece: localCached, source: 'cache' };
 
-  // ② 共有キャッシュを GET で参照。CDN にキャッシュされるので、人気の単語は関数も Firestore も使わずに返る
+  // ② 共有キャッシュを GET で参照。CDN にキャッシュされるので、人気の単語は関数も DB も使わずに返る
   try {
     const res = await fetch(`${API_ENDPOINT}?k=${encodeURIComponent(wordKey(trimmed))}`);
     if (res.ok) {

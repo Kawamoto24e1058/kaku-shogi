@@ -124,7 +124,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
 
   const [resettingCache, setResettingCache] = useState(false);
 
-  const handleResetFirebaseCache = async () => {
+  const handleResetCache = async () => {
     if (!window.confirm('この端末に保存された駒データのキャッシュを消去しますか？（他のプレイヤーには影響しません）')) {
       return;
     }
@@ -174,7 +174,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <button
-              onClick={handleResetFirebaseCache}
+              onClick={handleResetCache}
               disabled={resettingCache}
               style={{
                 fontSize: '10.5px',
