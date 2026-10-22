@@ -1,7 +1,7 @@
 // AIが使えないとき（無料枠切れ・障害・オフライン）の駒生成。
 // 単語をキーワード辞書でカテゴリ分けし、ゲームエンジンで動作確認済みの「型（アーキタイプ）」から能力を組み立てる。
 // 説明文と実際の効果（ability_spec / custom_ability）を必ず一致させるのが目的。
-// 型を追加・変更したら scripts/verify-offline.ts で実際に発動するか確認すること。
+// 型を追加・変更したら scripts/verify-abilities.ts で実際に発動するか確認すること。
 import type { AbilitySpec, CustomAbility, PieceData, VisualEffect } from './types';
 
 type Mechanics = PieceData['mechanics_type'];

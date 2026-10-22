@@ -30,7 +30,7 @@
 3. **Gemini 軽量モデル**（`GEMINI_FALLBACK_MODEL`）
 4. **予備の LLM**（任意。Groq / OpenRouter / Cloudflare Workers AI など OpenAI 互換 API。`FALLBACK_LLM_*`）
 5. **簡易生成**（`src/offlineGenerator.ts`）… ブラウザ内で必ず動く。17 種の能力型から単語に合うものを選ぶ。
-   全能力型がエンジン上で実際に効果を発揮することを `npm run verify:offline` で確認できる。
+   全能力型がエンジン上で実際に効果を発揮することを `npm run verify:abilities` で確認できる。
 
 AI で生成できなかった単語は `generation_queue` に積まれ、GitHub Actions（`.github/workflows/backfill.yml`, 1 日 1 回）が
 その日に余った無料枠で AI 生成して共有キャッシュに登録します。次にその単語を入れた人からは AI 版になります。

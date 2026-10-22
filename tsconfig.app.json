@@ -21,5 +21,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "scripts/verify-offline.ts"]
+  "include": ["src", "scripts/verify-abilities.ts"]
 }

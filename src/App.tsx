@@ -23,7 +23,8 @@ import {
   requiresTargeting,
   getPieceActivationType,
   createEmptyTileBoard,
-  applyTileEffects
+  applyTileEffects,
+  drainTilePlacements
 } from './gameLogic';
 import { PieceCreator } from './components/PieceCreator';
 import { GameBoard } from './components/GameBoard';
@@ -1037,10 +1038,6 @@ export const App: React.FC = () => {
         }
       }
     }
-
-    // Apply tile effects (fire, poison, ice, bomb)
-    const tileRes = applyTileEffects(res.board, state.tileBoard, state.turn, finalLogs);
-    res.board = tileRes.board;
 
     // Process the asynchronous queue!
     await processAbilityEventsQueue(res.board, events, nextCaptured, nextShared, finalLogs, nextDestroyedPieces);
@@ -2150,6 +2147,17 @@ export const App: React.FC = () => {
       return;
     }
 
+    // 地形効果: この手番中に能力で置かれたマスを反映し、効果の適用と残り手番の経過を1回だけ行う
+    let nextTileBoard = state.tileBoard.map(row => [...row]);
+    for (const { y, x, tile } of drainTilePlacements()) {
+      nextTileBoard[y][x] = tile;
+    }
+    const tileLogs: Omit<GameLog, 'id' | 'timestamp'>[] = [];
+    const tileRes = applyTileEffects(currentBoard, nextTileBoard, activePlayer, tileLogs);
+    currentBoard = tileRes.board;
+    nextTileBoard = tileRes.tileBoard;
+    currentLogs.push(...tileLogs.map(l => ({ ...l, id: generateId(), timestamp: new Date().toLocaleTimeString() })));
+
     const isChecked = isKingInCheck(currentBoard, nextPlayer);
     if (isChecked) {
       currentLogs.push({
@@ -2172,6 +2180,7 @@ export const App: React.FC = () => {
         destroyedPieces: currentDestroyedPieces,
         sharedPieces: currentShared,
         turn: nextPlayer,
+        tileBoard: nextTileBoard,
         selectedCell: null,
         activeAbilityMode: false,
         activeAbilitySource: null,
@@ -3210,9 +3219,11 @@ export const App: React.FC = () => {
 
 
   const handleResetGame = () => {
+    drainTilePlacements();
     setState(prev => ({
       ...prev,
       board: initializeBoard(),
+      tileBoard: createEmptyTileBoard(),
       turn: 'sente' as Player,
       phase: 'start',
       customPieces: { sente: [], gote: [] },

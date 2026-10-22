@@ -1,3 +1,5 @@
+import type { SupportedAction } from '../shared/abilityCatalog';
+
 export type Player = 'sente' | 'gote';
 
 export interface Position {
@@ -83,7 +85,9 @@ export interface TileState {
 }
 
 // EffectType: 全アクション種別の共有型エイリアス
-export type EffectType = 'DESTROY' | 'CAPTURE' | 'IMMOBILIZE' | 'SWAP' | 'PULL' | 'PUSH' | 'STEALTH' | 'SPAWN' | 'TRANSFORM' | 'RESURRECT' | 'FORCE_CAPTURE' | 'TRANSFORM_PAWN' | 'STEAL_HAND' | 'TIME_REWIND' | 'BOOMERANG' | 'GRAVITY_PULL' | 'SHARE_FATE' | 'WALL_CREATE' | 'LEAVE_TRAIL_FIRE' | 'EVOLUTION' | 'MIND_CONTROL' | 'CLEAR_DEBUFF' | 'MAGNET_PULL' | 'KNOCKBACK_BUMP' | 'POS_SWAP_ENEMY' | 'STUN_LOCK' | 'PENETRATE_STRIKE' | 'VAULT_EXECUTE' | 'CLEAVE_LINE' | 'GUARD_STANCE' | 'SILENCE_SEAL' | 'OVERDRIVE_BOOST' | 'PROBABILITY_STRIKE' | 'CHAOS_GAMBLE' | 'LUCKY_DODGE' | 'DELAYED_BURST' | 'CHARGE_TURN' | 'SACRIFICE_COST' | 'SELF_STUN' | 'EVOLUTION_CHECK' | 'SET_TILE_FIRE' | 'SET_TILE_POISON' | 'SET_TILE_ICE' | 'SET_TILE_BOMB' | 'SET_TILE_TRAP';
+// エンジンが実行できるのは SupportedAction（shared/abilityCatalog.ts）。残りは旧データ互換のための名前で、
+// サニタイザで SupportedAction に読み替えられる。
+export type EffectType = SupportedAction | 'CAPTURE' | 'IMMOBILIZE' | 'SWAP' | 'PULL' | 'PUSH' | 'STEALTH' | 'SPAWN' | 'TRANSFORM' | 'RESURRECT';
 
 export type ActivationType = 'ACTIVE' | 'AUTO_TRIGGER' | 'PASSIVE';
 

@@ -8,8 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "verify:offline": "tsx scripts/verify-offline.ts",
-    "backfill": "tsx scripts/backfill.ts"
+    "backfill": "tsx scripts/backfill.ts",
+    "verify:abilities": "tsx scripts/verify-abilities.ts"
   },
   "dependencies": {
     "firebase": "^12.14.0",
