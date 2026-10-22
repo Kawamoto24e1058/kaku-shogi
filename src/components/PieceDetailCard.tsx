@@ -11,6 +11,7 @@ interface PieceDetailCardProps {
 
 export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHoverPreview = false, isViewerOpponent = false }) => {
   if (!piece) return null;
+  const isProgram = !!piece.abilities?.length;
 
   const themeStyles: Record<string, {
     backgroundColor: string;
@@ -169,13 +170,13 @@ export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHover
             letterSpacing: '0.05em',
             border: `1px solid ${boxBorder}`
           }}>
-            {piece.trigger === 'ON_MOVE' ? '移動時自動発動' : piece.trigger === 'TURN_START' ? '自ターン開始時発動' : piece.trigger === 'ON_TAKEN' ? '被捕獲時（罠）' : piece.trigger === 'ON_APPROACH' ? '敵接近時（罠）' : '常時パッシブ'}
+            {isProgram ? `能力${piece.abilities!.length}つ・自動発動` : piece.trigger === 'ON_MOVE' ? '移動時自動発動' : piece.trigger === 'TURN_START' ? '自ターン開始時発動' : piece.trigger === 'ON_TAKEN' ? '被捕獲時（罠）' : piece.trigger === 'ON_APPROACH' ? '敵接近時（罠）' : '常時パッシブ'}
           </span>
         )}
       </div>
 
-      {/* Stats Tiling Grid */}
-      <div style={{
+      {/* Stats Tiling Grid（能力プログラムの駒は能力ごとに一覧で出すので、旧形式の要約は出さない） */}
+      {!isProgram && <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(3, 1fr)',
         gap: '8px',
@@ -208,7 +209,7 @@ export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHover
             {piece.coolDownTurnsRemaining !== undefined && piece.coolDownTurnsRemaining > 0 && ` (残${piece.coolDownTurnsRemaining})`}
           </span>
         </div>
-      </div>
+      </div>}
 
       {/* Description Text Box */}
       <div style={{
@@ -223,7 +224,7 @@ export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHover
         border: `1px solid ${boxBorder}`,
         whiteSpace: 'pre-line'
       }}>
-        {getPieceDescription(piece as Piece)}
+        {isProgram ? (piece.description || '') : getPieceDescription(piece as Piece)}
       </div>
 
       {/* Range Geometry Mini Maps */}
@@ -289,7 +290,7 @@ export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHover
       )}
 
       {/* custom_ability パーツ構成バッジ（新プラグイン型能力） */}
-      {(piece as import('../types').Piece).custom_ability && (() => {
+      {!isProgram && (piece as import('../types').Piece).custom_ability && (() => {
         const ca = (piece as import('../types').Piece).custom_ability!;
         const allTags: { label: string; color: string; bg: string }[] = [];
 

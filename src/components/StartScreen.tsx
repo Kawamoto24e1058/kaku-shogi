@@ -586,7 +586,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
 
             {/* Title Header */}
             <div className="relative text-center mb-8 w-full">
-              <div className="absolute -inset-x-10 top-1/2 -translate-y-1/2 h-12 bg-amber-400/20 blur-2xl rounded-full"></div>
+              <div className="absolute inset-x-0 sm:-inset-x-10 top-1/2 -translate-y-1/2 h-12 bg-amber-400/20 blur-2xl rounded-full"></div>
               <h2 className="relative z-10 text-4xl md:text-5xl font-serif font-black tracking-[0.25em] text-amber-950 drop-shadow-xs">
                 AI駆動・拡張将棋
               </h2>

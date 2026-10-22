@@ -4,6 +4,7 @@ import { openXShare } from '../share';
 import type { Piece, Player } from '../types';
 import { generateId } from '../gameLogic';
 import { PieceDetailCard } from './PieceDetailCard';
+import { ProgramAbilityList } from './ProgramAbilityList';
 
 const SCAN_STAGES = [
   '深層概念マトリクス結合中...',
@@ -273,7 +274,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
           {playerName} のカスタム能力駒生成
         </h2>
         <p style={{ color: 'var(--text-secondary)', marginBottom: '20px', fontSize: '13px' }}>
-          戦場に召喚するオリジナルのカスタム駒を **{maxPieces}枚** 作成してください。単語の本質をハックし、ルールそのものを書き換える**【完全に新しい特殊能力】**をゼロから創造・ダイナミックコンパイルします。
+          戦場に召喚するオリジナルのカスタム駒を <strong>{maxPieces}枚</strong> 作成してください。好きな単語から、AIが<strong>その言葉らしい特殊能力</strong>を持つ駒を作ります。
         </p>
 
         <div style={{
@@ -409,6 +410,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
                 ×
               </button>
               <PieceDetailCard piece={piece} />
+              {piece.abilities?.length ? <div style={{ marginBottom: '40px' }}><ProgramAbilityList piece={piece as Piece} /></div> : null}
               <button
                 onClick={() => openXShare(`「${piece.word}」から能力駒《${piece.effect_name}》が生まれた！\n${piece.ability_genre || ''}`)}
                 style={{
@@ -434,14 +436,14 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
         })}
 
         {pendingWords.map(p => (
-          <div key={p.key} className="cyber-panel" style={{ padding: '15px', display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center', justifyContent: 'center', minHeight: '340px', borderStyle: 'dashed', borderColor: 'var(--color-gold)', background: 'transparent', borderRadius: '16px' }}>
+          <div key={p.key} className="cyber-panel" style={{ padding: '15px', display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center', justifyContent: 'center', minHeight: 'min(340px, 30vh)', borderStyle: 'dashed', borderColor: 'var(--color-gold)', background: 'transparent', borderRadius: '16px' }}>
             <p style={{ color: 'var(--text-primary)', fontSize: '16px', fontWeight: 'bold' }}>「{p.word}」</p>
             <p style={{ color: 'var(--color-gold)', fontSize: '12px', fontFamily: 'var(--font-cyber)' }}>生成中…</p>
           </div>
         ))}
 
         {Array.from({ length: Math.max(0, maxPieces - slotsUsed) }).map((_, i) => (
-          <div key={i} className="cyber-panel" style={{ padding: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '340px', borderStyle: 'dashed', borderColor: 'var(--text-muted)', background: 'transparent', borderRadius: '16px' }}>
+          <div key={i} className="cyber-panel" style={{ padding: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 'min(340px, 18vh)', borderStyle: 'dashed', borderColor: 'var(--text-muted)', background: 'transparent', borderRadius: '16px' }}>
             <p style={{ color: 'var(--text-muted)', fontSize: '12px', fontFamily: 'var(--font-cyber)' }}>
               空きスロット
             </p>

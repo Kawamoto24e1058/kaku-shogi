@@ -54,6 +54,8 @@ interface GameBoardProps {
   onCustomDeckPieceClick: (piece: Piece, index: number, owner: Player) => void;
   onSharedPieceClick: (piece: Piece, index: number) => void; // Shared pool callback
   onHoverPiece?: (piece: Piece | null) => void; // Hover popup callback
+  /** タッチ操作で駒（または空きマス = null）をタップしたとき。スマホでは hover が無いので能力表示に使う */
+  onInspectPiece?: (piece: Piece | null) => void;
   vsAiMode: boolean;
   isSenteChecked?: boolean;
   isGoteChecked?: boolean;
@@ -78,6 +80,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   activeAbilityMode: _activeAbilityMode,
   onCellClick,
   onHoverPiece,
+  onInspectPiece,
   vsAiMode,
   isSenteChecked = false,
   isGoteChecked = false,
@@ -1183,21 +1186,22 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         let wordPadding = '0px';
 
         if (activePiece.isKing) {
-          fontSizeVal = '13px';
+          fontSizeVal = 'clamp(8px, 2.4vw, 13px)';
         } else if (activePiece.isHisha || activePiece.isKaku) {
-          fontSizeVal = '11px';
+          fontSizeVal = 'clamp(9px, 2.6vw, 11px)';
         } else if (activePiece.isPawn) {
-          fontSizeVal = '9px';
+          fontSizeVal = 'clamp(8px, 2.2vw, 9px)';
         } else {
-          const len = wordStr.length;
-          if (len <= 3) {
-            fontSizeVal = '11px';
+          // 縦書き1列に収める。長い名前は先頭3文字（盤の小さいスマホでも折り返して読み順が崩れないように。全体は情報欄に出る）
+          const chars = [...wordStr];
+          // 幅360px未満の小さい画面では1マスが約30pxしかないので2文字まで
+          const maxChars = typeof window !== 'undefined' && window.innerWidth < 360 ? 2 : 3;
+          if (chars.length > maxChars) wordStr = chars.slice(0, maxChars).join('');
+          if (chars.length <= 2) {
+            fontSizeVal = 'clamp(9px, 2.8vw, 12px)';
             letterSpacingVal = '0.05em';
-          } else if (len >= 4 && len <= 6) {
-            fontSizeVal = '9px';
           } else {
-            fontSizeVal = '7.5px';
-            wordPadding = '1px 0';
+            fontSizeVal = 'clamp(7.5px, 2.1vw, 11px)';
           }
         }
 
@@ -1296,12 +1300,13 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                       textAlign: 'center',
                       writingMode: 'vertical-rl',
                       textOrientation: 'upright',
+                      whiteSpace: 'nowrap',
                       lineHeight: 1.0,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       padding: wordPadding,
-                      marginTop: activePiece.isKing ? '6px' : '0',
+                      marginTop: activePiece.isKing ? 'clamp(0px, 0.8vw, 6px)' : '0',
                       transform: isPieceRotated ? 'rotate(180deg)' : 'none',
                     }}>
                       {wordStr}
@@ -1506,6 +1511,9 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         onTouchEnd={(e) => {
           e.preventDefault();
           onCellClick(y, x);
+          const viewer: Player = onlineMode ? (myRole || 'sente') : (vsAiMode ? 'sente' : localTurn);
+          // ステルス未公開の敵駒は能力を見せない
+          onInspectPiece?.(piece && !(piece.isStealth === true && piece.owner !== viewer) ? piece : null);
         }}
         onMouseEnter={() => {
           // activeAbilityMode 中のホバープレビュー

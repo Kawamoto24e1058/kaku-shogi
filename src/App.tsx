@@ -27,6 +27,7 @@ import {
   drainTilePlacements
 } from './gameLogic';
 import { tickAbilityCooldowns } from './abilityEngine';
+import { ProgramAbilityList } from './components/ProgramAbilityList';
 import { PieceCreator } from './components/PieceCreator';
 import { GameBoard } from './components/GameBoard';
 import { ControlPanel } from './components/ControlPanel';
@@ -162,6 +163,16 @@ export const App: React.FC = () => {
   const [selectedSharedPiece, setSelectedSharedPiece] = useState<{ piece: Piece; index: number } | null>(null);
   const [selectedCustomDeckPiece, setSelectedCustomDeckPiece] = useState<{ piece: Piece; index: number } | null>(null);
   const [hoveredPiece, setHoveredPiece] = useState<Piece | null>(null);
+  // スマホでタップした駒の能力を画面下に出す（盤から目を離さずに確認できるように）
+  // 画面が切り替わったら先頭から見せる（駒作成の長いページの途中から盤面が始まらないように）
+  const phaseGroup = state.phase === 'start' || state.phase === 'setup' ? state.phase : 'game';
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [phaseGroup]);
+  // どの画面で開いたかも持っておき、画面が変わったら（前の対局の駒を）出さない
+  const [inspected, setInspected] = useState<{ piece: Piece; phaseGroup: string } | null>(null);
+  const inspectedPiece = inspected?.phaseGroup === phaseGroup ? inspected.piece : null;
+  const setInspectedPiece = (piece: Piece | null) => setInspected(piece ? { piece, phaseGroup } : null);
   const [validMoves, setValidMoves] = useState<[number, number][]>([]);
   const [vsAiMode, setVsAiMode] = useState<boolean>(true);
   const [onlineMode, setOnlineMode] = useState<boolean>(false);
@@ -3487,6 +3498,25 @@ export const App: React.FC = () => {
       {/* Background Sakura Shower */}
       <SakuraShower />
       
+      {/* スマホ: タップした駒の能力（画面下のシート） */}
+      {inspectedPiece && state.phase !== 'start' && state.phase !== 'setup' && (
+        <div className="mobile-peek" role="dialog" aria-label={`${inspectedPiece.word} の能力`}>
+          <div className="mobile-peek-head">
+            <div style={{ minWidth: 0 }}>
+              <div className="mobile-peek-title">
+                {inspectedPiece.owner === 'sente' ? '▲' : '▽'} {inspectedPiece.word}
+                {inspectedPiece.effect_name && !inspectedPiece.isKing && !inspectedPiece.isPawn && <span className="mobile-peek-sub">《{inspectedPiece.isPromoted ? inspectedPiece.promoted_effect?.effect_name : inspectedPiece.effect_name}》</span>}
+              </div>
+            </div>
+            <button type="button" className="mobile-peek-close" onClick={() => setInspectedPiece(null)} aria-label="閉じる">×</button>
+          </div>
+          <div className="mobile-peek-body">
+            {inspectedPiece.abilities?.length
+              ? <ProgramAbilityList piece={inspectedPiece} />
+              : <p style={{ fontSize: '12px', lineHeight: 1.7, whiteSpace: 'pre-line', margin: 0 }}>{getPieceDescription(inspectedPiece) || '特殊能力はありません。'}</p>}
+          </div>
+        </div>
+      )}
       {/* ターン交代サイバーアラート */}
       {turnChangeAlert && (
         <div className={`turn-change-overlay ${turnChangeAlert === 'sente' ? 'sente-turn-alert' : 'gote-turn-alert'}`}>
@@ -3629,6 +3659,21 @@ export const App: React.FC = () => {
                     </button>
                   </div>
                 )}
+                {/* 手番表示（スマホでは盤の上にしか情報が見えないため常に出す） */}
+                {state.phase !== 'finished' && (() => {
+                  const turnName = state.turn === 'sente'
+                    ? `▲ ${playerNames.sente || 'プレイヤー1'}`
+                    : `▽ ${playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')}`;
+                  const mine = isPieceOwnerHuman(state.turn) && (onlineMode || vsAiMode);
+                  return (
+                    <div className="turn-strip" role="status" aria-live="polite">
+                      <span className={mine ? 'turn-strip-me' : undefined}>{mine ? 'あなたの手番' : `${turnName} の手番`}</span>
+                      <span className="turn-strip-sub">
+                        {mine ? '駒をタップして動かす' : vsAiMode ? 'AIが考えています…' : onlineMode ? '相手の手を待っています…' : '交代で指してください'}
+                      </span>
+                    </div>
+                  );
+                })()}
                 <GameBoard
                   board={state.board}
                   tileBoard={state.tileBoard}
@@ -3651,6 +3696,7 @@ export const App: React.FC = () => {
                   onCustomDeckPieceClick={handleCustomDeckPieceClick}
                   onSharedPieceClick={handleSharedPieceClick}
                   onHoverPiece={setHoveredPiece}
+                  onInspectPiece={setInspectedPiece}
                   vsAiMode={vsAiMode}
                   isSenteChecked={isKingInCheck(state.board, 'sente')}
                   isGoteChecked={isKingInCheck(state.board, 'gote')}
