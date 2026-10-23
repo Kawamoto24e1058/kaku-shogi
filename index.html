@@ -11,8 +11,22 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;500;700;900&display=swap" rel="stylesheet">
-    <meta name="description" content="架空将棋 — AIが生成するカスタム能力駒で戦うモダン和風将棋" />
+    <meta name="description" content="好きな単語を入れると、AIがその言葉の能力を持つ駒を生成。友達やCPUと対局できるモダン和風将棋。" />
     <title>架空将棋</title>
+    <!-- OGP / X(Twitter) カード。__SITE_URL__ はビルド時に vite.config.ts で置換される -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="架空将棋" />
+    <meta property="og:title" content="架空将棋 — 単語からAIが能力駒を生む将棋" />
+    <meta property="og:description" content="好きな単語を入れると、AIがその言葉の能力を持つ駒を生成。友達やCPUと対局しよう。" />
+    <meta property="og:url" content="__SITE_URL__/" />
+    <meta property="og:image" content="__SITE_URL__/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:locale" content="ja_JP" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="架空将棋 — 単語からAIが能力駒を生む将棋" />
+    <meta name="twitter:description" content="好きな単語を入れると、AIがその言葉の能力を持つ駒を生成。友達やCPUと対局しよう。" />
+    <meta name="twitter:image" content="__SITE_URL__/og.png" />
   </head>
   <body>
     <div id="root"></div>

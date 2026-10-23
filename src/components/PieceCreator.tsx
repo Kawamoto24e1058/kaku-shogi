@@ -1,13 +1,25 @@
-import React, { useState } from 'react';
-import { generatePieceFromWord, clearAllCustomPieceCache } from '../aiGenerator';
+import React, { useEffect, useRef, useState } from 'react';
+import { generatePieceWithSource, clearAllCustomPieceCache, warmUpGenerator, BlockedWordError, forgetCachedPiece } from '../aiGenerator';
+import { onlineConfigured, reportPiece } from '../onlineStore';
+import { wordKey } from '../../shared/wordKey';
+import { openXShare } from '../share';
 import type { Piece, Player } from '../types';
 import { generateId } from '../gameLogic';
 import { PieceDetailCard } from './PieceDetailCard';
+import { ProgramAbilityList } from './ProgramAbilityList';
+import { FUSION_MARK, normalizeFusionWord } from '../../shared/challenge';
+
+const SCAN_STAGES = [
+  '深層概念マトリクス結合中...',
+  '主観的意図をマッピング中...',
+  'ゲームマスター論理コード構築中...',
+  '物理ルール干渉パラメータを算出中...',
+  '概念空間へデプロイ中...'
+];
 
 interface PieceCreatorProps {
   player: Player;
   onPiecesReady: (pieces: Piece[]) => void;
-  geminiApiKey: string;
   vsAiMode: boolean;
   setupSubPhase: 'sente_create' | 'gote_create';
   onlineMode?: boolean;
@@ -15,12 +27,13 @@ interface PieceCreatorProps {
   onlineOpponentReady?: boolean;
   onlineSelfReady?: boolean;
   playerNames: { sente: string; gote: string };
+  /** 「今日のお題」のように、作る単語が決まっているとき（自動で生成し、入力欄は出さない） */
+  presetWords?: string[];
 }
 
 export const PieceCreator: React.FC<PieceCreatorProps> = ({
   player,
   onPiecesReady,
-  geminiApiKey,
   vsAiMode,
   setupSubPhase,
   onlineMode = false,
@@ -28,11 +41,15 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
   onlineOpponentReady = false,
   onlineSelfReady = false,
   playerNames,
+  presetWords,
 }) => {
   const [word, setWord] = useState('');
-  const [loading, setLoading] = useState(false);
+  // 生成中の単語。複数の単語を並行して生成できるようにし、3枚分の待ち時間を1枚分程度に短縮する
+  const [pendingWords, setPendingWords] = useState<{ key: string; word: string }[]>([]);
+  const loading = pendingWords.length > 0;
   const [createdPieces, setCreatedPieces] = useState<Piece[]>([]);
-  const [scanStatus, setScanStatus] = useState('');
+  const [stageIdx, setStageIdx] = useState(0);
+  const [notice, setNotice] = useState('');
 
   const maxPieces = 3; 
   const leftRole = onlineMode ? (myRole || 'sente') : player;
@@ -45,34 +62,51 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
   const rightLabel = onlineMode
     ? `${rightRole === 'sente' ? '▲' : '▽'} ${playerNames[rightRole] || (rightRole === 'sente' ? 'プレイヤー1' : 'プレイヤー2')} (対戦相手)`
     : vsAiMode
-      ? '人工知能 (Gemini AI)'
+      ? 'CPU（思考エンジン）'
       : `${rightRole === 'sente' ? '▲' : '▽'} ${playerNames[rightRole] || 'プレイヤー2'}${rightRole === 'sente' ? ' (Player 1)' : ' (Player 2)'}`;
 
   const playerName = leftLabel;
 
+  const slotsUsed = createdPieces.length + pendingWords.length;
+
+  useEffect(() => {
+    warmUpGenerator();
+  }, []);
+
+  // 生成中の演出テキストを一定間隔で切り替える（setState はタイマー内でのみ行う）
+  useEffect(() => {
+    if (!loading) return;
+    const statusInterval = setInterval(() => setStageIdx(i => i + 1), 900);
+    return () => clearInterval(statusInterval);
+  }, [loading]);
+  const scanStatus = SCAN_STAGES[stageIdx % SCAN_STAGES.length];
+
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!word.trim() || createdPieces.length >= maxPieces) return;
+    const target = word.trim();
+    if (!target || slotsUsed >= maxPieces) return;
+    setWord('');
+    await generateWord(target);
+  };
 
-    setLoading(true);
-    setScanStatus('深層概念マトリクス結合中...');
-    
-    const stages = [
-      '主観的意図をマッピング中...',
-      'ゲームマスター論理コード構築中...',
-      '物理ルール干渉パラメータを算出中...',
-      '概念空間へデプロイ中...'
-    ];
+  // 決まった単語（今日のお題）は画面を開いたら自動で作る。StrictMode の二重実行でも1回だけ
+  const presetStarted = useRef(false);
+  useEffect(() => {
+    if (!presetWords?.length || presetStarted.current) return;
+    presetStarted.current = true;
+    presetWords.slice(0, maxPieces).forEach(w => { void generateWord(w); });
+    // generateWord は毎回作り直される関数だが、最初の1回だけ使えばよい
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetWords]);
 
-    let stageIdx = 0;
-    const statusInterval = setInterval(() => {
-      setScanStatus(stages[stageIdx % stages.length]);
-      stageIdx++;
-    }, 255);
+  const generateWord = async (target: string) => {
+    const key = generateId();
+    setPendingWords(prev => [...prev, { key, word: target }]);
 
     try {
-      const pieceData = await generatePieceFromWord(word.trim(), geminiApiKey);
-      
+      const { piece: pieceData, notice: generationNotice, source } = await generatePieceWithSource(target);
+      setNotice(generationNotice ? `${source === 'similar' ? '近い言葉のAI駒' : '簡易生成'}：${generationNotice}` : '');
+
       const newPiece: Piece = {
         ...pieceData,
         id: generateId(),
@@ -85,22 +119,37 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
         isPromoted: false,
       };
 
-      setCreatedPieces([...createdPieces, newPiece]);
-      setWord('');
+      setCreatedPieces(prev => [...prev, newPiece]);
     } catch (error) {
-      console.error(error);
-      alert('概念コンパイルに失敗しました。');
+      if (error instanceof BlockedWordError) {
+        setNotice(`「${target}」は使えない単語です。別の単語を入力してください。`);
+      } else {
+        console.error(error);
+        alert(`「${target}」の生成に失敗しました。`);
+      }
     } finally {
-      clearInterval(statusInterval);
-      setLoading(false);
-      setScanStatus('');
+      setPendingWords(prev => prev.filter(p => p.key !== key));
+    }
+  };
+
+  // 不適切な駒の報告。報告した駒はこの端末では二度と出さず、デッキからも外す
+  const handleReport = async (index: number) => {
+    const piece = createdPieces[index];
+    if (!piece) return;
+    if (!window.confirm(`「${piece.word}」の駒に不適切な内容（差別・性的・暴力的な表現など）がありますか？\n報告すると、この駒はデッキから外れます。`)) return;
+    forgetCachedPiece(piece.word);
+    setCreatedPieces(prev => prev.filter((_, i) => i !== index));
+    try {
+      await reportPiece(wordKey(normalizeFusionWord(piece.word)));
+      setNotice(`「${piece.word}」を報告しました。ご協力ありがとうございます。複数の報告が集まった駒は自動で削除されます。`);
+    } catch (err) {
+      console.warn('[report] failed:', err);
+      setNotice(`「${piece.word}」をデッキから外しました（報告の送信には失敗しました）。`);
     }
   };
 
   const handleDelete = (index: number) => {
-    const nextPieces = [...createdPieces];
-    nextPieces.splice(index, 1);
-    setCreatedPieces(nextPieces);
+    setCreatedPieces(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = () => {
@@ -111,14 +160,14 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
 
   const [resettingCache, setResettingCache] = useState(false);
 
-  const handleResetFirebaseCache = async () => {
-    if (!window.confirm('過去に記録・生成されたすべてのカスタム駒データをFirebaseおよびローカルキャッシュから完全消去・リセットしますか？')) {
+  const handleResetCache = async () => {
+    if (!window.confirm('この端末に保存された駒データのキャッシュを消去しますか？（他のプレイヤーには影響しません）')) {
       return;
     }
     setResettingCache(true);
     try {
       const count = await clearAllCustomPieceCache();
-      alert(`Firestoreおよびキャッシュから計 ${count} 件のカスタム駒データを消去・リセットしました！次回から新しいプロンプトで再錬成されます。`);
+      alert(`この端末のキャッシュから ${count} 件の駒データを消去しました。`);
     } catch (e) {
       console.error(e);
       alert('リセット処理中にエラーが発生しました。');
@@ -161,7 +210,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <button
-              onClick={handleResetFirebaseCache}
+              onClick={handleResetCache}
               disabled={resettingCache}
               style={{
                 fontSize: '10.5px',
@@ -174,9 +223,9 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
                 cursor: resettingCache ? 'not-allowed' : 'pointer',
                 transition: 'all 0.2s'
               }}
-              title="Firebaseおよびローカルキャッシュに保存された過去のすべてのカスタム駒データを完全消去して初期リセットします"
+              title="この端末に保存された駒データのキャッシュを消去します"
             >
-              {resettingCache ? '🔥 消去中...' : '🔥 全カスタム駒リセット'}
+              {resettingCache ? '消去中...' : '端末キャッシュを消去'}
             </button>
             <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
               {onlineMode ? '※お互いのデバイスから同時に駒の作成が可能です' : !vsAiMode && '※1台のデバイスを交互に操作して対戦します'}
@@ -260,68 +309,73 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
           {playerName} のカスタム能力駒生成
         </h2>
         <p style={{ color: 'var(--text-secondary)', marginBottom: '20px', fontSize: '13px' }}>
-          戦場に召喚するオリジナルのカスタム駒を **{maxPieces}枚** 作成してください。単語の本質をハックし、ルールそのものを書き換える**【完全に新しい特殊能力】**をゼロから創造・ダイナミックコンパイルします。
+          戦場に召喚するオリジナルのカスタム駒を <strong>{maxPieces}枚</strong> 作成してください。好きな単語から、AIが<strong>その言葉らしい特殊能力</strong>を持つ駒を作ります。
         </p>
 
-        {!geminiApiKey || geminiApiKey.trim() === '' ? (
-          <div style={{
-            background: 'rgba(212, 175, 55, 0.03)',
-            border: '1px solid rgba(212, 175, 55, 0.15)',
-            borderRadius: '12px',
-            padding: '12px 16px',
-            marginBottom: '20px',
-            fontSize: '12px',
-            color: 'var(--color-gold)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '4px'
-          }}>
+        <div style={{
+          background: notice ? 'rgba(212, 175, 55, 0.03)' : 'rgba(47, 82, 51, 0.03)',
+          border: `1px solid ${notice ? 'rgba(212, 175, 55, 0.15)' : 'rgba(47, 82, 51, 0.15)'}`,
+          borderRadius: '12px',
+          padding: '12px 16px',
+          marginBottom: '20px',
+          fontSize: '12px',
+          color: notice ? 'var(--color-gold)' : 'var(--color-matsuba)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '4px'
+        }}>
+          {notice ? (
+            <div>{notice}</div>
+          ) : (
             <div>
-              <strong>オフライン簡易生成モード動作中：</strong> Gemini API キーが設定されていません。
-              簡易テンプレートが適用されます。
+              <strong>AI駆動生成モード：</strong> 入力された単語の特徴を生成AIが解釈し、オリジナルの特殊能力を生成します。
             </div>
+          )}
+          <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+            ※入力した単語は能力生成のため外部のAIサービス（Cloudflare Workers AI など）に送信され、生成結果は他のプレイヤーとも共有されます。個人情報や他人を傷つける言葉は入力しないでください。
           </div>
-        ) : (
-          <div style={{
-            background: 'rgba(47, 82, 51, 0.03)',
-            border: '1px solid rgba(47, 82, 51, 0.15)',
-            borderRadius: '12px',
-            padding: '12px 16px',
-            marginBottom: '20px',
-            fontSize: '12px',
-            color: 'var(--color-matsuba)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '4px'
-          }}>
-            <div>
-              <strong>AI駆動生成モード有効：</strong> Gemini API を使用して、入力された単語の特徴を深く解釈したオリジナルの特殊能力をリアルタイムでゼロから創造します。
-            </div>
-          </div>
-        )}
+        </div>
 
-        {(!onlineMode || !onlineSelfReady) && createdPieces.length < maxPieces && (
+        {presetWords?.length ? (
+          <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '12px', background: 'rgba(217, 119, 6, 0.08)', border: '1px solid rgba(217, 119, 6, 0.25)', fontSize: '13px', lineHeight: 1.7 }}>
+            📅 <strong>今日のお題</strong>：{presetWords.map(w => `「${w}」`).join('')}
+            <br />全員が同じ3枚で戦います。できるだけ少ない手数でCPUに勝とう！
+          </div>
+        ) : null}
+
+        {!presetWords?.length && (!onlineMode || !onlineSelfReady) && slotsUsed < maxPieces && (
+          <>
           <form onSubmit={handleGenerate} className="piece-creator-form" style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
             <input
               type="text"
               value={word}
               onChange={(e) => setWord(e.target.value)}
-              placeholder="任意の単語（例：山、忍者、大砲、仏）"
+              placeholder="単語（例：忍者）や 2語の合体（例：猫×新幹線）"
               className="cyber-input"
               style={{ flex: 1 }}
-              maxLength={20}
-              disabled={loading}
+              maxLength={24}
               required
             />
             <button
               type="submit"
               className="cyber-btn"
-              disabled={loading || !word.trim()}
+              disabled={!word.trim()}
               style={{ flexShrink: 0 }}
             >
-              {loading ? 'コンパイル中...' : '概念をコンパイルする'}
+              概念をコンパイルする
             </button>
           </form>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', margin: '-8px 0 20px', fontSize: '12px', color: 'var(--text-muted)' }}>
+            <button
+              type="button"
+              onClick={() => setWord(w => (w.includes(FUSION_MARK) ? w : `${w.trim()}${FUSION_MARK}`))}
+              style={{ padding: '4px 10px', borderRadius: '999px', border: '1px solid rgba(139, 92, 26, 0.3)', background: '#fff', fontWeight: 700, color: '#92400e' }}
+            >
+              ＋ 合体（{FUSION_MARK}）
+            </button>
+            <span>2つの言葉を {FUSION_MARK} でつなぐと、両方の性質を持つ合体駒になります</span>
+          </div>
+          </>
         )}
 
         {/* Dynamic Compile Status Card */}
@@ -351,8 +405,11 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
                 Dynamic Runtime Compile...
               </p>
               <p style={{ fontSize: '14px', color: 'var(--text-primary)', letterSpacing: '0.15em' }}>
-                単語の本質を編纂し、独自の幾何学範囲を鋳造中…
+                {pendingWords.map(p => `「${p.word}」`).join('')} の本質を編纂中…
               </p>
+              {slotsUsed < maxPieces && (
+                <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>待っている間に次の単語も入力できます</p>
+              )}
               <p style={{ fontSize: '12px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
                 ({scanStatus})
               </p>
@@ -387,7 +444,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
       <div className="piece-creator-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px', marginBottom: '30px' }}>
         {createdPieces.map((piece, index) => {
           return (
-            <div key={piece.id} style={{ position: 'relative', display: 'flex', width: '100%' }}>
+            <div key={piece.id} style={{ position: 'relative', display: 'flex', flexDirection: 'column', width: '100%' }}>
               <button
                 onClick={() => handleDelete(index)}
                 style={{
@@ -407,12 +464,49 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
                 ×
               </button>
               <PieceDetailCard piece={piece} />
+              {onlineConfigured && (
+                <button
+                  type="button"
+                  onClick={() => handleReport(index)}
+                  style={{ position: 'absolute', bottom: '12px', left: '12px', zIndex: 10, padding: '4px 10px', borderRadius: '999px', border: '1px solid rgba(185, 28, 28, 0.3)', background: '#fff', color: '#b91c1c', fontSize: '11px', fontWeight: 700 }}
+                >
+                  ⚠ 不適切な内容を報告
+                </button>
+              )}
+              {piece.abilities?.length ? <div style={{ margin: '8px 0 44px' }}><ProgramAbilityList piece={piece as Piece} /></div> : null}
+              <button
+                onClick={() => openXShare(`「${piece.word}」から能力駒《${piece.effect_name}》が生まれた！\n${piece.ability_genre || ''}`)}
+                style={{
+                  position: 'absolute',
+                  bottom: '12px',
+                  right: '12px',
+                  background: '#111',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '9999px',
+                  padding: '4px 12px',
+                  fontSize: '11px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  zIndex: 10,
+                }}
+                title="この駒をXでシェア"
+              >
+                𝕏 シェア
+              </button>
             </div>
           );
         })}
 
-        {Array.from({ length: maxPieces - createdPieces.length }).map((_, i) => (
-          <div key={i} className="cyber-panel" style={{ padding: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '340px', borderStyle: 'dashed', borderColor: 'var(--text-muted)', background: 'transparent', borderRadius: '16px' }}>
+        {pendingWords.map(p => (
+          <div key={p.key} className="cyber-panel" style={{ padding: '15px', display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center', justifyContent: 'center', minHeight: 'min(340px, 30vh)', borderStyle: 'dashed', borderColor: 'var(--color-gold)', background: 'transparent', borderRadius: '16px' }}>
+            <p style={{ color: 'var(--text-primary)', fontSize: '16px', fontWeight: 'bold' }}>「{p.word}」</p>
+            <p style={{ color: 'var(--color-gold)', fontSize: '12px', fontFamily: 'var(--font-cyber)' }}>生成中…</p>
+          </div>
+        ))}
+
+        {Array.from({ length: Math.max(0, maxPieces - slotsUsed) }).map((_, i) => (
+          <div key={i} className="cyber-panel" style={{ padding: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 'min(340px, 18vh)', borderStyle: 'dashed', borderColor: 'var(--text-muted)', background: 'transparent', borderRadius: '16px' }}>
             <p style={{ color: 'var(--text-muted)', fontSize: '12px', fontFamily: 'var(--font-cyber)' }}>
               空きスロット
             </p>

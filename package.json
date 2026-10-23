@@ -5,12 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/check-bundle-secrets.mjs",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "backfill": "tsx scripts/backfill.ts",
+    "verify:abilities": "tsx scripts/verify-abilities.ts",
+    "verify:programs": "tsx scripts/verify-programs.ts",
+    "simulate": "tsx scripts/simulate-games.ts",
+    "try:generate": "tsx scripts/try-generate.ts"
   },
   "dependencies": {
-    "firebase": "^12.14.0",
+    "@supabase/supabase-js": "^2.118.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "three": "^0.185.0"
@@ -28,6 +33,7 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
     "tailwindcss": "^4.3.1",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12"

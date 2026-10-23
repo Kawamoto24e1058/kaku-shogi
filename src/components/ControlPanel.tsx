@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { GameLog, Player, Piece, GamePhase } from '../types';
 import { PieceDetailCard } from './PieceDetailCard';
 import { AbilityTooltip } from './AbilityTooltip';
+import { ProgramAbilityList } from './ProgramAbilityList';
 
 interface ControlPanelProps {
   turn: Player;
@@ -367,26 +368,27 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
+    <div className="cp-stack" style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
       
       {/* Tactical Info Panel (Shoji Style) */}
-      <div className="cyber-panel" style={{ padding: '20px', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
+      <div className="cyber-panel cp-info" style={{ padding: '20px', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
         <h3 className="cyber-title" style={{ fontSize: '16px', marginBottom: '12px' }}>
           情報
         </h3>
         
         {/* Selected Piece Details */}
-        <div style={{ height: '380px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div className="cp-info-body" style={{ height: '380px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {(() => {
             const displayPiece = hoveredPiece || selectedPiece || null;
             if (!displayPiece) {
               return (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px dashed rgba(139, 92, 26, 0.15)', borderRadius: '12px', background: 'rgba(139, 92, 26, 0.01)' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-cyber)' }}>駒を選択またはホバーして能力表示</span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-cyber)' }}>駒をタップ（パソコンはマウスを重ねる）と能力を表示</span>
                 </div>
               );
             }
-            const hasCustomAbility = !!(displayPiece as Piece).custom_ability;
+            const hasPrograms = !!(displayPiece as Piece).abilities?.length;
+            const hasCustomAbility = !hasPrograms && !!(displayPiece as Piece).custom_ability;
             return (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {/* カスタム能力バッジカードを先頭に表示 */}
@@ -397,6 +399,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     isViewerOpponent={isViewerOpponent} 
                   />
                 )}
+                {hasPrograms && <ProgramAbilityList piece={displayPiece as Piece} />}
                 {/* 従来の詳細カード */}
                 <PieceDetailCard 
                   piece={displayPiece} 
@@ -436,7 +439,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       </div>
 
       {/* Captured Pieces & Shared Pool Panel */}
-      <div className="cyber-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', minHeight: '220px', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
+      <div className="cyber-panel cp-hands" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', minHeight: '220px', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
         <h3 className="cyber-title" style={{ fontSize: '16px', marginBottom: '4px' }}>
           手札・持ち駒ストック
         </h3>

@@ -27,3 +27,11 @@ dist-ssr
 .env
 .env.local
 .env.production
+.env.*
+!.env.example
+
+# Vercel / Firebase CLI
+.vercel
+firebase-debug.log
+firestore-debug.log
+.firebaserc

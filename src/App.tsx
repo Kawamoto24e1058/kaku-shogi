@@ -11,7 +11,6 @@ import {
   getCellLabel,
   getPieceLogicCode,
   getPieceAbilitySpec,
-  getPieceTrigger,
   isTriggerMatching,
   generateId,
   getValidDropCells,
@@ -24,8 +23,11 @@ import {
   requiresTargeting,
   getPieceActivationType,
   createEmptyTileBoard,
-  applyTileEffects
+  applyTileEffects,
+  drainTilePlacements
 } from './gameLogic';
+import { tickAbilityCooldowns } from './abilityEngine';
+import { ProgramAbilityList } from './components/ProgramAbilityList';
 import { PieceCreator } from './components/PieceCreator';
 import { GameBoard } from './components/GameBoard';
 import { ControlPanel } from './components/ControlPanel';
@@ -33,8 +35,19 @@ import { getRandomCachedPieces } from './aiGenerator';
 import { StartScreen } from './components/StartScreen';
 import { SakuraShower } from './components/SakuraShower';
 import { PersonaCutin, type CutinType } from './components/PersonaCutin';
-import { db } from './firebase';
-import { doc, getDoc, setDoc, updateDoc, onSnapshot, arrayUnion, collection, query, where, orderBy, limit, getDocs, deleteDoc } from 'firebase/firestore';
+import {
+  onlineConfigured, OnlineError, getMatch, createMatch, joinMatch, updateMatch, deleteMatch,
+  takeWaitingMatch, enqueueMatch, dequeueMatch, subscribeMatch, trimLogs,
+} from './onlineStore';
+import { openXShare, dailyShareUrl } from './share';
+import { dailyKey, dailyLabel, dailyWords } from '../shared/challenge';
+import { recordDailyResult } from './dailyRecord';
+import { chooseCpuMove } from './cpuAi';
+
+/** 対局中に再読み込みしたときに戻るための情報（sessionStorage のキー） */
+const RESUME_KEY = 'kaku_online_resume';
+/** 相手の接続が切れてから、離脱による勝ちを選べるようになるまでの秒数 */
+const OPPONENT_TIMEOUT_SEC = 90;
 
 const getOrCreateDeviceId = (): string => {
   if (typeof window === 'undefined' || !window.localStorage) {
@@ -49,11 +62,6 @@ const getOrCreateDeviceId = (): string => {
 };
 
 const AI_PIECE_WORDS = ['賢い人間', '訓練された猟犬', '防護プレート', '延焼ダイナマイト'];
-
-const k1 = 'AQ.Ab8RN6';
-const k2 = 'IgROzcO0hWqYuoeB9Olf';
-const k3 = 'R-sjK6i76fvZomSfj2mvmDzw';
-const geminiDefaultKey = k1 + k2 + k3;
 
 export interface AbilityAnimationState {
   source: [number, number] | null;
@@ -83,11 +91,6 @@ export const App: React.FC = () => {
     gote: savedGoteName,
   });
 
-  const sanitizeForFirestore = <T,>(obj: T): T => {
-    if (obj === undefined || obj === null) return obj;
-    return JSON.parse(JSON.stringify(obj));
-  };
-
   const getPlayerName = (owner: 'sente' | 'gote') => {
     return owner === 'sente'
       ? (playerNames.sente || 'プレイヤー1')
@@ -111,10 +114,38 @@ export const App: React.FC = () => {
     winner: null,
     logs: [],
     historyStates: [],
-    geminiApiKey: geminiDefaultKey,
     playerNames: { sente: savedSenteName, gote: savedGoteName },
     promotionPending: null,
   });
+
+  // 緊急スイッチ（/api/status）。取得できない場合はすべて有効として動かす
+  const [siteStatus, setSiteStatus] = useState<{ aiGeneration: boolean; onlineMatch: boolean; notice: string }>({
+    aiGeneration: true,
+    onlineMatch: onlineConfigured,
+    notice: '',
+  });
+  useEffect(() => {
+    fetch('/api/status')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (data && typeof data === 'object') {
+          setSiteStatus(prev => ({ ...prev, ...data, onlineMatch: Boolean(data.onlineMatch) && onlineConfigured }));
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+  const ONLINE_PAUSED_MESSAGE = onlineConfigured
+    ? 'オンライン対戦は混雑のため一時停止しています。AI対戦はそのまま遊べます。'
+    : 'オンライン対戦は準備中です。AI対戦はそのまま遊べます。';
+  /** 無料枠を使い切ったときなどのエラーを、利用者向けの案内に変換する */
+  const describeOnlineError = (err: unknown, fallback: string): string => {
+    if (!(err instanceof OnlineError)) return (err as Error | null)?.message || fallback;
+    if (err.code === 'quota') return 'オンライン対戦が混雑しています。AI対戦で遊ぶか、時間をおいてお試しください。';
+    if (err.code === 'forbidden') return 'オンライン対戦に接続できませんでした。ページを再読み込みしてお試しください。';
+    if (err.code === 'network') return '通信に失敗しました。通信状況を確認してお試しください。';
+    if (err.code === 'unconfigured') return err.message;
+    return fallback;
+  };
 
   const [setupSubPhase, setSetupSubPhase] = useState<'sente_create' | 'gote_create'>('sente_create');
   const [turnChangeAlert, setTurnChangeAlert] = useState<'sente' | 'gote' | null>(null);
@@ -139,6 +170,20 @@ export const App: React.FC = () => {
   const [selectedSharedPiece, setSelectedSharedPiece] = useState<{ piece: Piece; index: number } | null>(null);
   const [selectedCustomDeckPiece, setSelectedCustomDeckPiece] = useState<{ piece: Piece; index: number } | null>(null);
   const [hoveredPiece, setHoveredPiece] = useState<Piece | null>(null);
+  // スマホでタップした駒の能力を画面下に出す（盤から目を離さずに確認できるように）
+  // 画面が切り替わったら先頭から見せる（駒作成の長いページの途中から盤面が始まらないように）
+  const phaseGroup = state.phase === 'start' || state.phase === 'setup' ? state.phase : 'game';
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [phaseGroup]);
+  // どの画面で開いたかも持っておき、画面が変わったら（前の対局の駒を）出さない
+  const [inspected, setInspected] = useState<{ piece: Piece; phaseGroup: string } | null>(null);
+  // 人が指した手数（今日のお題の記録とシェアに使う。CPU の手は数えない）
+  const [playerMoves, setPlayerMoves] = useState<Record<Player, number>>({ sente: 0, gote: 0 });
+  // 今日のお題で遊んでいるときの日付キー
+  const [dailyChallenge, setDailyChallenge] = useState<{ key: string; gameId: string } | null>(null);
+  const inspectedPiece = inspected?.phaseGroup === phaseGroup ? inspected.piece : null;
+  const setInspectedPiece = (piece: Piece | null) => setInspected(piece ? { piece, phaseGroup } : null);
   const [validMoves, setValidMoves] = useState<[number, number][]>([]);
   const [vsAiMode, setVsAiMode] = useState<boolean>(true);
   const [onlineMode, setOnlineMode] = useState<boolean>(false);
@@ -480,8 +525,9 @@ export const App: React.FC = () => {
         const tempBoard = boardState.map(row => [...row]);
         tempBoard[ty][tx] = { ...trapPiece, isRevealed: true };
         
+        // 能力プログラムの駒は盤上に戻さず、取った駒がいる盤面のまま「取られたマス」を中心に発動させる
         const trapEffectRes = applyAutomatedEffect(
-          tempBoard,
+          trapPiece.abilities?.length ? boardState : tempBoard,
           [ty, tx],
           'ON_TAKEN',
           event.owner,
@@ -945,6 +991,7 @@ export const App: React.FC = () => {
     let res;
     try {
       res = executeMove(state.board, [sy, sx], [y, x], state.turn, promote, playerNames, vsAiMode, true, state.capturedPieces);
+      setPlayerMoves(prev => ({ ...prev, [state.turn]: prev[state.turn] + 1 }));
     } catch (err) {
       console.error("Failed to execute move:", err);
       setState(prev => ({
@@ -1027,6 +1074,18 @@ export const App: React.FC = () => {
             fromPosition: [sy, sx]
           });
         }
+        // 敵駒を取ったとき（能力プログラムの ON_CAPTURE）
+        if (res.capturedPiece && isTriggerMatching(landingPiece, 'ON_CAPTURE')) {
+          events.push({
+            id: generateId(),
+            priority: 2,
+            triggerType: 'ON_CAPTURE',
+            pieceId: landingPiece.id,
+            position: [y, x],
+            owner: landingPiece.owner,
+            fromPosition: [sy, sx]
+          });
+        }
         if (promote || landingPiece.isPromoted) {
           if (isTriggerMatching(landingPiece, 'ON_PROMOTE')) {
             events.push({
@@ -1042,10 +1101,6 @@ export const App: React.FC = () => {
         }
       }
     }
-
-    // Apply tile effects (fire, poison, ice, bomb)
-    const tileRes = applyTileEffects(res.board, state.tileBoard, state.turn, finalLogs);
-    res.board = tileRes.board;
 
     // Process the asynchronous queue!
     await processAbilityEventsQueue(res.board, events, nextCaptured, nextShared, finalLogs, nextDestroyedPieces);
@@ -1115,35 +1170,21 @@ export const App: React.FC = () => {
     }
   }, [showCheckOverlay]);
 
-  // ─── Firebase オンライン対局同期 ───
+  // ─── オンライン対局同期（Supabase。src/onlineStore.ts） ───
 
   // 1. 部屋作成処理
   const handleCreateRoom = async () => {
     setMatchmakingError('');
+    if (!siteStatus.onlineMatch) {
+      setMatchmakingError(ONLINE_PAUSED_MESSAGE);
+      return;
+    }
     try {
-      let code = '';
-      let isUnique = false;
-      let attempts = 0;
-      while (!isUnique && attempts < 10) {
-        code = Math.floor(100000 + Math.random() * 900000).toString();
-        const docRef = doc(db, 'matches', code);
-        const snap = await getDoc(docRef);
-        if (!snap.exists()) {
-          isUnique = true;
-        }
-        attempts++;
-      }
-
-      if (!isUnique) {
-        throw new Error('部屋コードの生成に失敗しました。もう一度お試しください。');
-      }
-
       const clientDeviceId = getOrCreateDeviceId();
       const initialB = initializeBoard();
       const senteName = playerNames.sente || 'プレイヤー1';
 
-      const docRef = doc(db, 'matches', code);
-      await setDoc(docRef, {
+      const code = await createMatch(code => ({
         id: code,
         status: 'waiting',
         senteDeviceId: clientDeviceId,
@@ -1159,7 +1200,6 @@ export const App: React.FC = () => {
         board: JSON.stringify(initialB),
         turn: 'sente',
         winner: null,
-        logsJson: JSON.stringify([]),
         capturedPieces: JSON.stringify({ sente: [], gote: [] }),
         sharedPieces: JSON.stringify([]),
         logs: [
@@ -1167,7 +1207,7 @@ export const App: React.FC = () => {
           { player: 'system', message: '対戦相手の入室を待っています…', type: 'system' }
         ],
         lastUpdated: Date.now()
-      });
+      }));
 
       setRoomCode(code);
       setMyRole('sente');
@@ -1177,26 +1217,29 @@ export const App: React.FC = () => {
       setOnlineMode(true);
     } catch (err: any) {
       console.error(err);
-      setMatchmakingError(err.message || '部屋の作成中にエラーが発生しました。');
+      setMatchmakingError(describeOnlineError(err, '部屋の作成中にエラーが発生しました。'));
     }
   };
 
   // 2. 部屋入室処理
   const handleJoinRoom = async (code: string) => {
     setMatchmakingError('');
+    if (!siteStatus.onlineMatch) {
+      setMatchmakingError(ONLINE_PAUSED_MESSAGE);
+      return;
+    }
     if (code.length !== 6) {
       setMatchmakingError('部屋コードは6桁の数字です。');
       return;
     }
     try {
-      const docRef = doc(db, 'matches', code);
-      const snap = await getDoc(docRef);
-      if (!snap.exists()) {
+      const match = await getMatch(code);
+      if (!match) {
         setMatchmakingError('指定された対局室が見つかりません。');
         return;
       }
 
-      const data = snap.data();
+      const data = match.data;
       if (data.status !== 'waiting') {
         setMatchmakingError('この対局室はすでに満室か、対局が開始されています。');
         return;
@@ -1204,13 +1247,16 @@ export const App: React.FC = () => {
 
       const clientDeviceId = getOrCreateDeviceId();
       const goteName = playerNames.gote || 'プレイヤー2';
-      await updateDoc(docRef, {
+      const joined = await joinMatch(code, {
         status: 'setup',
         goteDeviceId: clientDeviceId,
         goteName: goteName,
-        logs: arrayUnion({ player: 'system', message: `${goteName} が入室しました。能力駒の構築を開始します。`, type: 'system' }),
         lastUpdated: Date.now()
-      });
+      }, [{ player: 'system', message: `${goteName} が入室しました。能力駒の構築を開始します。`, type: 'system' }]);
+      if (!joined) {
+        setMatchmakingError('この対局室はすでに満室か、対局が開始されています。');
+        return;
+      }
 
       setRoomCode(code);
       setMyRole('gote');
@@ -1219,13 +1265,17 @@ export const App: React.FC = () => {
       setOnlineMode(true);
     } catch (err: any) {
       console.error(err);
-      setMatchmakingError('入室中にエラーが発生しました。');
+      setMatchmakingError(describeOnlineError(err, '入室中にエラーが発生しました。'));
     }
   };
 
   // 2.5. ランダムマッチング処理 (通信ハンドシェイク ＆ 10秒タイムアウト付き)
   const handleRandomMatchmaking = async () => {
     setMatchmakingError('');
+    if (!siteStatus.onlineMatch) {
+      setMatchmakingError(ONLINE_PAUSED_MESSAGE);
+      return;
+    }
     setIsSearchingMatch(true);
     setIsConnectingHandshake(false);
 
@@ -1240,39 +1290,27 @@ export const App: React.FC = () => {
     }, 10000);
 
     try {
-      const queueRef = collection(db, 'matchmaking_queue');
-      const q = query(queueRef, where('status', '==', 'waiting'), orderBy('createdAt', 'asc'), limit(1));
-      const querySnapshot = await getDocs(q);
-      
       const clientDeviceId = getOrCreateDeviceId();
-      
-      if (!querySnapshot.empty) {
-        const opponentDoc = querySnapshot.docs[0];
-        const opponentData = opponentDoc.data();
-        const code = opponentData.roomCode;
-        
-        if (opponentData.deviceId === clientDeviceId) {
-          await deleteDoc(doc(db, 'matchmaking_queue', opponentDoc.id));
-          setIsSearchingMatch(false);
-          handleRandomMatchmaking();
-          return;
-        }
+      const goteName = playerNames.gote || 'プレイヤー2';
 
-        await deleteDoc(doc(db, 'matchmaking_queue', opponentDoc.id));
-        
-        const docRef = doc(db, 'matches', code);
-        const goteName = playerNames.gote || 'プレイヤー2';
-        
+      // 待っている人がいれば、その部屋に後手として入る（取り出しは DB 側で1人ずつ）。
+      // 取り出した直後に相手がキャンセルしていた場合は、次の人を探す
+      let code: string | null = null;
+      for (let attempt = 0; attempt < 3 && !code; attempt++) {
+        const candidate = await takeWaitingMatch();
+        if (!candidate) break;
         // 接続確立中 (connecting) & ゲスト側ハンドシェイク済みを記録
-        await updateDoc(docRef, {
+        const joined = await joinMatch(candidate, {
           status: 'connecting',
           goteDeviceId: clientDeviceId,
           goteName: goteName,
           goteReadyHandshake: true,
-          logs: arrayUnion({ player: 'system', message: `${goteName} が入室しました。通信同期中…`, type: 'system' }),
           lastUpdated: Date.now()
-        });
-        
+        }, [{ player: 'system', message: `${goteName} が入室しました。通信同期中…`, type: 'system' }]);
+        if (joined) code = candidate;
+      }
+
+      if (code) {
         setRoomCode(code);
         setMyRole('gote');
         setIsRandomMatch(false);
@@ -1281,28 +1319,10 @@ export const App: React.FC = () => {
         setIsSearchingMatch(false);
         setIsConnectingHandshake(true);
       } else {
-        let code = '';
-        let isUnique = false;
-        let attempts = 0;
-        while (!isUnique && attempts < 10) {
-          code = Math.floor(100000 + Math.random() * 900000).toString();
-          const docRef = doc(db, 'matches', code);
-          const snap = await getDoc(docRef);
-          if (!snap.exists()) {
-            isUnique = true;
-          }
-          attempts++;
-        }
-
-        if (!isUnique) {
-          throw new Error('部屋コードの生成に失敗しました。もう一度お試しください。');
-        }
-
         const initialB = initializeBoard();
         const senteName = playerNames.sente || '先手プレイヤー';
 
-        const matchRef = doc(db, 'matches', code);
-        await setDoc(matchRef, {
+        const code = await createMatch(code => ({
           id: code,
           status: 'waiting',
           senteDeviceId: clientDeviceId,
@@ -1320,7 +1340,6 @@ export const App: React.FC = () => {
           board: JSON.stringify(initialB),
           turn: 'sente',
           winner: null,
-          logsJson: JSON.stringify([]),
           capturedPieces: JSON.stringify({ sente: [], gote: [] }),
           sharedPieces: JSON.stringify([]),
           logs: [
@@ -1328,15 +1347,9 @@ export const App: React.FC = () => {
             { player: 'system', message: 'ランダムな対戦相手の入室を待っています…', type: 'system' }
           ],
           lastUpdated: Date.now()
-        });
+        }));
 
-        const myQueueRef = doc(db, 'matchmaking_queue', clientDeviceId);
-        await setDoc(myQueueRef, {
-          deviceId: clientDeviceId,
-          roomCode: code,
-          status: 'waiting',
-          createdAt: Date.now()
-        });
+        await enqueueMatch(code);
 
         setRoomCode(code);
         setMyRole('sente');
@@ -1349,7 +1362,7 @@ export const App: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       if (matchmakingTimeoutRef.current) clearTimeout(matchmakingTimeoutRef.current);
-      setMatchmakingError(err.message || 'マッチング中にエラーが発生しました。');
+      setMatchmakingError(describeOnlineError(err, 'マッチング中にエラーが発生しました。'));
       setIsSearchingMatch(false);
       setIsConnectingHandshake(false);
     }
@@ -1366,16 +1379,13 @@ export const App: React.FC = () => {
     setIsRandomMatch(false);
     setIsConnectingHandshake(false);
     
-    const clientDeviceId = getOrCreateDeviceId();
-    
     try {
-      await deleteDoc(doc(db, 'matchmaking_queue', clientDeviceId));
-      
+      if (onlineConfigured) await dequeueMatch();
+
       if (roomCode && myRole === 'sente') {
-        const matchRef = doc(db, 'matches', roomCode);
-        const snap = await getDoc(matchRef);
-        if (snap.exists() && (snap.data().status === 'waiting' || snap.data().status === 'connecting')) {
-          await deleteDoc(matchRef);
+        const match = await getMatch(roomCode);
+        if (match && (match.data.status === 'waiting' || match.data.status === 'connecting')) {
+          await deleteMatch(roomCode);
         }
       }
     } catch (err) {
@@ -1387,7 +1397,7 @@ export const App: React.FC = () => {
     setOnlineMode(false);
   };
 
-  // 3. リアルタイムFirestoreリスナーおよび再同期ロジック (Mutual Confirmation)
+  // 3. リアルタイム購読および再同期ロジック (Mutual Confirmation)
   const updateLocalStateFromMatchData = useCallback((data: any) => {
     setMatchDoc(data);
 
@@ -1404,10 +1414,10 @@ export const App: React.FC = () => {
       setIsConnectingHandshake(true);
       // 先手側も後手側入室を確認した時点で senteReadyHandshake を記録
       if (myRole === 'sente' && !data.senteReadyHandshake && roomCode) {
-        updateDoc(doc(db, 'matches', roomCode), {
+        updateMatch(roomCode, {
           senteReadyHandshake: true,
           status: 'setup'
-        });
+        }).catch(err => console.error('Error confirming handshake:', err));
       }
     }
 
@@ -1454,6 +1464,8 @@ export const App: React.FC = () => {
           phase: 'playing',
           customPieces: data.customPieces,
           customDecks: data.customDecksJson ? JSON.parse(data.customDecksJson) : { sente: [], gote: [] },
+          tileBoard: data.tileBoardJson ? JSON.parse(data.tileBoardJson) : prev.tileBoard,
+          destroyedPieces: data.destroyedPiecesJson ? JSON.parse(data.destroyedPiecesJson) : prev.destroyedPieces,
           capturedPieces: JSON.parse(data.capturedPieces),
           sharedPieces: JSON.parse(data.sharedPieces),
           logs: data.logs || [],
@@ -1478,11 +1490,9 @@ export const App: React.FC = () => {
   const forceResyncGame = useCallback(async () => {
     if (!onlineMode || !roomCode) return;
     try {
-      const docRef = doc(db, 'matches', roomCode);
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        const data = snap.data();
-        updateLocalStateFromMatchData(data);
+      const match = await getMatch(roomCode);
+      if (match) {
+        updateLocalStateFromMatchData(match.data);
         console.log('--- [📱スマホ復帰検知] データベースから最新の盤面を強制再同期します ---');
       }
     } catch (err) {
@@ -1506,20 +1516,78 @@ export const App: React.FC = () => {
     };
   }, [forceResyncGame]);
 
-  // リアルタイムFirestoreリスナー
+  // リアルタイム購読（Realtime が使えないときはポーリングに切り替わる）。
+  // あわせて Presence で相手が接続中かを知る（null = Realtime が使えず分からない）
+  const [opponentOnline, setOpponentOnline] = useState<boolean | null>(null);
+  const [opponentOfflineSince, setOpponentOfflineSince] = useState<number | null>(null);
   useEffect(() => {
-    if (!onlineMode || !roomCode) return;
-
-    const docRef = doc(db, 'matches', roomCode);
-    const unsubscribe = onSnapshot(docRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        updateLocalStateFromMatchData(data);
-      }
+    if (!onlineMode || !roomCode || !myRole) return;
+    const opponent = myRole === 'sente' ? 'gote' : 'sente';
+    return subscribeMatch(roomCode, updateLocalStateFromMatchData, {
+      role: myRole,
+      onChange: roles => {
+        const online = roles === null ? null : roles.includes(opponent);
+        setOpponentOnline(online);
+        setOpponentOfflineSince(prev => (online === false ? (prev ?? Date.now()) : null));
+      },
     });
+  }, [onlineMode, roomCode, myRole, updateLocalStateFromMatchData]);
 
-    return () => unsubscribe();
-  }, [onlineMode, roomCode, updateLocalStateFromMatchData]);
+  // 再読み込みしても対局に戻れるよう、参加中の部屋をこのタブに覚えておく（秘密の文字列もタブ単位なので同じ人として戻れる）
+  useEffect(() => {
+    try {
+      // 消すのは対局が終わったときと、最初の画面に戻ったとき（handleResetGame）だけ。
+      // 起動直後（まだオンラインでない状態）に消すと、下の復帰処理が読む前に消えてしまう
+      if (onlineMode && roomCode && myRole && state.phase !== 'finished') {
+        sessionStorage.setItem(RESUME_KEY, JSON.stringify({ roomCode, myRole }));
+      } else if (onlineMode && state.phase === 'finished') {
+        sessionStorage.removeItem(RESUME_KEY);
+      }
+    } catch {
+      // 保存できない環境では復帰できないだけ
+    }
+  }, [onlineMode, roomCode, myRole, state.phase]);
+
+  // 起動時: 対局中に再読み込みしていたら、その対局に戻る
+  useEffect(() => {
+    let saved: { roomCode?: string; myRole?: 'sente' | 'gote' } | null;
+    try {
+      saved = JSON.parse(sessionStorage.getItem(RESUME_KEY) || 'null');
+    } catch {
+      saved = null;
+    }
+    if (!saved?.roomCode || !saved.myRole || !onlineConfigured) return;
+    const { roomCode: code, myRole: role } = saved;
+    getMatch(code).then(match => {
+      const status = match?.data.status;
+      if (!match || status === 'finished') {
+        sessionStorage.removeItem(RESUME_KEY);
+        return;
+      }
+      setVsAiMode(false);
+      setOnlineMode(true);
+      setMyRole(role);
+      setRoomCode(code);
+      if (status === 'waiting') setIsWaitingForOpponent(true);
+    }).catch(err => console.warn('[online] resume failed:', err));
+  }, []);
+
+  // 相手の接続が切れてからの経過時間を表示するための時計（切れているときだけ動かす）
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!opponentOfflineSince) return;
+    const timer = setInterval(() => setClockNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [opponentOfflineSince]);
+
+  /** 投了・相手の離脱でオンライン対局を終わらせる */
+  const endOnlineMatch = (winner: Player, message: string) => {
+    if (!onlineMode || !roomCode) return;
+    const log: GameLog = { id: generateId(), timestamp: new Date().toLocaleTimeString(), player: winner, message, type: 'system' };
+    const logs = [...state.logs, log];
+    setState(prev => ({ ...prev, phase: 'finished', winner, logs }));
+    syncOnlineState(state.board, state.turn, 'finished', winner, state.capturedPieces, state.sharedPieces, state.customDecks, state.destroyedPieces, logs);
+  };
 
 
   // 4. 先手側：両者の概念構築完了検知と自動配置
@@ -1587,14 +1655,13 @@ export const App: React.FC = () => {
         return initializedPiece;
       });
 
-      const nextLogs = [
+      const nextLogs = trimLogs([
         ...matchDoc.logs,
         { player: 'system', message: '能力駒が自陣地にランダム配置されました。', type: 'system' },
         { player: 'system', message: '対局を開始します！', type: 'system' }
-      ];
+      ]);
 
-      const docRef = doc(db, 'matches', roomCode);
-      updateDoc(docRef, sanitizeForFirestore({
+      updateMatch(roomCode, {
         status: 'playing',
         board: JSON.stringify(nextBoard),
         customPieces: { sente: initializedSente, gote: initializedGote },
@@ -1604,9 +1671,8 @@ export const App: React.FC = () => {
         sharedPieces: JSON.stringify([]),
         turn: 'sente',
         logs: nextLogs,
-        logsJson: JSON.stringify(nextLogs),
         lastUpdated: Date.now()
-      })).catch(err => console.error("Error setting up online board:", err));
+      }).catch(err => console.error("Error setting up online board:", err));
     }
   }, [onlineMode, roomCode, myRole, matchDoc]);
 
@@ -1620,11 +1686,11 @@ export const App: React.FC = () => {
     sharedPieces: Piece[],
     customDecks: GameState['customDecks'] = state.customDecks,
     destroyedPieces: Piece[] = state.destroyedPieces,
-    logs: GameLog[] = state.logs
+    logs: GameLog[] = state.logs,
+    tileBoard: GameState['tileBoard'] = state.tileBoard
   ) => {
     if (!onlineMode || !roomCode) return;
-    const docRef = doc(db, 'matches', roomCode);
-    updateDoc(docRef, {
+    updateMatch(roomCode, {
       board: JSON.stringify(board),
       turn: turn,
       status: phase,
@@ -1633,11 +1699,17 @@ export const App: React.FC = () => {
       sharedPieces: JSON.stringify(sharedPieces),
       customDecksJson: JSON.stringify(customDecks),
       destroyedPiecesJson: JSON.stringify(destroyedPieces),
-      logsJson: JSON.stringify(logs),
-      logs: logs,
+      // 能力で置かれた地形（炎・毒など）も相手に送る（以前は送っておらず、双方の盤面がずれていた）
+      tileBoardJson: JSON.stringify(tileBoard),
+      logs: trimLogs(logs),
       lastUpdated: Date.now()
-    }).catch(err => console.error("Error syncing online state:", err));
-  }, [onlineMode, roomCode, state.customDecks, state.destroyedPieces, state.logs]);
+    }).catch(err => {
+      console.error("Error syncing online state:", err);
+      // 同期に失敗すると相手に手が届かないので、黙って進めずに案内する
+      setMatchmakingError(describeOnlineError(err, '対戦相手との同期に失敗しました。通信状況を確認してください。'));
+      alert(describeOnlineError(err, '対戦相手との同期に失敗しました。通信状況を確認してください。'));
+    });
+  }, [onlineMode, roomCode, state.customDecks, state.destroyedPieces, state.logs, state.tileBoard]);
 
   // Helpers to push logs
   const addLog = (message: string, type: GameLog['type'], player: Player) => {
@@ -1908,6 +1980,7 @@ export const App: React.FC = () => {
               updated.coolDownTurnsRemaining = nextCD;
               updated.cooldownTurnsRemaining = nextCD;
             }
+            updated.abilityCooldowns = tickAbilityCooldowns(updated).abilityCooldowns;
           }
         }
         
@@ -1971,8 +2044,11 @@ export const App: React.FC = () => {
             }
           }
 
-          // Mind Control Reversion
-          if (updated.isMindControlled && updated.originalPlayer) {
+          // Mind Control Reversion（能力プログラムの CONTROL は controlDuration の手番数だけ続く）
+          if (updated.isMindControlled && updated.originalPlayer && (updated.controlDuration ?? 0) > 1) {
+            updated.controlDuration = (updated.controlDuration ?? 0) - 1;
+          } else if (updated.isMindControlled && updated.originalPlayer) {
+            updated.controlDuration = undefined;
             updatedLogsList.push({
               id: generateId(),
               timestamp: new Date().toLocaleTimeString(),
@@ -2145,6 +2221,17 @@ export const App: React.FC = () => {
       return;
     }
 
+    // 地形効果: この手番中に能力で置かれたマスを反映し、効果の適用と残り手番の経過を1回だけ行う
+    let nextTileBoard = state.tileBoard.map(row => [...row]);
+    for (const { y, x, tile } of drainTilePlacements()) {
+      nextTileBoard[y][x] = tile;
+    }
+    const tileLogs: Omit<GameLog, 'id' | 'timestamp'>[] = [];
+    const tileRes = applyTileEffects(currentBoard, nextTileBoard, activePlayer, tileLogs);
+    currentBoard = tileRes.board;
+    nextTileBoard = tileRes.tileBoard;
+    currentLogs.push(...tileLogs.map(l => ({ ...l, id: generateId(), timestamp: new Date().toLocaleTimeString() })));
+
     const isChecked = isKingInCheck(currentBoard, nextPlayer);
     if (isChecked) {
       currentLogs.push({
@@ -2167,6 +2254,7 @@ export const App: React.FC = () => {
         destroyedPieces: currentDestroyedPieces,
         sharedPieces: currentShared,
         turn: nextPlayer,
+        tileBoard: nextTileBoard,
         selectedCell: null,
         activeAbilityMode: false,
         activeAbilitySource: null,
@@ -2186,10 +2274,12 @@ export const App: React.FC = () => {
       'playing',
       null,
       currentCaptured,
-      nextShared,
+      // 手番終了の処理で墓地に送られた駒も含める（以前は処理前の nextShared を送っていた）
+      currentShared,
       nextCustomDecks,
       currentDestroyedPieces,
-      currentLogs
+      currentLogs,
+      nextTileBoard
     );
   };
 
@@ -2821,20 +2911,16 @@ export const App: React.FC = () => {
   // Setup Phase: Piece creator callbacks
   const handlePiecesCreated = async (pieces: Piece[]) => {
     if (onlineMode) {
-      const docRef = doc(db, 'matches', roomCode);
-      const sanitizedPieces = sanitizeForFirestore(pieces);
       if (myRole === 'sente') {
-        await updateDoc(docRef, {
-          sentePieces: sanitizedPieces,
+        await updateMatch(roomCode, {
+          sentePieces: pieces,
           sentePiecesReady: true,
-          logs: arrayUnion({ player: 'system', message: `▲ ${playerNames.sente || 'プレイヤー1'} が能力駒の構築を完了しました！`, type: 'system' })
-        });
+        }, [{ player: 'system', message: `▲ ${playerNames.sente || 'プレイヤー1'} が能力駒の構築を完了しました！`, type: 'system' }]);
       } else {
-        await updateDoc(docRef, {
-          gotePieces: sanitizedPieces,
+        await updateMatch(roomCode, {
+          gotePieces: pieces,
           gotePiecesReady: true,
-          logs: arrayUnion({ player: 'system', message: `▽ ${playerNames.gote || 'プレイヤー2'} が能力駒の構築を完了しました！`, type: 'system' })
-        });
+        }, [{ player: 'system', message: `▽ ${playerNames.gote || 'プレイヤー2'} が能力駒の構築を完了しました！`, type: 'system' }]);
       }
       return;
     }
@@ -2844,7 +2930,7 @@ export const App: React.FC = () => {
       addLog(`${playerNames.sente || 'プレイヤー1'} の能力駒スキャンが完了しました。`, 'system', 'sente');
 
       if (vsAiMode) {
-        addLog('🤖 Gemini AI の能力駒をキャッシュから高速ロード中...', 'system', 'gote');
+        addLog('🤖 CPU の能力駒をキャッシュから高速ロード中...', 'system', 'gote');
 
         // キャッシュ済み駒をランダムに4枚取得（なければオフライン生成）
         const gotePiecesData = getRandomCachedPieces(AI_PIECE_WORDS.length);
@@ -2865,7 +2951,7 @@ export const App: React.FC = () => {
         });
 
         setPiecesToPlace(prev => ({ ...prev, gote: gotePieces }));
-        addLog(`🤖 Gemini AI の能力駒ロード完了（${gotePieces.map(p => isStealthPiece(p) ? '？' : p.word).join('・')}）`, 'system', 'gote');
+        addLog(`🤖 CPU の能力駒ロード完了（${gotePieces.map(p => isStealthPiece(p) ? '？' : p.word).join('・')}）`, 'system', 'gote');
         autoPlacePieces(pieces, gotePieces);
       } else {
         setSetupSubPhase('gote_create');
@@ -2931,7 +3017,7 @@ export const App: React.FC = () => {
 
   // AI placement logic (9x9)
   const triggerAiPlacement = (currentBoard: Board, aiPieces: Piece[]) => {
-    addLog('🤖 Gemini AI が駒を初期配置中...', 'system', 'gote');
+    addLog('🤖 CPU が駒を初期配置中...', 'system', 'gote');
     let nextBoard = currentBoard.map(row => [...row]);
     
     // Rows 0, 1, 2
@@ -2953,7 +3039,7 @@ export const App: React.FC = () => {
     });
 
     setPiecesToPlace(prev => ({ ...prev, gote: [] }));
-    addLog('🤖 Gemini AI の配置完了。対局を開始します！', 'system', 'gote');
+    addLog('🤖 CPU の配置完了。対局を開始します！', 'system', 'gote');
     
     setState(prev => ({
       ...prev,
@@ -3009,6 +3095,7 @@ export const App: React.FC = () => {
         message: `${targetPiece.word}を${selectedCapturedPiece ? '持ち駒' : (selectedSharedPiece ? '共有プール' : 'カスタムデッキ')}から打ちました。`,
         type: 'move'
       };
+      setPlayerMoves(prev => ({ ...prev, [state.turn]: prev[state.turn] + 1 }));
       const nextCaptured = {
         ...state.capturedPieces,
         [state.turn]: nextHand,
@@ -3205,9 +3292,11 @@ export const App: React.FC = () => {
 
 
   const handleResetGame = () => {
+    drainTilePlacements();
     setState(prev => ({
       ...prev,
       board: initializeBoard(),
+      tileBoard: createEmptyTileBoard(),
       turn: 'sente' as Player,
       phase: 'start',
       customPieces: { sente: [], gote: [] },
@@ -3235,85 +3324,30 @@ export const App: React.FC = () => {
     setIsWaitingForOpponent(false);
     setMatchmakingError('');
     setMatchDoc(null);
+    setDailyChallenge(null);
+    setPlayerMoves({ sente: 0, gote: 0 });
+    try {
+      sessionStorage.removeItem(RESUME_KEY);
+    } catch {
+      // 保存領域が使えない環境では何もしない
+    }
   };
 
   // AI Opponent Solver (9x9)
   useEffect(() => {
     if (!vsAiMode || state.turn !== 'gote' || state.phase !== 'playing' || state.winner) return;
 
+    let cancelled = false;
     const runAiTurn = async () => {
       await new Promise(r => setTimeout(r, 1200));
 
+      if (cancelled) return;
       const board = state.board;
-      let aiMoves: {
-        type: 'move' | 'action' | 'drop' | 'shared_drop' | 'custom_deck_drop';
-        from?: [number, number];
-        to: [number, number];
-        weight: number;
-        piece?: Piece;
-        index?: number;
-      }[] = [];
-
-      for (let y = 0; y < BOARD_SIZE; y++) {
-        for (let x = 0; x < BOARD_SIZE; x++) {
-          const piece = board[y][x];
-          if (piece && piece.owner === 'gote') {
-            // 1. Regular Moves
-            const moves = getValidMoves(y, x, board);
-            moves.forEach(([ny, nx]) => {
-              const target = board[ny][nx];
-              let weight = 10;
-              if (target) {
-                if (target.isKing) weight = 1000;
-                else if (target.isHisha || target.isKaku) weight = 200; // 大駒の捕獲価値
-                else if (!target.isPawn) weight = 100; // カスタム駒の捕獲価値
-                else if (getPieceTrigger(target) === 'ON_TAKEN' && getPieceLogicCode(target) === 'kill_adjacent') {
-                  weight = 1; // 罠の自爆は避ける
-                } else {
-                  weight = 40; // 歩兵などの捕獲価値
-                }
-              }
-              aiMoves.push({ type: 'move', from: [y, x], to: [ny, nx], weight });
-            });
-          }
-        }
-      }
-
-      // 3. Drop pieces from hand
-      const aiHand = state.capturedPieces.gote;
-      if (aiHand.length > 0) {
-        aiHand.forEach((piece, index) => {
-          const validDropSpots = getValidDropCells(board, piece, 'gote');
-          validDropSpots.forEach(([ey, ex]) => {
-            let weight = 8;
-            if (ey >= 3) weight += 5; // drop closer to Sente front
-            aiMoves.push({ type: 'drop', to: [ey, ex], piece, index, weight });
-          });
-        });
-      }
-
-      // 3.5. Drop pieces from custom deck
-      const aiCustomDeck = state.customDecks.gote;
-      if (aiCustomDeck && aiCustomDeck.length > 0) {
-        aiCustomDeck.forEach((piece, index) => {
-          const validDropSpots = getValidDropCells(board, piece, 'gote');
-          validDropSpots.forEach(([ey, ex]) => {
-            let weight = 15; // Give slightly higher weight to playing custom pieces!
-            if (ey >= 3) weight += 5; // drop closer to Sente front
-            aiMoves.push({ type: 'custom_deck_drop', to: [ey, ex], piece, index, weight });
-          });
-        });
-      }
-
-      if (aiMoves.length === 0) {
+      const chosenMove = chooseCpuMove(board, state.capturedPieces.gote, state.customDecks.gote || []);
+      if (!chosenMove) {
         handlePassTurn();
         return;
       }
-
-      aiMoves.sort((a, b) => b.weight - a.weight);
-      const maxWeight = aiMoves[0].weight;
-      const bestMoves = aiMoves.filter(m => m.weight === maxWeight);
-      const chosenMove = bestMoves[Math.floor(Math.random() * bestMoves.length)];
 
       // Execute AI
       if (chosenMove.type === 'move' && chosenMove.from) {
@@ -3401,6 +3435,17 @@ export const App: React.FC = () => {
             fromPosition: chosenMove.from
           });
         }
+        if (landingPiece && landingPiece.owner === 'gote' && res.capturedPiece && isTriggerMatching(landingPiece, 'ON_CAPTURE')) {
+          events.push({
+            id: generateId(),
+            priority: 2,
+            triggerType: 'ON_CAPTURE',
+            pieceId: landingPiece.id,
+            position: [chosenMove.to[0], chosenMove.to[1]],
+            owner: 'gote',
+            fromPosition: chosenMove.from
+          });
+        }
 
         // Process the asynchronous queue!
         await processAbilityEventsQueue(res.board, events, nextCaptured, nextShared, finalLogs, nextDestroyedPieces);
@@ -3452,6 +3497,9 @@ export const App: React.FC = () => {
     };
 
     runAiTurn();
+    return () => {
+      cancelled = true;
+    };
   }, [state.turn, state.phase, vsAiMode]);
 
   // CSS positioning for laser
@@ -3544,6 +3592,25 @@ export const App: React.FC = () => {
       {/* Background Sakura Shower */}
       <SakuraShower />
       
+      {/* スマホ: タップした駒の能力（画面下のシート） */}
+      {inspectedPiece && state.phase !== 'start' && state.phase !== 'setup' && (
+        <div className="mobile-peek" role="dialog" aria-label={`${inspectedPiece.word} の能力`}>
+          <div className="mobile-peek-head">
+            <div style={{ minWidth: 0 }}>
+              <div className="mobile-peek-title">
+                {inspectedPiece.owner === 'sente' ? '▲' : '▽'} {inspectedPiece.word}
+                {inspectedPiece.effect_name && !inspectedPiece.isKing && !inspectedPiece.isPawn && <span className="mobile-peek-sub">《{inspectedPiece.isPromoted ? inspectedPiece.promoted_effect?.effect_name : inspectedPiece.effect_name}》</span>}
+              </div>
+            </div>
+            <button type="button" className="mobile-peek-close" onClick={() => setInspectedPiece(null)} aria-label="閉じる">×</button>
+          </div>
+          <div className="mobile-peek-body">
+            {inspectedPiece.abilities?.length
+              ? <ProgramAbilityList piece={inspectedPiece} />
+              : <p style={{ fontSize: '12px', lineHeight: 1.7, whiteSpace: 'pre-line', margin: 0 }}>{getPieceDescription(inspectedPiece) || '特殊能力はありません。'}</p>}
+          </div>
+        </div>
+      )}
       {/* ターン交代サイバーアラート */}
       {turnChangeAlert && (
         <div className={`turn-change-overlay ${turnChangeAlert === 'sente' ? 'sente-turn-alert' : 'gote-turn-alert'}`}>
@@ -3600,14 +3667,15 @@ export const App: React.FC = () => {
       )}
 
       {/* Header */}
-      <header className="cyber-panel" style={{ padding: '12px 24px', margin: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
+      {/* スタート画面は独自の見出しがあるので、共通ヘッダーは出さない（スマホで見出しが二重になっていた） */}
+      {state.phase !== 'start' && <header className="cyber-panel" style={{ padding: '12px 24px', margin: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
         <h1 className="cyber-title app-header-title" style={{ fontSize: '20px', borderBottom: 'none', paddingBottom: 0 }}>
-          拡張将棋
+          架空将棋
         </h1>
         <div className="app-header-subtitle" style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-cyber)' }}>
           SAPIENS RUNTIME v3.0.0
         </div>
-      </header>
+      </header>}
 
       {/* Main Container */}
       <main className="main-content">
@@ -3634,16 +3702,26 @@ export const App: React.FC = () => {
               localStorage.setItem('shogi_player_name_sente', names.sente);
               localStorage.setItem('shogi_player_name_gote', names.gote);
             }}
+            siteNotice={[siteStatus.notice, siteStatus.onlineMatch ? '' : ONLINE_PAUSED_MESSAGE].filter(Boolean).join(' ')}
             onStartGame={() => {
+              setDailyChallenge(null);
+              setPlayerMoves({ sente: 0, gote: 0 });
               setState(prev => ({ ...prev, phase: 'setup' }));
               addLog('対局準備を開始します。能力駒を作成してください。', 'system', 'sente');
+            }}
+            onStartDaily={() => {
+              setVsAiMode(true);
+              setOnlineMode(false);
+              setDailyChallenge({ key: dailyKey(), gameId: generateId() });
+              setPlayerMoves({ sente: 0, gote: 0 });
+              setState(prev => ({ ...prev, phase: 'setup' }));
+              addLog(`今日のお題（${dailyLabel()}）に挑戦します。`, 'system', 'sente');
             }}
           />
         ) : state.phase === 'setup' ? (
           <PieceCreator
             player={state.turn}
             onPiecesReady={handlePiecesCreated}
-            geminiApiKey={state.geminiApiKey}
             vsAiMode={vsAiMode}
             setupSubPhase={setupSubPhase}
             onlineMode={onlineMode}
@@ -3659,6 +3737,7 @@ export const App: React.FC = () => {
                 : false
             }
             playerNames={playerNames}
+            presetWords={dailyChallenge ? dailyWords(dailyChallenge.key) : undefined}
           />
         ) : (
           <div className="game-board-container">
@@ -3686,6 +3765,55 @@ export const App: React.FC = () => {
                     </button>
                   </div>
                 )}
+                {/* 手番表示（スマホでは盤の上にしか情報が見えないため常に出す） */}
+                {state.phase !== 'finished' && (() => {
+                  const turnName = state.turn === 'sente'
+                    ? `▲ ${playerNames.sente || 'プレイヤー1'}`
+                    : `▽ ${playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')}`;
+                  const mine = isPieceOwnerHuman(state.turn) && (onlineMode || vsAiMode);
+                  return (
+                    <>
+                    <div className="turn-strip" role="status" aria-live="polite">
+                      <span className={mine ? 'turn-strip-me' : undefined}>{mine ? 'あなたの手番' : `${turnName} の手番`}</span>
+                      <span className="turn-strip-sub">
+                        {mine ? '駒をタップして動かす' : vsAiMode ? 'AIが考えています…' : onlineMode ? '相手の手を待っています…' : '交代で指してください'}
+                      </span>
+                      {onlineMode && myRole && state.phase === 'playing' && (
+                        <button
+                          type="button"
+                          className="turn-strip-resign"
+                          onClick={() => {
+                            if (!window.confirm('投了して負けを認めますか？')) return;
+                            const opponent: Player = myRole === 'sente' ? 'gote' : 'sente';
+                            endOnlineMatch(opponent, `${playerNames[myRole] || (myRole === 'sente' ? '先手' : '後手')} が投了しました。`);
+                          }}
+                        >
+                          投了
+                        </button>
+                      )}
+                    </div>
+                    {onlineMode && myRole && opponentOnline === false && opponentOfflineSince && state.phase === 'playing' && (() => {
+                      const waited = Math.floor((clockNow - opponentOfflineSince) / 1000);
+                      const remaining = Math.max(0, OPPONENT_TIMEOUT_SEC - waited);
+                      return (
+                        <div className="opponent-offline" role="alert">
+                          <span>📡 相手の接続が切れています（{waited}秒）</span>
+                          {remaining > 0 ? (
+                            <span className="turn-strip-sub">あと{remaining}秒で勝ちを選べます</span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => endOnlineMatch(myRole, '相手の接続が一定時間切れたため、勝ちになりました。')}
+                            >
+                              勝ちにして終わる
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    </>
+                  );
+                })()}
                 <GameBoard
                   board={state.board}
                   tileBoard={state.tileBoard}
@@ -3708,6 +3836,7 @@ export const App: React.FC = () => {
                   onCustomDeckPieceClick={handleCustomDeckPieceClick}
                   onSharedPieceClick={handleSharedPieceClick}
                   onHoverPiece={setHoveredPiece}
+                  onInspectPiece={setInspectedPiece}
                   vsAiMode={vsAiMode}
                   isSenteChecked={isKingInCheck(state.board, 'sente')}
                   isGoteChecked={isKingInCheck(state.board, 'gote')}
@@ -3874,6 +4003,10 @@ export const App: React.FC = () => {
           detailsText = `${winnerName} が ${loserName} に勝利しました。卓越した戦略による完全勝利です。`;
         }
 
+        // 今日のお題: 勝ったら手数を記録し、自己ベストと比べる
+        const daily = dailyChallenge && vsAiMode ? recordDailyResult(dailyChallenge.key, dailyChallenge.gameId, isUserWinner === true, playerMoves.sente) : null;
+        const abilityCount = state.logs.filter(l => l.type === 'ability' && l.player === (onlineMode ? myRole : 'sente')).length;
+
         return (
           <div className={`game-over-overlay ${themeClass}`}>
             <div className="game-over-panel">
@@ -3887,8 +4020,35 @@ export const App: React.FC = () => {
                 {winnerName} が {loserName} に勝利しました。<br />
                 {detailsText}
               </p>
+              {daily && (
+                <div className="game-over-daily">
+                  📅 今日のお題 {dailyLabel(dailyChallenge!.key)}：{isUserWinner ? `${playerMoves.sente}手で勝利` : '敗北'}
+                  {daily.best !== null && <>（自己ベスト {daily.best}手{daily.isNewBest ? ' 🎉 更新！' : ''}）</>}
+                </div>
+              )}
               <button className="cyber-btn game-over-btn" onClick={handleResetGame}>
                 再起動 (REBOOT SYSTEM)
+              </button>
+              <button
+                className="cyber-btn game-over-btn"
+                style={{ marginTop: '12px', background: '#111', color: '#fff' }}
+                onClick={() => {
+                  const side = onlineMode ? (myRole || 'sente') : 'sente';
+                  const words = state.customPieces[side].map(p => `「${p.word}」`).join('');
+                  const stats = `⚡能力発動 ${abilityCount}回`;
+                  if (daily) {
+                    const result = isUserWinner ? `🏆 ${playerMoves.sente}手でCPUに勝利` : '💀 CPUに敗北…';
+                    openXShare(
+                      `📅 架空将棋 今日のお題 ${dailyLabel(dailyChallenge!.key)}\n${words}\n${result}\n${stats}\nあなたは何手で勝てる？`,
+                      dailyShareUrl(),
+                    );
+                    return;
+                  }
+                  const head = isUserWinner === true ? `🏆 ${playerMoves[side]}手で勝利！` : isUserWinner === false ? '💀 敗北…' : `${winnerName} の勝利！`;
+                  openXShare(`架空将棋で${head}${words ? `\n使った駒: ${words}` : ''}\n${stats}\n単語からAIが能力駒を作る将棋で遊んでみて`);
+                }}
+              >
+                𝕏 結果をシェア
               </button>
             </div>
           </div>

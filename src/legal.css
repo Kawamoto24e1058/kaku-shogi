@@ -1,0 +1,46 @@
+/* 利用規約・プライバシーポリシー用のシンプルなスタイル */
+:root {
+  --bg: #f7f4ee;
+  --fg: #1f1a14;
+  --muted: #6b6257;
+  --line: #ddd3c4;
+  --accent: #8b5a1a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16130f;
+    --fg: #f1e9da;
+    --muted: #b3a690;
+    --line: #3a332a;
+    --accent: #e0b56b;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'Noto Serif JP', 'Hiragino Mincho ProN', serif;
+  line-height: 1.9;
+}
+
+main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 32px 16px 64px;
+}
+
+h1 { font-size: 1.6rem; margin: 8px 0 4px; letter-spacing: 0.08em; }
+h2 { font-size: 1.1rem; margin: 32px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.meta { color: var(--muted); font-size: 0.85rem; margin: 0 0 24px; }
+a { color: var(--accent); }
+.back, .links { font-size: 0.9rem; }
+.links { margin-top: 40px; }
+ul { padding-left: 1.4em; }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; display: block; overflow-x: auto; }
+th, td { border: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }
+th { background: color-mix(in srgb, var(--line) 40%, transparent); white-space: nowrap; }

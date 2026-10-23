@@ -1,5 +1,6 @@
 import type { Board, Piece, Player, GameLog, AbilityEvent, AbilitySpec, CustomAbility, Position, TileEffectType, TileState, ActivationType } from './types';
 import { decrementCacheUses } from './aiGenerator';
+import { programTriggerMatches, runAbilityPrograms } from './abilityEngine';
 
 export const BOARD_SIZE = 9;
 
@@ -60,6 +61,8 @@ export function getPieceAbilitySpec(piece: Piece): AbilitySpec | undefined {
 }
 
 export function getPieceActivationType(piece: Piece): ActivationType {
+  // 能力プログラムはすべて自動で発動する（手動で対象を選ぶ能力は無い）
+  if (piece.abilities?.length) return 'AUTO_TRIGGER';
   const spec = getPieceAbilitySpec(piece);
   if (spec && spec.activation_type) return spec.activation_type;
   if (piece.custom_ability && piece.custom_ability.activation_type) return piece.custom_ability.activation_type;
@@ -86,6 +89,7 @@ export function getPieceActivationType(piece: Piece): ActivationType {
  */
 export function requiresTargeting(ability: any): boolean {
   if (!ability) return false;
+  if (Array.isArray(ability.abilities) && ability.abilities.length > 0) return false;
 
   // Piece または CustomAbility または AbilitySpec を吸収
   const spec = ability.ability_spec
@@ -136,6 +140,29 @@ export function requiresTargeting(ability: any): boolean {
   return false;
 }
 
+const TILE_TYPE_BY_ACTION: Record<string, TileEffectType> = {
+  SET_TILE_FIRE: 'FIRE_ZONE',
+  SET_TILE_POISON: 'POISON_MUD',
+  SET_TILE_ICE: 'ICE_FLOOR',
+  SET_TILE_BOMB: 'TIME_BOMB',
+  SET_TILE_TRAP: 'STEALTH_TRAP',
+};
+
+// 能力の実行中に置かれた地形効果。能力の戻り値の型を全経路で変えずに済むよう、ここに溜めて
+// 手番の確定時 (App の finalizeTurn) に drainTilePlacements() で取り出して GameState.tileBoard に反映する。
+let pendingTilePlacements: { y: number; x: number; tile: TileState }[] = [];
+
+/** 能力プログラム（src/abilityEngine.ts）から地形効果を置くための入口 */
+export function queueTilePlacement(y: number, x: number, tile: TileState): void {
+  pendingTilePlacements.push({ y, x, tile });
+}
+
+export function drainTilePlacements(): { y: number; x: number; tile: TileState }[] {
+  const drained = pendingTilePlacements;
+  pendingTilePlacements = [];
+  return drained;
+}
+
 export function createEmptyTileBoard(): (TileState | null)[][] {
   const tb: (TileState | null)[][] = [];
   for (let r = 0; r < 9; r++) {
@@ -155,7 +182,8 @@ export function applyTileEffects(
   logs: Omit<GameLog, 'id' | 'timestamp'>[]
 ): { board: Board; tileBoard: (TileState | null)[][]; triggered: boolean } {
   let nextBoard = board.map(row => [...row]);
-  let nextTileBoard = tileBoard.map(row => [...row]);
+  // タイルオブジェクトは state と共有しているので、複製してから残り手番を減らす
+  let nextTileBoard = tileBoard.map(row => row.map(t => (t ? { ...t } : null)));
   let triggered = false;
 
   for (let r = 0; r < 9; r++) {
@@ -165,7 +193,7 @@ export function applyTileEffects(
 
       const p = getBoardPiece(nextBoard, { x: c, y: r });
       if (tile.effectType === 'FIRE_ZONE') {
-        if (p && !p.isKing) {
+        if (p && !p.isKing && p.owner !== tile.ownerPlayer) {
           setBoardPiece(nextBoard, { x: c, y: r }, null);
           triggered = true;
           logs.push({
@@ -183,6 +211,28 @@ export function applyTileEffects(
             message: `【毒沼麻痺】${p.word} (${getCellLabel(r, c)}) は毒沼に足を取られ、1手番麻痺状態になりました！`,
             type: 'ability'
           });
+        }
+      } else if (tile.effectType === 'ICE_FLOOR') {
+        if (p && !p.isKing && p.owner !== tile.ownerPlayer && !(p.stunTurnsRemaining && p.stunTurnsRemaining > 0)) {
+          setBoardPiece(nextBoard, { x: c, y: r }, { ...p, stunTurnsRemaining: 1 });
+          triggered = true;
+          logs.push({
+            player: activePlayer,
+            message: `【氷床】${p.word} (${getCellLabel(r, c)}) は凍った床に足を取られ、1手番動けなくなりました！`,
+            type: 'ability'
+          });
+        }
+      } else if (tile.effectType === 'STEALTH_TRAP') {
+        if (p && !p.isKing && p.owner !== tile.ownerPlayer) {
+          setBoardPiece(nextBoard, { x: c, y: r }, null);
+          nextTileBoard[r][c] = null;
+          triggered = true;
+          logs.push({
+            player: activePlayer,
+            message: `【隠し罠】${p.word} (${getCellLabel(r, c)}) が見えない罠を踏み、消滅しました！`,
+            type: 'ability'
+          });
+          continue;
         }
       } else if (tile.effectType === 'TIME_BOMB') {
         if (tile.duration <= 1) {
@@ -219,6 +269,8 @@ export function applyTileEffects(
 }
 
 export function getPieceDescription(piece: Piece): string {
+  // 能力プログラムの駒は、データから作った効果の説明を先に出し、AIの文章は雰囲気の説明として添える
+  if (piece.rules_text) return [piece.rules_text, piece.description].filter(Boolean).join('\n\n');
   if (piece.isPromoted && piece.promoted_effect) {
     return piece.promoted_effect.description || '';
   }
@@ -300,35 +352,61 @@ export function hasPromotedAutomatedAbility(piece: Piece): boolean {
 }
 
 export function getPieceTrigger(piece: Piece): 'ALWAYS' | 'ON_MOVE' | 'TURN_START' | 'ON_TAKEN' | 'ON_APPROACH' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' {
+  const first = piece.abilities?.[0]?.trigger;
+  if (first) return first === 'EVERY_N_TURNS' ? 'TURN_START' : first === 'ON_CAPTURE' ? 'ON_MOVE' : first;
   if (piece.isPromoted && piece.promoted_effect && piece.promoted_effect.ability_spec) {
     return piece.promoted_effect.ability_spec.activation_trigger;
   }
   return piece.trigger || 'ALWAYS';
 }
 
-export function isTriggerMatching(piece: Piece, triggerType: 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE'): boolean {
+type TriggerType = 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' | 'ON_CAPTURE';
+
+/** 能力の発動条件 (trigger) がイベントに一致するか。「常時 (ALWAYS)」は毎手番の開始時に1回発動として扱う */
+function triggerMatches(trigger: string | undefined, triggerType: TriggerType): boolean {
+  if (!trigger) return false;
+  if (trigger === triggerType) return true;
+  if ((trigger === 'ALWAYS' || trigger === 'AUTO') && triggerType === 'TURN_START') return true;
+  if (trigger === 'AFTER_MOVE' && triggerType === 'ON_MOVE') return true;
+  return false;
+}
+
+/**
+ * 現在の状態で実行すべきカスタム能力。
+ * 成っていて覚醒後の能力 (promoted_effect.ability_spec) がある駒は、それを custom_ability 形式に変換して使う
+ * （以前は成っても成る前の能力のまま動いていた）。
+ */
+export function getActiveCustomAbility(piece: Piece): CustomAbility | undefined {
+  const promoSpec = piece.isPromoted ? piece.promoted_effect?.ability_spec : undefined;
+  if (!promoSpec) return piece.custom_ability;
+  const actions = (promoSpec.actions && promoSpec.actions.length > 0)
+    ? promoSpec.actions
+    : (promoSpec.effect_type ? [promoSpec.effect_type] : (piece.custom_ability?.actions || []));
+  const once = piece.is_once_per_game || promoSpec.cooldown_turns >= 99;
+  return {
+    ...(piece.custom_ability || {}),
+    ability_name: piece.promoted_effect?.effect_name || piece.custom_ability?.ability_name || piece.effect_name,
+    flavor_text: piece.promoted_effect?.description || '',
+    triggers: [promoSpec.activation_trigger],
+    targets: [promoSpec.target_selection === 'SELF' ? 'SELF' : promoSpec.area_shape],
+    actions: [...actions],
+    constraints: once ? ['ONCE'] : (promoSpec.cooldown_turns > 0 ? [`COOLDOWN_${promoSpec.cooldown_turns}`] : []),
+    remaining_uses: piece.custom_ability?.remaining_uses ?? 3,
+    ...(promoSpec.success_rate !== undefined ? { success_rate: promoSpec.success_rate } : {}),
+  } as CustomAbility;
+}
+
+export function isTriggerMatching(piece: Piece, triggerType: TriggerType): boolean {
+  if (piece.abilities?.length) return programTriggerMatches(piece, triggerType);
   if (piece.isPromoted && piece.promoted_effect?.ability_spec) {
-    const promoSpec = piece.promoted_effect.ability_spec;
-    if (promoSpec.activation_trigger === triggerType || promoSpec.activation_trigger === 'ALWAYS' || (promoSpec.activation_trigger as string) === 'AUTO') {
-      return true;
-    }
-    if (triggerType === 'ON_MOVE' && ((promoSpec.activation_trigger as string) === 'AFTER_MOVE' || promoSpec.activation_trigger === 'ON_MOVE')) {
-      return true;
-    }
+    return triggerMatches(piece.promoted_effect.ability_spec.activation_trigger, triggerType);
   }
-  if (piece.custom_ability && Array.isArray(piece.custom_ability.triggers)) {
-    const trs = piece.custom_ability.triggers;
-    if (trs.includes(triggerType) || trs.includes('ALWAYS') || trs.includes('AUTO')) return true;
-    if (triggerType === 'ON_MOVE' && (trs.includes('AFTER_MOVE') || trs.includes('ON_MOVE'))) return true;
+  const trs = piece.custom_ability?.triggers;
+  if (Array.isArray(trs) && trs.length > 0) {
+    return trs.some(t => triggerMatches(t, triggerType));
   }
-  const trigger = getPieceTrigger(piece);
-  if (trigger === triggerType || trigger === 'ALWAYS' || (trigger as string) === 'AUTO') {
-    return true;
-  }
-  if (triggerType === 'ON_MOVE' && ((trigger as string) === 'AFTER_MOVE' || trigger === 'ON_MOVE')) {
-    return true;
-  }
-  return true;
+  // 以前はここで無条件に true を返しており、能力が発動条件と無関係に毎回発動していた
+  return triggerMatches(getPieceTrigger(piece), triggerType);
 }
 
 export function isStealthPiece(p: any): boolean {
@@ -1526,7 +1604,7 @@ export function executeMove(
                   targetCellPiece: pathPiece
                 });
               }
-              if (pathPiece.trigger === 'ON_TAKEN') {
+              if (isTriggerMatching(pathPiece, 'ON_TAKEN')) {
                 abilityEvents.push({
                   id: generateId(),
                   priority: 1,
@@ -1624,7 +1702,7 @@ export function executeMove(
       const isCurseStun = code === 'curse_stun';
       const isCurseSilence = code === 'curse_silence';
       const isCurseDeath = code === 'curse_death';
-      const isTrap = targetCell.trigger === 'ON_TAKEN';
+      const isTrap = isTriggerMatching(targetCell, 'ON_TAKEN');
       if (isTriggerMatching(targetCell, 'ON_DEATH')) {
         abilityEvents.push({
           id: generateId(),
@@ -1735,7 +1813,7 @@ export function executeMove(
           adjacentPiece.owner !== undefined &&
           (adjacentPiece.owner === 'sente' || adjacentPiece.owner === 'gote') &&
           adjacentPiece.owner !== player &&
-          adjacentPiece.trigger === 'ON_APPROACH' &&
+          isTriggerMatching(adjacentPiece, 'ON_APPROACH') &&
           !adjacentPiece.isRevealed
         ) {
           // Queue ON_APPROACH ability event
@@ -2552,10 +2630,33 @@ function isAutonomousPiece(p: Piece | null): boolean {
          desc.includes('気まぐれ');
 }
 
-export function applyAutomatedEffect(
+type AutomatedEffectResult = ReturnType<typeof applyAutomatedEffectUnsafe>;
+
+/**
+ * 能力の自動発動。AIが作った駒のデータは毎回違うため、想定外のデータで例外が起きても
+ * 対局が止まらないよう、その能力だけを不発として扱う。
+ */
+export function applyAutomatedEffect(...args: Parameters<typeof applyAutomatedEffectUnsafe>): AutomatedEffectResult {
+  try {
+    return applyAutomatedEffectUnsafe(...args);
+  } catch (err) {
+    console.error('[ability] failed, treated as not triggered:', err);
+    const [board, , , player, capturedPieces, , , , graveyard] = args;
+    return {
+      board,
+      capturedPieces,
+      graveyard,
+      logs: [{ player, message: '【能力エラー】能力をうまく発動できなかったため、不発になりました。', type: 'system' }],
+      triggered: false,
+      reAction: false,
+    };
+  }
+}
+
+function applyAutomatedEffectUnsafe(
   board: Board,
   position: [number, number],
-  triggerType: 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE',
+  triggerType: 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' | 'ON_CAPTURE',
   player: Player,
   capturedPieces: Piece[],
   fromPosition?: [number, number],
@@ -2587,6 +2688,11 @@ export function applyAutomatedEffect(
     return { board, capturedPieces, graveyard, logs: [], triggered: false, reAction: false };
   }
 
+  // ── 能力プログラム（v2）を持つ駒は、そちらだけを実行する ──
+  if (piece.abilities?.length) {
+    return runAbilityPrograms(board, position, triggerType, player, capturedPieces, graveyard, opponentCapturedPieces, deadPiece);
+  }
+
   let nextBoard = board.map(row => [...row]);
   let nextCaptured = [...capturedPieces];
   let nextGraveyard = graveyard ? [...graveyard] : [];
@@ -2597,9 +2703,10 @@ export function applyAutomatedEffect(
   const effectName = piece.isPromoted ? (piece.promoted_effect?.effect_name || piece.effect_name) : piece.effect_name;
 
   // ── 汎用カスタム能力実行エンジン優先 ──
-  if (piece.custom_ability && isTriggerMatching(piece, triggerType)) {
+  const activeCustomAbility = getActiveCustomAbility(piece);
+  if (activeCustomAbility && isTriggerMatching(piece, triggerType)) {
     const customRes = executeCustomAbility(
-      board, position, piece.custom_ability, player, fromPosition, targetPosition, opponentCapturedPieces
+      board, position, activeCustomAbility, player, fromPosition, targetPosition, opponentCapturedPieces
     );
     return {
       board: customRes.board,
@@ -4715,18 +4822,21 @@ export function applyCoreActionEffect(
   }
 
   if (['SET_TILE_FIRE', 'SET_TILE_POISON', 'SET_TILE_ICE', 'SET_TILE_BOMB', 'SET_TILE_TRAP'].includes(actionKey)) {
-    const tileType = actionKey.replace('SET_TILE_', '') as TileEffectType;
+    // 以前は 'FIRE' 等の名前で一時オブジェクトに書いて捨てていたため、地形効果が盤面に一切残らなかった
+    const tileType = TILE_TYPE_BY_ACTION[actionKey];
+    const tile: TileState = {
+      effectType: tileType,
+      duration: tileType === 'TIME_BOMB' ? 4 : 3,
+      ownerPlayer: context.player,
+      isStealth: tileType === 'STEALTH_TRAP'
+    };
+    pendingTilePlacements.push({ y: targetPos.y, x: targetPos.x, tile });
     let tileBoard = (context as any).tileBoard;
     if (!tileBoard) {
       tileBoard = createEmptyTileBoard();
       (context as any).tileBoard = tileBoard;
     }
-    tileBoard[targetPos.y][targetPos.x] = {
-      effectType: tileType,
-      duration: 3,
-      ownerPlayer: context.player,
-      isStealth: tileType === 'STEALTH_TRAP'
-    };
+    tileBoard[targetPos.y][targetPos.x] = tile;
     context.triggeredRef.value = true;
     context.logs.push({
       player: context.player,
@@ -4949,6 +5059,8 @@ export function applyCoreActionEffect(
     }
 
     case 'FREEZE': {
+      // 玉将は凍結しない（動けない玉はすぐ取られてしまう）
+      if (victim.isKing) return;
       BoardManager.setPiece(board, targetPos, {
         ...victim,
         isFrozen: true,

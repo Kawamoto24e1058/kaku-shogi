@@ -1,3 +1,6 @@
+import type { AbilityProgram, PieceAppearance } from '../shared/abilityProgram';
+import type { SupportedAction } from '../shared/abilityCatalog';
+
 export type Player = 'sente' | 'gote';
 
 export interface Position {
@@ -83,7 +86,9 @@ export interface TileState {
 }
 
 // EffectType: 全アクション種別の共有型エイリアス
-export type EffectType = 'DESTROY' | 'CAPTURE' | 'IMMOBILIZE' | 'SWAP' | 'PULL' | 'PUSH' | 'STEALTH' | 'SPAWN' | 'TRANSFORM' | 'RESURRECT' | 'FORCE_CAPTURE' | 'TRANSFORM_PAWN' | 'STEAL_HAND' | 'TIME_REWIND' | 'BOOMERANG' | 'GRAVITY_PULL' | 'SHARE_FATE' | 'WALL_CREATE' | 'LEAVE_TRAIL_FIRE' | 'EVOLUTION' | 'MIND_CONTROL' | 'CLEAR_DEBUFF' | 'MAGNET_PULL' | 'KNOCKBACK_BUMP' | 'POS_SWAP_ENEMY' | 'STUN_LOCK' | 'PENETRATE_STRIKE' | 'VAULT_EXECUTE' | 'CLEAVE_LINE' | 'GUARD_STANCE' | 'SILENCE_SEAL' | 'OVERDRIVE_BOOST' | 'PROBABILITY_STRIKE' | 'CHAOS_GAMBLE' | 'LUCKY_DODGE' | 'DELAYED_BURST' | 'CHARGE_TURN' | 'SACRIFICE_COST' | 'SELF_STUN' | 'EVOLUTION_CHECK' | 'SET_TILE_FIRE' | 'SET_TILE_POISON' | 'SET_TILE_ICE' | 'SET_TILE_BOMB' | 'SET_TILE_TRAP';
+// エンジンが実行できるのは SupportedAction（shared/abilityCatalog.ts）。残りは旧データ互換のための名前で、
+// サニタイザで SupportedAction に読み替えられる。
+export type EffectType = SupportedAction | 'CAPTURE' | 'IMMOBILIZE' | 'SWAP' | 'PULL' | 'PUSH' | 'STEALTH' | 'SPAWN' | 'TRANSFORM' | 'RESURRECT';
 
 export type ActivationType = 'ACTIVE' | 'AUTO_TRIGGER' | 'PASSIVE';
 
@@ -134,6 +139,12 @@ export interface PieceData {
   effect_offsets?: EffectOffset[];
   isAutonomous?: boolean; // 暴走・自動行動フラグ
   activation_type?: ActivationType;
+  /** 能力プログラム（v2）。あれば ability_spec / custom_ability より優先して実行する（shared/abilityProgram.ts） */
+  abilities?: AbilityProgram[];
+  /** abilities から機械的に作った効果の説明 */
+  rules_text?: string;
+  /** 駒の見た目（色・紋章・オーラ） */
+  appearance?: PieceAppearance;
 }
 
 
@@ -183,6 +194,11 @@ export interface Piece extends PieceData {
   isSilenced?: boolean;
   silenceDuration?: number;
   isOverdrive?: boolean;
+
+  /** abilities ごとの残り充填手番（99 = 使用済みの1ゲーム1回） */
+  abilityCooldowns?: number[];
+  /** 洗脳（CONTROL）の残り手番。手番終了ごとに1減り、0で元の持ち主に戻る */
+  controlDuration?: number;
 }
 
 export type Board = (Piece | null)[][]; // 9x9 grid
@@ -236,7 +252,6 @@ export interface GameState {
   winner: Player | null;
   logs: GameLog[];
   historyStates: HistoryState[]; // Snapshots of previous turns for time rewind
-  geminiApiKey: string;
   playerNames: {
     sente: string;
     gote: string;
@@ -251,7 +266,7 @@ export interface GameState {
 export interface AbilityEvent {
   id: string;
   priority: number; // 1 = Traps (ON_TAKEN, ON_APPROACH), 2 = Moving piece abilities (ON_MOVE), 3 = Turn start / environmental (TURN_START)
-  triggerType: 'ON_TAKEN' | 'ON_APPROACH' | 'ON_MOVE' | 'TURN_START' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE';
+  triggerType: 'ON_TAKEN' | 'ON_APPROACH' | 'ON_MOVE' | 'TURN_START' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' | 'ON_CAPTURE';
   pieceId: string; // The ID of the piece triggering the event (to check if it's still alive/valid)
   position: [number, number]; // Position of the triggering piece on the board
   owner: Player;

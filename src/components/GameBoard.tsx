@@ -3,6 +3,29 @@ import type { Board, Piece, Player, GamePhase, VisualEffect, TileState } from '.
 import { BOARD_SIZE, getPieceLogicCode, getPieceTrigger, getEffectCells, getBoardPiece } from '../gameLogic';
 import type { AbilityAnimationState } from '../App';
 
+// 駒の見た目（appearance.aura）ごとの光り方。accent は駒の縁の色
+const AURA_SHADOWS: Record<string, ((accent: string) => string) | undefined> = {
+  GLOW: accent => `0 0 8px ${accent}aa`,
+  FLAME: () => '0 0 10px rgba(249, 115, 22, 0.7), 0 -2px 8px rgba(239, 68, 68, 0.5)',
+  SPARK: () => '0 0 7px rgba(250, 204, 21, 0.85)',
+  MIST: () => '0 0 12px rgba(148, 163, 184, 0.85)',
+  RIPPLE: accent => `0 0 0 2px ${accent}55, 0 0 10px ${accent}55`,
+  SHADOW: () => '0 0 10px rgba(30, 27, 75, 0.75)',
+};
+
+/** 地の色の明るさから、読みやすい文字色（黒か白）を選ぶ */
+function readableTextColor(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  // 地は左上を白く混ぜたグラデーションなので、やや明るい側に寄せて判定する
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.42 ? '#1A1A1A' : '#FAFAFA';
+}
+
+/** 能力プログラムの駒で、すべての能力が充填中か */
+function isProgramCharging(p: Piece): boolean {
+  return !!p.abilities?.length && !!p.abilityCooldowns && p.abilityCooldowns.length > 0 && p.abilityCooldowns.every(c => c > 0);
+}
+
 interface GameBoardProps {
   board: Board;
   tileBoard?: (TileState | null)[][];
@@ -31,6 +54,8 @@ interface GameBoardProps {
   onCustomDeckPieceClick: (piece: Piece, index: number, owner: Player) => void;
   onSharedPieceClick: (piece: Piece, index: number) => void; // Shared pool callback
   onHoverPiece?: (piece: Piece | null) => void; // Hover popup callback
+  /** タッチ操作で駒（または空きマス = null）をタップしたとき。スマホでは hover が無いので能力表示に使う */
+  onInspectPiece?: (piece: Piece | null) => void;
   vsAiMode: boolean;
   isSenteChecked?: boolean;
   isGoteChecked?: boolean;
@@ -55,6 +80,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   activeAbilityMode: _activeAbilityMode,
   onCellClick,
   onHoverPiece,
+  onInspectPiece,
   vsAiMode,
   isSenteChecked = false,
   isGoteChecked = false,
@@ -979,6 +1005,19 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           innerPadding = '4px 4px 8px 4px';
         }
 
+        // AIが決めた駒の見た目（地の色・縁の色・オーラ）。状態異常などの表示は下でこれより優先される
+        const look = isCustom ? activePiece.appearance : undefined;
+        if (look) {
+          baseBg = `linear-gradient(135deg, #ffffffd9 0%, ${look.color} 75%)`;
+          borderColorVal = `${look.accent}99`;
+          borderTopColorStyle = borderColorVal;
+          borderBottomColorStyle = borderColorVal;
+          borderLeftColorStyle = borderColorVal;
+          borderRightColorStyle = borderColorVal;
+          const aura = AURA_SHADOWS[look.aura]?.(look.accent);
+          if (aura) boxShadowStyle = `${aura}, ${insetShadow}`;
+        }
+
         // Apply dynamic runtime overlays / state overrides
         let opacityVal = 1.0;
         let animationStyle = '';
@@ -1014,7 +1053,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           borderLeftColorStyle = '#a3a3a3';
           borderRightColorStyle = '#a3a3a3';
           opacityVal = 0.65;
-        } else if (activePiece.coolDownTurnsRemaining > 0) {
+        } else if (activePiece.coolDownTurnsRemaining > 0 || isProgramCharging(activePiece)) {
           baseBg = '#D2D0C8';
           borderTopColorStyle = '#8A8880';
           borderBottomColorStyle = '#8A8880';
@@ -1111,9 +1150,9 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         }
 
         const triggerLetter = getPieceTrigger(activePiece).substring(0, 1);
-        const isSpent = activePiece.coolDownTurnsRemaining > 0;
+        const isSpent = activePiece.coolDownTurnsRemaining > 0 || isProgramCharging(activePiece);
 
-        let textColor = activePiece.coolDownTurnsRemaining > 0 ? '#7A7870' : 'var(--color-kurogane)';
+        let textColor = isSpent ? '#7A7870' : (look ? readableTextColor(look.color) : 'var(--color-kurogane)');
         if (activePiece.coolDownTurnsRemaining <= 0) {
           if (activePiece.isPromoted) {
             textColor = 'var(--color-shinku)';
@@ -1147,21 +1186,22 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         let wordPadding = '0px';
 
         if (activePiece.isKing) {
-          fontSizeVal = '13px';
+          fontSizeVal = 'clamp(8px, 2.4vw, 13px)';
         } else if (activePiece.isHisha || activePiece.isKaku) {
-          fontSizeVal = '11px';
+          fontSizeVal = 'clamp(9px, 2.6vw, 11px)';
         } else if (activePiece.isPawn) {
-          fontSizeVal = '9px';
+          fontSizeVal = 'clamp(8px, 2.2vw, 9px)';
         } else {
-          const len = wordStr.length;
-          if (len <= 3) {
-            fontSizeVal = '11px';
+          // 縦書き1列に収める。長い名前は先頭3文字（盤の小さいスマホでも折り返して読み順が崩れないように。全体は情報欄に出る）
+          const chars = [...wordStr];
+          // 幅360px未満の小さい画面では1マスが約30pxしかないので2文字まで
+          const maxChars = typeof window !== 'undefined' && window.innerWidth < 360 ? 2 : 3;
+          if (chars.length > maxChars) wordStr = chars.slice(0, maxChars).join('');
+          if (chars.length <= 2) {
+            fontSizeVal = 'clamp(9px, 2.8vw, 12px)';
             letterSpacingVal = '0.05em';
-          } else if (len >= 4 && len <= 6) {
-            fontSizeVal = '9px';
           } else {
-            fontSizeVal = '7.5px';
-            wordPadding = '1px 0';
+            fontSizeVal = 'clamp(7.5px, 2.1vw, 11px)';
           }
         }
 
@@ -1169,6 +1209,23 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           <div key={`${activePiece.id}_${y}_${x}`} className="relative transition-all duration-500" style={{ filter: 'drop-shadow(0 6px 10px rgba(139, 92, 26, 0.14))', display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%' }}>
             <div style={pieceStyle}>
               <div style={innerStyle}>
+                {/* 紋章（AIが決めた1〜2文字）を背景に薄く表示 */}
+                {look?.emblem && (
+                  <div aria-hidden style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '24px',
+                    fontWeight: 900,
+                    color: look.accent,
+                    opacity: 0.16,
+                    pointerEvents: 'none',
+                  }}>
+                    {look.emblem}
+                  </div>
+                )}
                 {/* Trigger Badge */}
                 {!activePiece.isKing && !activePiece.isPawn && (
                   <div style={{
@@ -1231,9 +1288,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 
                 {/* Piece Text - size locked with break-all to prevent cell warping */}
                 {(() => {
-                  const isPieceRotated = isMyPiece
-                    ? (shouldRotate)
-                    : (!shouldRotate);
+                  // 盤（後手視点なら180度）＋駒（相手の駒は向かい合わせ）の回転を打ち消して、文字は常に見る人に正立させる。
+                  // 盤と駒の回転は shouldRotate で必ずそろうので、文字を回すのは相手の駒だけでよい
+                  // （以前は shouldRotate も掛けていたため、後手視点で全部の文字が逆さまになっていた）
+                  const isPieceRotated = !isMyPiece;
                   return (
                     <div style={{
                       fontSize: fontSizeVal,
@@ -1243,12 +1301,13 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                       textAlign: 'center',
                       writingMode: 'vertical-rl',
                       textOrientation: 'upright',
+                      whiteSpace: 'nowrap',
                       lineHeight: 1.0,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       padding: wordPadding,
-                      marginTop: activePiece.isKing ? '6px' : '0',
+                      marginTop: activePiece.isKing ? 'clamp(0px, 0.8vw, 6px)' : '0',
                       transform: isPieceRotated ? 'rotate(180deg)' : 'none',
                     }}>
                       {wordStr}
@@ -1453,6 +1512,9 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         onTouchEnd={(e) => {
           e.preventDefault();
           onCellClick(y, x);
+          const viewer: Player = onlineMode ? (myRole || 'sente') : (vsAiMode ? 'sente' : localTurn);
+          // ステルス未公開の敵駒は能力を見せない
+          onInspectPiece?.(piece && !(piece.isStealth === true && piece.owner !== viewer) ? piece : null);
         }}
         onMouseEnter={() => {
           // activeAbilityMode 中のホバープレビュー

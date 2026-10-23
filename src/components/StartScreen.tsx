@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { dailyKey, dailyLabel, dailyWords } from '../../shared/challenge';
+import { getDailyBest } from '../dailyRecord';
+import { readInviteRoomCode, readDailyParam, clearInviteParam, openXShare, roomInviteUrl } from '../share';
 import * as THREE from 'three';
 import { SakuraShower } from './SakuraShower';
 
@@ -20,6 +23,10 @@ interface StartScreenProps {
   playerNames: { sente: string; gote: string };
   onSetPlayerNames: (names: { sente: string; gote: string }) => void;
   onStartGame: () => void;
+  /** 「今日のお題」（全員共通の3枚でCPUに挑む）を始める */
+  onStartDaily: () => void;
+  /** 運営からのお知らせ（混雑・一時停止など。/api/status の SITE_NOTICE やオンライン停止の案内） */
+  siteNotice?: string;
 }
 
 interface TypeWord {
@@ -426,11 +433,28 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   playerNames,
   onSetPlayerNames,
   onStartGame,
+  onStartDaily,
+  siteNotice = '',
 }) => {
-  const [inputCode, setInputCode] = useState('');
-  const [currentStep, setCurrentStep] = useState<'title' | 'mode_select'>('title');
-  const [selectedTab, setSelectedTab] = useState<'ai' | 'random' | 'custom'>('ai');
+  // X等で共有された招待リンク (?room=123456) から来た場合は、部屋入室タブを開いた状態で始める
+  const [inviteCode] = useState(() => readInviteRoomCode());
+  // シェアされた「今日のお題」のリンク（?daily=1）から来た人は、名乗り入力を飛ばしてお題がすぐ見える画面から始める
+  const [fromDailyShare] = useState(() => readDailyParam());
+  const [inputCode, setInputCode] = useState(inviteCode || '');
+  const [currentStep, setCurrentStep] = useState<'title' | 'mode_select'>(inviteCode || fromDailyShare ? 'mode_select' : 'title');
+  const [selectedTab, setSelectedTab] = useState<'ai' | 'random' | 'custom'>(inviteCode ? 'custom' : 'ai');
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!inviteCode) return;
+    onSetVsAiMode(false);
+    onSetOnlineMode(true);
+    clearInviteParam();
+    // 初回マウント時のみ実行
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [showRuleModal, setShowRuleModal] = useState(false);
+  const [todayBest] = useState(() => getDailyBest(dailyKey()));
 
   // Background Koma particles animation
   useEffect(() => {
@@ -533,7 +557,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
 
       {/* Header */}
       <header className="w-full max-w-3xl flex justify-between items-center border-b border-amber-900/10 pb-4 mb-6 md:mb-10 z-10">
-        <h1 className="font-serif text-lg tracking-[0.2em] font-bold text-amber-950">拡張将棋</h1>
+        <h1 className="font-serif text-lg tracking-[0.2em] font-bold text-amber-950">架空将棋</h1>
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -570,9 +594,9 @@ export const StartScreen: React.FC<StartScreenProps> = ({
 
             {/* Title Header */}
             <div className="relative text-center mb-8 w-full">
-              <div className="absolute -inset-x-10 top-1/2 -translate-y-1/2 h-12 bg-amber-400/20 blur-2xl rounded-full"></div>
+              <div className="absolute inset-x-0 sm:-inset-x-10 top-1/2 -translate-y-1/2 h-12 bg-amber-400/20 blur-2xl rounded-full"></div>
               <h2 className="relative z-10 text-4xl md:text-5xl font-serif font-black tracking-[0.25em] text-amber-950 drop-shadow-xs">
-                AI駆動・拡張将棋
+                AI駆動・架空将棋
               </h2>
               <p className="text-xs font-serif font-bold text-amber-900 tracking-[0.2em] mt-4 bg-amber-100/70 px-4 py-2 rounded-full backdrop-blur-xs inline-block border border-amber-900/15">
                 言葉から能力を創造し、九×九の戦場をハックせよ
@@ -602,6 +626,11 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               >
                 戦場へ出陣する
               </button>
+
+              <p className="text-[11px] text-stone-500 font-bold tracking-wider">
+                遊ぶことで<a href="/terms.html" className="underline hover:text-amber-800">利用規約</a>と
+                <a href="/privacy.html" className="underline hover:text-amber-800">プライバシーポリシー</a>に同意したものとみなします
+              </p>
             </div>
           </div>
         )}
@@ -623,6 +652,33 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               </span>
             </div>
 
+            {siteNotice && (
+              <div role="status" className="w-full text-xs font-bold text-amber-950 bg-amber-100 border border-amber-900/20 rounded-xl px-4 py-3 leading-relaxed">
+                📢 {siteNotice}
+              </div>
+            )}
+
+            {/* 今日のお題（毎日変わる共通の3枚でCPUに挑戦。Xでのシェア用） */}
+            <button
+              type="button"
+              onClick={onStartDaily}
+              className="w-full text-left rounded-2xl border-2 border-amber-600 bg-gradient-to-r from-amber-100 to-orange-50 px-5 py-4 shadow-md hover:shadow-lg transition-all cursor-pointer"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-base font-extrabold text-amber-950">📅 今日のお題（{dailyLabel()}）</div>
+                  <div className="text-sm font-bold text-amber-900 mt-1 break-words">
+                    {dailyWords().map(w => `「${w}」`).join('')}
+                  </div>
+                  <div className="text-xs text-stone-600 mt-1">
+                    全員同じ3枚でCPUに挑戦。少ない手数で勝つほど上位！
+                    {todayBest !== null && <span className="font-bold text-amber-800">（自己ベスト {todayBest}手）</span>}
+                  </div>
+                </div>
+                <span className="shrink-0 text-sm font-extrabold text-white bg-amber-800 rounded-full px-4 py-2">挑戦</span>
+              </div>
+            </button>
+
             {/* 3 Main Mode Selection Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full items-stretch">
               
@@ -643,7 +699,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 <div className="text-3xl mb-1">🤖</div>
                 <div>
                   <div className="text-lg tracking-wider font-extrabold text-stone-900 mb-1">AI対戦</div>
-                  <div className="text-[11px] font-bold text-amber-900/80 leading-snug">思考エンジンGeminiと1人ですぐ遊ぶ</div>
+                  <div className="text-[11px] font-bold text-amber-900/80 leading-snug">CPUと1人ですぐ遊ぶ</div>
                 </div>
                 <div className={`mt-3 text-xs font-bold px-4 py-1 rounded-full border transition-all ${
                   selectedTab === 'ai' && !onlineMode ? 'bg-amber-800 text-white border-amber-900' : 'bg-stone-100 text-stone-600 border-stone-200'
@@ -713,7 +769,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               {selectedTab === 'ai' && (
                 <div className="flex flex-col items-center text-center gap-4 animate-[fadeIn_0.3s_ease-out]">
                   <p className="text-sm font-bold text-stone-800 leading-relaxed max-w-lg">
-                    思考エンジン（Gemini AI）と対峙します。入力した言葉から創造された「カスタム駒」の能力を駆使して挑戦してください。
+                    CPU（思考エンジン）と対峙します。入力した言葉から創造された「カスタム駒」の能力を駆使して挑戦してください。
                   </p>
                   <button
                     type="button"
@@ -797,6 +853,30 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                         {roomCode}
                       </div>
                       <p className="text-[11px] text-stone-500 font-bold">相手が入室すると自動的に同期対局へ進みます。</p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openXShare(`架空将棋で対戦相手募集中！\n部屋コード: ${roomCode}`, roomInviteUrl(roomCode))}
+                          className="flex-1 py-2 bg-stone-900 hover:bg-black text-white rounded-lg text-xs tracking-widest font-bold transition-all cursor-pointer"
+                        >
+                          𝕏 で募集する
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(roomInviteUrl(roomCode));
+                              setCopied(true);
+                              setTimeout(() => setCopied(false), 1500);
+                            } catch {
+                              window.prompt('招待リンクをコピーしてください', roomInviteUrl(roomCode));
+                            }
+                          }}
+                          className="flex-1 py-2 bg-white hover:bg-stone-50 text-stone-800 border border-stone-300 rounded-lg text-xs tracking-widest font-bold transition-all cursor-pointer"
+                        >
+                          {copied ? 'コピーしました' : '招待リンクをコピー'}
+                        </button>
+                      </div>
                       <button
                         type="button"
                         onClick={onCancelMatchmaking}
