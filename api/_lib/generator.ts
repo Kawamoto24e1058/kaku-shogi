@@ -227,6 +227,91 @@ async function streamText(url: string, init: RequestInit, timeoutMs: number, onT
   }
 }
 
+/** Cloudflare Workers の AI バインディング（env.AI）。Worker で動くときだけ setWorkersAIBinding で渡される */
+export interface WorkersAIBinding {
+  run(model: string, inputs: Record<string, unknown>): Promise<unknown>;
+}
+
+let workersAIBinding: WorkersAIBinding | null = null;
+
+/** Worker の起動時に呼ぶ。以後は APIトークンを使わず、同じ Cloudflare の中から直接 AI を呼ぶ */
+export function setWorkersAIBinding(binding: WorkersAIBinding | null | undefined): void {
+  workersAIBinding = binding ?? null;
+}
+
+/** 応答の形（OpenAI 互換の choices / Workers AI 独自の response）の違いを吸収して文章を取り出す */
+function bindingText(data: unknown): string {
+  const d = data as { response?: unknown; choices?: { message?: { content?: string }; delta?: { content?: string } }[] };
+  if (typeof d?.response === 'string') return d.response;
+  if (d?.response && typeof d.response === 'object') return JSON.stringify(d.response);
+  return d?.choices?.[0]?.message?.content ?? d?.choices?.[0]?.delta?.content ?? '';
+}
+
+async function callWorkersAIBinding(binding: WorkersAIBinding, model: string, words: string[], deadline: number, onText?: OnText): Promise<Json[]> {
+  const inputs = {
+    messages: [{ role: 'user', content: buildPrompt(words) }],
+    response_format: { type: 'json_object' },
+    temperature: 0.9,
+    max_tokens: OUTPUT_TOKENS_PER_PIECE * words.length,
+    ...(WORKERS_AI_THINKING ? {} : { chat_template_kwargs: { enable_thinking: false } }),
+    ...(onText ? { stream: true } : {}),
+  };
+  const timeoutMs = callTimeout(words, deadline);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new ProviderError(`workers-ai binding timed out after ${timeoutMs}ms`, 504)), timeoutMs);
+  });
+  try {
+    const run = (async () => {
+      let result: unknown;
+      try {
+        result = await binding.run(model, inputs);
+      } catch (err) {
+        // バインディングのエラーには HTTP の状態がないので、無料枠切れ・混雑を文言から判断する
+        const message = (err as Error).message || String(err);
+        const status = /daily free allocation|neurons|4006/i.test(message) ? 429 : /capacity|overloaded|3040|timeout/i.test(message) ? 503 : 500;
+        throw new ProviderError(`workers-ai binding: ${message.slice(0, 300)}`, status);
+      }
+      if (result instanceof ReadableStream) {
+        const reader = result.pipeThrough(new TextDecoderStream()).getReader();
+        let buffer = '';
+        let text = '';
+        onText?.('');
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += value;
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          let grew = false;
+          for (const line of lines) {
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(5).trim();
+            if (!payload || payload === '[DONE]') continue;
+            try {
+              const delta = bindingText(JSON.parse(payload));
+              if (delta) {
+                text += delta;
+                grew = true;
+              }
+            } catch {
+              // 壊れた行は読み飛ばす（最後に全体を JSON として検証する）
+            }
+          }
+          if (grew) onText?.(text);
+        }
+        return text;
+      }
+      return bindingText(result);
+    })();
+    const text = await Promise.race([run, timeout]);
+    if (!text) throw new ProviderError(`${model} returned an empty response`);
+    return extractPieces(text);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface Provider {
   name: string;
   /** deadline: この時刻（Date.now()）までに応答がなければ打ち切る */
@@ -238,7 +323,12 @@ export function configuredProviders(): Provider[] {
 
   const cfAccount = process.env.CLOUDFLARE_ACCOUNT_ID;
   const cfToken = process.env.CLOUDFLARE_API_TOKEN;
-  if (cfAccount && cfToken) {
+  const binding = workersAIBinding;
+  if (binding) {
+    for (const model of [WORKERS_AI_MODEL, WORKERS_AI_FALLBACK_MODEL].filter((m, i, all) => m && all.indexOf(m) === i)) {
+      providers.push({ name: `workers-ai:${model}`, run: (w, d = Infinity, t) => callWorkersAIBinding(binding, model, w, d, t) });
+    }
+  } else if (cfAccount && cfToken) {
     const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/ai/v1`;
     for (const model of [WORKERS_AI_MODEL, WORKERS_AI_FALLBACK_MODEL].filter((m, i, all) => m && all.indexOf(m) === i)) {
       const extraBody = WORKERS_AI_THINKING ? undefined : { chat_template_kwargs: { enable_thinking: false } };

@@ -45,6 +45,9 @@ export function normalizeWord(raw: unknown): string | null {
 }
 
 function clientIp(request: Request): string {
+  // Cloudflare は接続元のIPを CF-Connecting-IP に入れる（利用者が書き換えられない）
+  const cf = request.headers.get('cf-connecting-ip');
+  if (cf) return cf.trim();
   const fwd = request.headers.get('x-forwarded-for');
   return (fwd ? fwd.split(',')[0] : request.headers.get('x-real-ip') || 'unknown').trim();
 }
