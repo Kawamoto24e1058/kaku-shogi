@@ -17,6 +17,9 @@ const WORKERS_AI_MODEL = process.env.WORKERS_AI_MODEL || '@cf/google/gemma-4-26b
 const WORKERS_AI_FALLBACK_MODEL = process.env.WORKERS_AI_FALLBACK_MODEL || '';
 // Gemma 4 などは既定で「思考」してから答えるため、5語まとめると90秒を超えることがある。駒生成では思考を切る
 const WORKERS_AI_THINKING = process.env.WORKERS_AI_THINKING === 'true';
+// 同じ名前を付けた呼び出しは同じサーバーに回され、毎回同じプロンプトの前半（約2,500トークン）がキャッシュされる。
+// 計測では1枚あたり約34 → 約23 Neurons になり、無料枠（1日 10,000 Neurons）で作れる枚数が約1.5倍になった
+const WORKERS_AI_AFFINITY = { 'x-session-affinity': 'kaku-shogi-piece-prompt' };
 const ENABLE_GEMINI = process.env.ENABLE_GEMINI === 'true';
 // gemini-3.5-flash は非推奨で、後継モデルに自動で振り替えられる（2026年10月時点の公式ドキュメント）。
 // モデル名は変わりやすいので、環境変数 GEMINI_MODEL / GEMINI_FALLBACK_MODEL で差し替えられるようにしている
@@ -149,6 +152,8 @@ interface OpenAICompatibleConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** プロバイダ固有の追加ヘッダー */
+  extraHeaders?: Record<string, string>;
   /** プロバイダ固有の追加パラメータ */
   extraBody?: Json;
 }
@@ -192,7 +197,7 @@ async function callOpenAICompatible(config: OpenAICompatibleConfig, words: strin
       ...(config.extraBody || {}),
     });
     const url = `${config.baseUrl.replace(/\/$/, '')}/chat/completions`;
-    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` };
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}`, ...(config.extraHeaders || {}) };
     const text = onText
       ? await streamText(url, { method: 'POST', headers, body }, callTimeout(words, deadline), onText)
       : ((await fetchJson(url, { method: 'POST', headers, body }, callTimeout(words, deadline)) as { choices?: { message?: { content?: string } }[] })
@@ -251,7 +256,7 @@ async function streamText(url: string, init: RequestInit, timeoutMs: number, onT
 
 /** Cloudflare Workers の AI バインディング（env.AI）。Worker で動くときだけ setWorkersAIBinding で渡される */
 export interface WorkersAIBinding {
-  run(model: string, inputs: Record<string, unknown>): Promise<unknown>;
+  run(model: string, inputs: Record<string, unknown>, options?: { extraHeaders?: Record<string, string> }): Promise<unknown>;
 }
 
 let workersAIBinding: WorkersAIBinding | null = null;
@@ -287,7 +292,7 @@ async function callWorkersAIBinding(binding: WorkersAIBinding, model: string, wo
     const run = (async () => {
       let result: unknown;
       try {
-        result = await binding.run(model, inputs);
+        result = await binding.run(model, inputs, { extraHeaders: WORKERS_AI_AFFINITY });
       } catch (err) {
         // バインディングのエラーには HTTP の状態がないので、無料枠切れ・混雑を文言から判断する
         const message = (err as Error).message || String(err);
@@ -342,7 +347,7 @@ export function configuredProviders(): Provider[] {
     const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/ai/v1`;
     for (const model of [WORKERS_AI_MODEL, WORKERS_AI_FALLBACK_MODEL].filter((m, i, all) => m && all.indexOf(m) === i)) {
       const extraBody = WORKERS_AI_THINKING ? undefined : { chat_template_kwargs: { enable_thinking: false } };
-      providers.push({ name: `workers-ai:${model}`, run: (w, d = Infinity, t) => callOpenAICompatible({ baseUrl, apiKey: cfToken, model, extraBody }, w, d, t) });
+      providers.push({ name: `workers-ai:${model}`, run: (w, d = Infinity, t) => callOpenAICompatible({ baseUrl, apiKey: cfToken, model, extraBody, extraHeaders: WORKERS_AI_AFFINITY }, w, d, t) });
     }
   }
 

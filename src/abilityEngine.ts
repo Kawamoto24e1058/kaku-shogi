@@ -125,8 +125,13 @@ function areaCells(board: Board, area: string, origin: Position, player: Player)
 
 interface ResolvedTarget { pos: Position; id: string | null }
 
-function resolveTargets(board: Board, target: ProgramTarget, origin: Position, player: Player, selfId: string | null): ResolvedTarget[] {
-  const cells = areaCells(board, target.area, origin, player);
+/**
+ * excludeAdjacent: 引き寄せる能力では、すでに隣にいる駒は動かせないので対象にしない
+ * （「最も近い敵」が隣の駒になって不発になるのを防ぐ）
+ */
+function resolveTargets(board: Board, target: ProgramTarget, origin: Position, player: Player, selfId: string | null, excludeAdjacent = false): ResolvedTarget[] {
+  const cells = areaCells(board, target.area, origin, player)
+    .filter(c => !excludeAdjacent || Math.max(Math.abs(c.y - origin.y), Math.abs(c.x - origin.x)) > 1);
   const matches = cells.filter(({ y, x }) => {
     const p = board[y][x];
     if (target.area === 'SELF') return true;
@@ -470,7 +475,7 @@ export function runAbilityPrograms(
     if (!state.selfPos && ability.target.area === 'SELF') return;
 
     state.name = ability.name;
-    const targets = resolveTargets(nextBoard, ability.target, center, player, piece.id);
+    const targets = resolveTargets(nextBoard, ability.target, center, player, piece.id, ability.effects[0]?.op === 'PULL');
     let triggered = false;
     for (const effect of ability.effects) {
       const selfOnly = effect.op === 'STEALTH' || effect.op === 'EXTRA_ACTION' || effect.op === 'STEAL_HAND';
