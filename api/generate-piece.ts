@@ -21,6 +21,8 @@ const PER_IP_PER_HOUR = Number(process.env.RATE_LIMIT_PER_HOUR || 10);
 const PER_IP_PER_DAY = Number(process.env.RATE_LIMIT_PER_DAY || 40);
 const PER_DEVICE_PER_DAY = Number(process.env.RATE_LIMIT_PER_DEVICE_PER_DAY || 30);
 const GLOBAL_PER_DAY = Number(process.env.GLOBAL_DAILY_LIMIT || 1000);
+// 関数の上限（vercel.json の maxDuration: 30秒）より前に AI を諦め、近い単語の流用・待ち行列への登録まで済ませて応答する
+const AI_BUDGET_MS = 22_000;
 
 const json = (status: number, body: Json) =>
   new Response(JSON.stringify(body), {
@@ -104,11 +106,11 @@ const inFlight = new Map<string, Promise<{ piece: Json; provider: string }>>();
 
 class ModerationError extends Error {}
 
-function generateShared(key: string, word: string) {
+function generateShared(key: string, word: string, deadline: number) {
   let pending = inFlight.get(key);
   if (!pending) {
     pending = (async () => {
-      const result = await generatePiece(word);
+      const result = await generatePiece(word, undefined, deadline);
       if (pieceHasNgText(result.piece)) {
         // 不適切な文章を含む結果は使わず、キャッシュもしない（ブラウザ側で簡易生成になる）
         throw new ModerationError(`generated text for "${word}" was blocked`);
@@ -185,6 +187,7 @@ async function lookupCached(k: string): Promise<Response> {
 }
 
 export async function handleGeneratePiece(request: Request): Promise<Response> {
+  const startedAt = Date.now();
   if (request.method === 'GET') {
     const k = new URL(request.url).searchParams.get('k');
     if (!k) {
@@ -233,7 +236,7 @@ export async function handleGeneratePiece(request: Request): Promise<Response> {
   if (quota === 'global') return fallbackResponse(key, word, 429, '本日のAI生成枠が混雑しているため');
 
   try {
-    const { piece } = await generateShared(key, word);
+    const { piece } = await generateShared(key, word, startedAt + AI_BUDGET_MS);
     return json(200, { piece: { ...piece, word }, source: 'ai' });
   } catch (err) {
     if (err instanceof ModerationError) {

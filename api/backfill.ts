@@ -24,7 +24,7 @@ export default {
     const lines: string[] = [];
     try {
       const generated = await runBackfill({
-        limit: Number(process.env.BACKFILL_LIMIT || 40),
+        limit: Number(process.env.BACKFILL_LIMIT || 60),
         batch: Math.max(1, Number(process.env.BACKFILL_BATCH || 5)),
         intervalMs: Number(process.env.BACKFILL_INTERVAL_MS || 3000),
         deadline: Date.now() + BUDGET_MS,

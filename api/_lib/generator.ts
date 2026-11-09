@@ -29,6 +29,8 @@ const THINKING_BUDGET = Number(process.env.GEMINI_THINKING_BUDGET ?? 0);
 const OUTPUT_TOKENS_PER_PIECE = 1500;
 const TIMEOUT_MS = 25_000;
 const BATCH_TIMEOUT_MS = 90_000;
+// 残り時間がこれより短ければ、新しい呼び出しを始めない（1語の生成にかかる時間の目安）
+const MIN_CALL_MS = 8_000;
 
 export class ProviderError extends Error {
   readonly status?: number;
@@ -101,7 +103,12 @@ export function alignToWords(words: string[], pieces: Json[]): (Json | null)[] {
 
 type GeminiMode = 'schema' | 'json' | 'plain';
 
-async function callGemini(model: string, words: string[], apiKey: string, mode: GeminiMode): Promise<Json[]> {
+/** 1回の呼び出しの待ち時間。全体の締め切りがあれば、それを超えない */
+function callTimeout(words: string[], deadline: number): number {
+  return Math.max(1_000, Math.min(words.length > 1 ? BATCH_TIMEOUT_MS : TIMEOUT_MS, deadline - Date.now()));
+}
+
+async function callGemini(model: string, words: string[], apiKey: string, mode: GeminiMode, deadline: number): Promise<Json[]> {
   const generationConfig: Json = {
     temperature: 1.0,
     maxOutputTokens: OUTPUT_TOKENS_PER_PIECE * words.length,
@@ -117,18 +124,18 @@ async function callGemini(model: string, words: string[], apiKey: string, mode: 
     // キーはURLではなくヘッダーで渡す（URLはログに残りやすいため）
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: buildPrompt(words) }] }], generationConfig }),
-  }, words.length > 1 ? BATCH_TIMEOUT_MS : TIMEOUT_MS) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+  }, callTimeout(words, deadline)) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
   const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
   if (!text) throw new ProviderError(`${model} returned an empty response`);
   return extractPieces(text);
 }
 
 /** スキーマ → JSONモード → プレーンの順に、モデルが受け付ける形式まで落として呼ぶ */
-async function callGeminiAdaptive(model: string, words: string[], apiKey: string, modes: GeminiMode[]): Promise<Json[]> {
+async function callGeminiAdaptive(model: string, words: string[], apiKey: string, modes: GeminiMode[], deadline: number): Promise<Json[]> {
   let lastError: unknown;
   for (const mode of modes) {
     try {
-      return await callGemini(model, words, apiKey, mode);
+      return await callGemini(model, words, apiKey, mode, deadline);
     } catch (err) {
       lastError = err;
       // 400 = このモデルがその設定に非対応。それ以外（429 上限・5xx 障害）は次のプロバイダへ
@@ -147,7 +154,7 @@ interface OpenAICompatibleConfig {
 }
 
 /** OpenAI 互換の chat/completions を呼ぶ。JSONモードに非対応のモデルなら(400)、指定なしで再試行する */
-async function callOpenAICompatible(config: OpenAICompatibleConfig, words: string[]): Promise<Json[]> {
+async function callOpenAICompatible(config: OpenAICompatibleConfig, words: string[], deadline: number): Promise<Json[]> {
   const call = async (jsonMode: boolean) => {
     const data = await fetchJson(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
@@ -160,7 +167,7 @@ async function callOpenAICompatible(config: OpenAICompatibleConfig, words: strin
         max_tokens: OUTPUT_TOKENS_PER_PIECE * words.length,
         ...(config.extraBody || {}),
       }),
-    }, words.length > 1 ? BATCH_TIMEOUT_MS : TIMEOUT_MS) as { choices?: { message?: { content?: string } }[] };
+    }, callTimeout(words, deadline)) as { choices?: { message?: { content?: string } }[] };
     const text = data.choices?.[0]?.message?.content || '';
     if (!text) throw new ProviderError(`${config.model} returned an empty response`);
     return extractPieces(text);
@@ -175,7 +182,8 @@ async function callOpenAICompatible(config: OpenAICompatibleConfig, words: strin
 
 export interface Provider {
   name: string;
-  run: (words: string[]) => Promise<Json[]>;
+  /** deadline: この時刻（Date.now()）までに応答がなければ打ち切る */
+  run: (words: string[], deadline?: number) => Promise<Json[]>;
 }
 
 export function configuredProviders(): Provider[] {
@@ -187,24 +195,24 @@ export function configuredProviders(): Provider[] {
     const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/ai/v1`;
     for (const model of [WORKERS_AI_MODEL, WORKERS_AI_FALLBACK_MODEL].filter((m, i, all) => m && all.indexOf(m) === i)) {
       const extraBody = WORKERS_AI_THINKING ? undefined : { chat_template_kwargs: { enable_thinking: false } };
-      providers.push({ name: `workers-ai:${model}`, run: w => callOpenAICompatible({ baseUrl, apiKey: cfToken, model, extraBody }, w) });
+      providers.push({ name: `workers-ai:${model}`, run: (w, d = Infinity) => callOpenAICompatible({ baseUrl, apiKey: cfToken, model, extraBody }, w, d) });
     }
   }
 
   const fb = { baseUrl: process.env.FALLBACK_LLM_BASE_URL, apiKey: process.env.FALLBACK_LLM_API_KEY, model: process.env.FALLBACK_LLM_MODEL };
   if (fb.baseUrl && fb.apiKey && fb.model) {
     const config = fb as OpenAICompatibleConfig;
-    providers.push({ name: `fallback:${config.model}`, run: w => callOpenAICompatible(config, w) });
+    providers.push({ name: `fallback:${config.model}`, run: (w, d = Infinity) => callOpenAICompatible(config, w, d) });
   }
 
   const geminiKey = process.env.GEMINI_API_KEY;
   if (ENABLE_GEMINI && geminiKey) {
     const models = [PRIMARY_MODEL, FALLBACK_MODEL].filter((m, i, all) => m && all.indexOf(m) === i);
     for (const model of models) {
-      providers.push({ name: model, run: w => callGeminiAdaptive(model, w, geminiKey, ['schema', 'json', 'plain']) });
+      providers.push({ name: model, run: (w, d = Infinity) => callGeminiAdaptive(model, w, geminiKey, ['schema', 'json', 'plain'], d) });
     }
     if (GEMMA_MODEL) {
-      providers.push({ name: GEMMA_MODEL, run: w => callGeminiAdaptive(GEMMA_MODEL, w, geminiKey, ['plain']) });
+      providers.push({ name: GEMMA_MODEL, run: (w, d = Infinity) => callGeminiAdaptive(GEMMA_MODEL, w, geminiKey, ['plain'], d) });
     }
   }
   return providers;
@@ -228,13 +236,19 @@ function isTransient(err: unknown): boolean {
  * 混雑（429 / 503 など）で失敗したプロバイダは、少し待って1回だけ再試行してから次へ進む。
  * 全体で待つ時間は関数の時間制限に収まるよう短くしている。
  */
-export async function generatePieces(words: string[], providers = configuredProviders()): Promise<BatchResult> {
+export async function generatePieces(words: string[], providers = configuredProviders(), deadline = Infinity): Promise<BatchResult> {
   if (providers.length === 0) throw new NoProviderError('no LLM provider is configured');
   let lastError: unknown;
   for (const provider of providers) {
     for (let attempt = 0; attempt < 2; attempt++) {
+      // 関数の時間制限を超えると応答そのものが返らない（ブラウザには 504 だけが届く）。
+      // 残り時間が少なければ再試行・次のプロバイダを諦め、代替（近い単語・待ち行列）に回す
+      if (deadline - Date.now() < MIN_CALL_MS) {
+        lastError ??= new ProviderError('no time left for another attempt', 504);
+        throw lastError;
+      }
       try {
-        const pieces = alignToWords(words, await provider.run(words));
+        const pieces = alignToWords(words, await provider.run(words, deadline));
         if (pieces.every(p => p === null)) throw new ProviderError(`${provider.name} returned no usable piece`);
         return { pieces, provider: provider.name };
       } catch (err) {
@@ -249,7 +263,7 @@ export async function generatePieces(words: string[], providers = configuredProv
 }
 
 /** 1語だけ生成する */
-export async function generatePiece(word: string, providers = configuredProviders()): Promise<{ piece: Json; provider: string }> {
-  const { pieces, provider } = await generatePieces([word], providers);
+export async function generatePiece(word: string, providers = configuredProviders(), deadline = Infinity): Promise<{ piece: Json; provider: string }> {
+  const { pieces, provider } = await generatePieces([word], providers, deadline);
   return { piece: pieces[0]!, provider };
 }

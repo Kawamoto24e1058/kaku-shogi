@@ -155,6 +155,7 @@ export interface GeneratedPiece {
 }
 
 const API_ENDPOINT = '/api/generate-piece';
+const GENERATE_TIMEOUT_MS = 35_000;
 
 /** 駒作成画面を開いた時点でサーバー関数を起こしておき、最初の生成のコールドスタートを隠す */
 export function warmUpGenerator(): void {
@@ -194,10 +195,12 @@ export async function generatePieceWithSource(word: string): Promise<GeneratedPi
 
   // ③ サーバーで生成（共有キャッシュ → AI → 近い単語の流用 の順に処理される）
   try {
+    // サーバーは30秒以内に必ず答える作りだが、回線が詰まったときに待たせ続けないよう打ち切る
     const res = await fetch(API_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...deviceHeader() },
       body: JSON.stringify({ word: trimmed }),
+      signal: AbortSignal.timeout(GENERATE_TIMEOUT_MS),
     });
     const body = await res.json().catch(() => null);
     if (res.ok && body?.piece) {
