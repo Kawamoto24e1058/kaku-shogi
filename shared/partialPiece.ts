@@ -2,6 +2,8 @@
 // JSON 全体はまだ閉じていないので、項目ごとに「値が閉じているか」を確かめてから読む。
 
 export interface PartialPiece {
+  /** 読み解き（AIが最初に書く。元ネタ・一番の特徴・将棋でどう働くか） */
+  deep_search_analysis?: string;
   effect_name?: string;
   ability_genre?: string;
   description?: string;
@@ -55,6 +57,8 @@ const str = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.
 /** 書き終わった項目だけを、表示に使える形で返す（1語ぶんの出力を想定） */
 export function extractPartialPiece(text: string): PartialPiece {
   const partial: PartialPiece = {};
+  const analysis = str(readField(text, 'deep_search_analysis'), 160);
+  if (analysis) partial.deep_search_analysis = analysis;
   const effectName = str(readField(text, 'effect_name'), 20);
   if (effectName) partial.effect_name = effectName;
   const genre = str(readField(text, 'ability_genre'), 20);

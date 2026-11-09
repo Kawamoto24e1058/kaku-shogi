@@ -168,12 +168,36 @@ for (const op of PROGRAM_OPS) {
 }
 
 {
-  // 取られたときに自分が動く効果は捨てる（実際の AI 出力で見つかった不発）
-  const fixed = normalizeAbilityPrograms([{ trigger: 'ON_TAKEN', target: { area: 'ADJACENT', who: 'EMPTY' }, effects: [{ op: 'TELEPORT' }] },
-    { trigger: 'ON_TAKEN', target: { area: 'ATTACKER', who: 'ENEMY' }, effects: [{ op: 'TELEPORT' }, { op: 'FREEZE', value: 1 }] }]);
-  check(!!fixed && fixed.length === 2 && fixed[0].trigger === 'ON_APPROACH' && fixed[0].effects[0].op === 'TELEPORT',
-    '「取られたら逃げる」だけの能力は「敵が隣に来たら逃げる」に読み替える');
-  check(!!fixed && fixed[1].trigger === 'ON_TAKEN' && fixed[1].effects.map(e => e.op).join() === 'FREEZE', '取られたときの瞬間移動などは、他の効果があれば取り除く');
+  // 取られたときに自分が動く効果は使えない（実際の AI 出力で見つかった不発）
+  const escape = normalizeAbilityPrograms([{ trigger: 'ON_TAKEN', target: { area: 'ADJACENT', who: 'EMPTY' }, effects: [{ op: 'TELEPORT' }] }]);
+  check(!!escape && escape[0].trigger === 'ON_MOVE' && escape[0].effects[0].op === 'TELEPORT', '「取られたら逃げる」だけの能力は「動いた後に逃げる」に読み替える');
+  const mixed = normalizeAbilityPrograms([{ trigger: 'ON_TAKEN', target: { area: 'ATTACKER', who: 'ENEMY' }, effects: [{ op: 'TELEPORT' }, { op: 'FREEZE', value: 1 }] }]);
+  check(!!mixed && mixed[0].trigger === 'ON_TAKEN' && mixed[0].effects.map(e => e.op).join() === 'FREEZE', '取られたときの瞬間移動などは、他の効果があれば取り除く');
+}
+
+{
+  // 能力は1つ。勝手に発動するタイミングは「動いた後」に読み替える。ランダム型だけ複数持てる
+  const weak = { trigger: 'ON_MOVE', target: { area: 'ADJACENT', who: 'ENEMY' }, effects: [{ op: 'STUN', value: 1 }] };
+  const strong = { trigger: 'TURN_START', target: { area: 'RADIUS_2', who: 'ENEMY', pick: 'NEAREST', count: 1 }, effects: [{ op: 'DESTROY' }] };
+  const single = normalizeAbilityPrograms([weak, strong]);
+  check(!!single && single.length === 1 && single[0].effects[0].op === 'DESTROY' && single[0].trigger === 'ON_MOVE',
+    '能力は1つだけ残す（いちばん強いもの）。手番の開始時は「動いた後」に読み替える');
+  for (const trigger of ['TURN_START', 'EVERY_N_TURNS', 'ON_APPROACH']) {
+    check(normalizeAbilityPrograms([{ ...weak, trigger }])![0].trigger === 'ON_MOVE', `${trigger} は「動いた後」に読み替える`);
+  }
+  const random = normalizeAbilityPrograms([{ ...weak, name: '甲' }, { ...strong, name: '乙', trigger: 'ON_MOVE' }, { name: '丙', trigger: 'ON_CAPTURE', target: { area: 'ADJACENT', who: 'ENEMY' }, effects: [{ op: 'PUSH', value: 1 }] }], 'RANDOM');
+  check(!!random && random.length === 3 && random.every(a => a.trigger === 'ON_MOVE'), 'ランダム型は複数の能力を持ち、発動タイミングをそろえる');
+  // ランダム型は1回の発動で1つだけ実行される
+  const seen = new Set<string>();
+  for (let i = 0; i < 30; i++) {
+    const board = setup(random!);
+    board[4][4] = { ...board[4][4]!, ability_mode: 'RANDOM' };
+    const res = applyAutomatedEffect(board, [4, 4], 'ON_MOVE', 'sente', [], [5, 4]);
+    const names = new Set((res.logs ?? []).map(l => ['甲', '乙', '丙'].find(n => l.message.includes(n))).filter(Boolean) as string[]);
+    if (names.size !== 1) { check(false, 'ランダム型は1回に1つだけ発動する', [...names].join(',')); break; }
+    seen.add([...names][0]);
+  }
+  check(seen.size >= 2, 'ランダム型は1回に1つだけ発動し、発動するたびに選ばれる能力が変わる', [...seen].join(','));
 }
 
 {

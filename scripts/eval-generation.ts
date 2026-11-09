@@ -77,6 +77,7 @@ interface Row {
   /** 盤面を大きく動かす部品（必殺技）を持っているか */
   signature: boolean;
   ops: string[];
+  random: boolean;
 }
 
 const SIGNATURE_OPS = new Set(['DESTROY', 'CAPTURE', 'CONTROL', 'SWAP', 'TELEPORT', 'SPAWN', 'WALL', 'EXTRA_ACTION', 'TRANSFORM_PAWN', 'STEAL_HAND']);
@@ -99,7 +100,8 @@ for (let i = 0; i < words.length; i += CONCURRENCY) {
       saved.push(structuredClone(raw));
       const seconds = (Date.now() - started) / 1000;
       const rawAbilities = Array.isArray(raw.abilities) ? raw.abilities as { effects?: unknown[] }[] : [];
-      const kept = normalizeAbilityPrograms(structuredClone(raw.abilities)) ?? [];
+      const mode = raw.ability_mode === 'RANDOM' ? 'RANDOM' : 'SINGLE';
+      const kept = normalizeAbilityPrograms(structuredClone(raw.abilities), mode) ?? [];
       const piece: Piece = { ...sanitizePieceData(structuredClone(raw), word), id: 'me', owner: 'sente', isKing: false, isPawn: false, originalPosition: null, coolDownTurnsRemaining: 0, isRevealed: true, isPromoted: false };
       const fired = simulate(piece);
       const ops = new Set(kept.flatMap(a => a.effects.map(e => e.op as string)));
@@ -112,10 +114,11 @@ for (let i = 0; i < words.length; i += CONCURRENCY) {
         effectsKept: kept.reduce((n, a) => n + a.effects.length, 0),
         fired: fired.filter(Boolean).length, triggers: fired.length, broken,
         ops: [...ops],
+        random: mode === 'RANDOM',
         signature: kept.some(a => a.effects.some(e => SIGNATURE_OPS.has(e.op) || ((e.op === 'PUSH' || e.op === 'PULL') && (e.value ?? 1) >= 2))),
       });
     } catch (err) {
-      rows.push({ word, ok: false, seconds: (Date.now() - started) / 1000, name: (err as Error).message.slice(0, 60), abilitiesRaw: 0, abilitiesKept: 0, effectsRaw: 0, effectsKept: 0, fired: 0, triggers: 0, broken: [], ops: [], signature: false });
+      rows.push({ word, ok: false, seconds: (Date.now() - started) / 1000, name: (err as Error).message.slice(0, 60), abilitiesRaw: 0, abilitiesKept: 0, effectsRaw: 0, effectsKept: 0, fired: 0, triggers: 0, broken: [], ops: [], signature: false, random: false });
     }
   }));
 }
@@ -123,7 +126,7 @@ for (let i = 0; i < words.length; i += CONCURRENCY) {
 rows.sort((a, b) => words.indexOf(a.word) - words.indexOf(b.word));
 if (process.env.EVAL_SAVE) writeFileSync(process.env.EVAL_SAVE, JSON.stringify(saved));
 for (const r of rows) {
-  console.log(`${r.ok ? '✓' : '✗'} ${r.word.padEnd(8, '　')} 《${r.name}》 ${r.seconds.toFixed(1)}秒 能力${r.abilitiesKept}/${r.abilitiesRaw} 効果${r.effectsKept}/${r.effectsRaw} 発動${r.fired}/${r.triggers} ${r.signature ? '★' : '　'}${r.ops.join(',')}${r.broken.length ? ' 不一致:' + r.broken.join('・') : ''}`);
+  console.log(`${r.ok ? '✓' : '✗'} ${r.word.padEnd(8, '　')} 《${r.name}》 ${r.seconds.toFixed(1)}秒 能力${r.abilitiesKept}/${r.abilitiesRaw} 効果${r.effectsKept}/${r.effectsRaw} 発動${r.fired}/${r.triggers} ${r.signature ? '★' : '　'}${r.random ? '[ランダム]' : ''}${r.ops.join(',')}${r.broken.length ? ' 不一致:' + r.broken.join('・') : ''}`);
 }
 const ok = rows.filter(r => r.ok);
 const sum = (f: (r: Row) => number) => ok.reduce((n, r) => n + f(r), 0);
@@ -135,5 +138,7 @@ console.log(`
   説明文と能力の不一致  ${ok.filter(r => r.broken.length).length}/${ok.length} 語
   必殺技（★）がある駒  ${ok.filter(r => r.signature).length}/${ok.length} 語
   STUN を使う駒        ${ok.filter(r => r.ops.includes('STUN')).length}/${ok.length} 語
+  AIが書いた能力の数    ${[1, 2, 3].map(n => `${n}個:${ok.filter(r => r.abilitiesRaw === n).length}`).join(' ')}
+  ランダム型の駒        ${ok.filter(r => r.random).length}/${ok.length} 語（${ok.filter(r => r.random).map(r => r.word).join('・') || 'なし'}）
   使われた部品の種類    ${new Set(ok.flatMap(r => r.ops)).size} 種類
   平均時間              ${(sum(r => r.seconds) / Math.max(1, ok.length)).toFixed(1)}秒`);

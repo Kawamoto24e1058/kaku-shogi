@@ -6,6 +6,14 @@
 
 export const PROGRAM_TRIGGERS = ['ON_MOVE', 'TURN_START', 'EVERY_N_TURNS', 'ON_CAPTURE', 'ON_TAKEN', 'ON_APPROACH', 'ON_PROMOTE'] as const;
 export type ProgramTrigger = typeof PROGRAM_TRIGGERS[number];
+/** 実際に使う発動タイミング。残りは古い駒を読み込むときに ON_MOVE へ読み替える（normalizeAbility） */
+export const PLAYER_TRIGGERS = ['ON_MOVE', 'ON_CAPTURE', 'ON_PROMOTE', 'ON_TAKEN'] as const;
+
+/**
+ * 能力の持ち方。SINGLE = 能力1つ（基本）。RANDOM = 2〜3個の能力から、発動のたびに1つがランダムに選ばれる
+ * （ガチャ・サイコロ・気まぐれな猫など、運や気まぐれが本質の単語だけ）
+ */
+export type AbilityMode = 'SINGLE' | 'RANDOM';
 
 export const PROGRAM_CONDITIONS = [
   'NONE', 'IN_ENEMY_CAMP', 'IN_OWN_CAMP', 'ENEMIES_NEAR_AT_LEAST', 'ALLIES_NEAR_AT_LEAST', 'NO_ALLY_NEAR',
@@ -249,14 +257,17 @@ function reconcileTargetKind(target: ProgramTarget, effects: ProgramEffect[]): P
 function normalizeAbility(raw: unknown, index: number): AbilityProgram | null {
   if (!raw || typeof raw !== 'object') return null;
   const a = raw as Record<string, unknown>;
+  // 発動は「自分の操作がきっかけ」のものだけにする（動いた後・取ったとき・成ったとき）＋「取られたとき（罠）」。
+  // 手番の開始時・◯手番ごと・敵が隣に来たときは、操作と関係なく勝手に発動して分かりにくいので「動いた後」に読み替える
   let trigger = oneOf(PROGRAM_TRIGGERS, a.trigger, 'ON_MOVE');
+  if (!(PLAYER_TRIGGERS as readonly string[]).includes(trigger)) trigger = 'ON_MOVE';
   const validEffects = (Array.isArray(a.effects) ? a.effects : [])
     .map(normalizeEffect)
     .filter((e): e is ProgramEffect => e !== null);
   // 「取られたら逃げる」（取られたときの瞬間移動・入れ替え・隠れる）は、取られた後では実行できない。
-  // 能力ごと捨てずに「敵が隣に来たとき（＝取られそうなとき）に逃げる」へ読み替えて、AIの狙いを残す
+  // 能力ごと捨てずに「動いた後に逃げる・隠れる」へ読み替えて、AIの狙いを残す
   if (trigger === 'ON_TAKEN' && validEffects.length > 0 && validEffects.every(e => NEEDS_SELF_ON_BOARD.has(e.op))) {
-    trigger = 'ON_APPROACH';
+    trigger = 'ON_MOVE';
   }
   const effects = validEffects
     // 取られたときは自分はもう盤上にいないので、自分が動く・自分に掛ける部品は使えない
@@ -344,14 +355,26 @@ export function balanceAbility(a: AbilityProgram): AbilityProgram {
 }
 
 /** AI の出力（abilities 配列）を検証・正規化・強さ調整する。使えるものが1つも無ければ null */
-export function normalizeAbilityPrograms(raw: unknown): AbilityProgram[] | null {
+export function normalizeAbilityPrograms(raw: unknown, mode: AbilityMode = 'SINGLE'): AbilityProgram[] | null {
   const list = Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? [raw] : [];
-  const abilities = list
+  let abilities = list
     .map(normalizeAbility)
-    .filter((a): a is AbilityProgram => a !== null)
-    .slice(0, MAX_ABILITIES)
-    .map(balanceAbility);
+    .filter((a): a is AbilityProgram => a !== null);
+  if (mode === 'RANDOM') {
+    // ランダム型は、どれが選ばれても同じタイミングで発動するようにそろえる
+    // 毎手番は回せないよう、どの結果にも最低2手番の充填を付ける（エンジン側でランダム型の充填は全能力で共有する）
+    abilities = abilities.slice(0, MAX_ABILITIES).map(a => ({ ...a, trigger: abilities[0].trigger, cooldown: Math.max(a.cooldown, 2) }));
+  } else if (abilities.length > 1) {
+    // 能力は1つ。AIが複数書いたとき（古い駒も含む）は、いちばん強い＝その駒の主役の能力を残す
+    abilities = [abilities.reduce((best, a) => (abilityPower(a) > abilityPower(best) ? a : best))];
+  }
+  abilities = abilities.map(balanceAbility);
   return abilities.length > 0 ? abilities : null;
+}
+
+/** AI の出力から能力の持ち方を読む。2つ以上の能力を書いていても、RANDOM と明示されていなければ SINGLE */
+export function normalizeAbilityMode(raw: unknown): AbilityMode {
+  return raw === 'RANDOM' ? 'RANDOM' : 'SINGLE';
 }
 
 const HEX_RE = /^#[0-9a-f]{6}$/i;
@@ -408,6 +431,8 @@ export function describeAbility(a: AbilityProgram): string {
 }
 
 /** 駒の全能力の説明（UI・ログ用） */
-export function describeAbilities(list: AbilityProgram[]): string {
-  return list.map(describeAbility).join('\n');
+export function describeAbilities(list: AbilityProgram[], mode: AbilityMode = 'SINGLE'): string {
+  const lines = list.map(describeAbility);
+  if (mode === 'RANDOM' && list.length > 1) return ['発動のたびに、次のうち1つがランダムに選ばれる（選ばれた能力の充填中は、どれも使えない）', ...lines].join('\n');
+  return lines.join('\n');
 }

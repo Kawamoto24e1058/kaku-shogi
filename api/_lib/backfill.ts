@@ -5,7 +5,7 @@
 // 1日の「回数」上限に対して何倍もの単語を登録できる。無料枠の上限に達したら静かに終了する。
 import { configuredProviders, generatePieces } from './generator.js';
 import { lookupReferences } from './reference.js';
-import { deleteQueued, getCachedPiece, listQueue, saveCachedPiece, storeConfigured } from './pieceCache.js';
+import { deleteQueued, getCachedPiece, listQueue, listStalePieces, saveCachedPiece, storeConfigured } from './pieceCache.js';
 import { PREGEN_WORDS, SEED_WORDS } from '../../shared/seedWords.js';
 import { wordKey } from '../../shared/wordKey.js';
 import { containsNgWord, pieceHasNgText } from '../../shared/moderation.js';
@@ -31,21 +31,41 @@ export async function runBackfill({ limit, batch, intervalMs, deadline = Infinit
   const providers = configuredProviders();
   if (providers.length === 0) throw new Error('no LLM provider is configured');
 
-  // 候補: 待ち行列（要求回数の多い順）→ 事前生成リスト。キーで重複を除き、キャッシュ済みは飛ばす
+  // 候補: お題・待ち行列（要求回数の多い順）→ 古い仕様の駒の作り直し → 事前生成リスト。キーで重複を除く
   const candidates = new Map<string, string>();
-  // 今日と明日の「今日のお題」（合体駒は毎日1つ新しくなる）を最優先で用意しておく
+  // 今日と明日の「今日のお題」を最優先で用意しておく
   const tomorrow = dailyKey(new Date(Date.now() + 86_400_000));
   for (const word of [...dailyWords(), ...dailyWords(tomorrow)]) candidates.set(wordKey(word), word);
   for (const q of await listQueue(limit * 2)) if (!candidates.has(q.key)) candidates.set(q.key, q.word || q.key);
+  const dailyAndQueueCount = candidates.size;
   for (const word of [...SEED_WORDS, ...PREGEN_WORDS]) if (!candidates.has(wordKey(word))) candidates.set(wordKey(word), word);
 
   const todo: { key: string; word: string }[] = [];
-  for (const [key, word] of candidates) {
+  const pending = [...candidates];
+  // 1. 今日・明日のお題と待ち行列（まだ駒が無い単語）
+  const dailyAndQueue = pending.slice(0, dailyAndQueueCount);
+  for (const [key, word] of dailyAndQueue) {
     if (todo.length >= limit) break;
     if (containsNgWord(word) || await getCachedPiece(key)) {
       await deleteQueued(key);
       continue;
     }
+    todo.push({ key, word });
+  }
+  // 2. 古い仕様の駒の作り直し（既にある駒なので、キャッシュ済みでも対象にする）
+  if (todo.length < limit) {
+    const stalePieces = await listStalePieces(limit - todo.length).catch(err => {
+      log(`stale lookup failed: ${(err as Error).message}`);
+      return [] as { key: string; word: string }[];
+    });
+    for (const stale of stalePieces) {
+      if (!todo.some(t => t.key === stale.key) && !containsNgWord(stale.word)) todo.push({ key: stale.key, word: stale.word || stale.key });
+    }
+  }
+  // 3. 事前生成リストのうち、まだ駒が無い単語
+  for (const [key, word] of pending.slice(dailyAndQueue.length)) {
+    if (todo.length >= limit) break;
+    if (todo.some(t => t.key === key) || containsNgWord(word) || await getCachedPiece(key)) continue;
     todo.push({ key, word });
   }
 

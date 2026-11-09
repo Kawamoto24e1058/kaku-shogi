@@ -3,7 +3,7 @@ import { AREA_SHAPES, normalizeActions } from '../shared/abilityCatalog';
 import { buildOfflinePiece } from './offlineGenerator';
 import { wordKey } from '../shared/wordKey';
 import { containsNgWord, pieceHasNgText } from '../shared/moderation';
-import { normalizeAbilityPrograms, describeAbilities, normalizeAppearance } from '../shared/abilityProgram';
+import { normalizeAbilityPrograms, normalizeAbilityMode, describeAbilities, normalizeAppearance } from '../shared/abilityProgram';
 import { normalizeFusionWord } from '../shared/challenge';
 import { extractPartialPiece, type PartialPiece } from '../shared/partialPiece';
 
@@ -21,7 +21,7 @@ const memoryCache = new Map<string, PieceData>();
 // バージョン管理されたワンタイムキャッシュクリーンアップ（v4にアップデートして古いキャッシュを全消去）
 try {
   if (typeof window !== 'undefined' && window.localStorage) {
-    const CURRENT_VERSION = 'v9';
+    const CURRENT_VERSION = 'v10'; // v10: 能力1つ化・発動タイミングの見直し（古い駒の端末キャッシュを捨てる）
     const activeVersion = localStorage.getItem('shogi_cache_version');
     if (activeVersion !== CURRENT_VERSION) {
       localStorage.removeItem('shogi_piece_cache');
@@ -197,7 +197,7 @@ async function readGenerateStream(res: Response, onPartial: (partial: PartialPie
     const serialized = JSON.stringify(partial);
     if (serialized === '{}' || serialized === lastSent || pieceHasNgText(partial as Record<string, unknown>)) return;
     lastSent = serialized;
-    complete = !!(partial.effect_name && partial.ability_genre && partial.description && partial.appearance && partial.range_geometry);
+    complete = !!(partial.deep_search_analysis && partial.effect_name && partial.ability_genre && partial.description && partial.appearance && partial.range_geometry);
     onPartial(partial);
   };
   for (;;) {
@@ -886,12 +886,16 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
 
   // ─── 能力プログラム（v2）: 検証・強さの自動調整・説明文の生成 ─────────────
   // 使える部品が1つも無ければ消し、従来の ability_spec / custom_ability で動かす
-  const programs = normalizeAbilityPrograms(parsed.abilities);
+  const requestedMode = normalizeAbilityMode(parsed.ability_mode);
+  const programs = normalizeAbilityPrograms(parsed.abilities, requestedMode);
   if (programs) {
+    const mode = requestedMode === 'RANDOM' && programs.length > 1 ? 'RANDOM' : 'SINGLE';
     parsed.abilities = programs;
-    parsed.rules_text = describeAbilities(programs);
+    parsed.ability_mode = mode;
+    parsed.rules_text = describeAbilities(programs, mode);
   } else {
     delete parsed.abilities;
+    delete parsed.ability_mode;
     delete parsed.rules_text;
   }
   parsed.appearance = normalizeAppearance(parsed.appearance, String(parsed.effect_name || parsed.word || ''));

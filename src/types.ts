@@ -141,6 +141,8 @@ export interface PieceData {
   activation_type?: ActivationType;
   /** 能力プログラム（v2）。あれば ability_spec / custom_ability より優先して実行する（shared/abilityProgram.ts） */
   abilities?: AbilityProgram[];
+  /** 能力の持ち方。RANDOM なら発動のたびに abilities から1つがランダムに選ばれる（無ければ SINGLE） */
+  ability_mode?: 'SINGLE' | 'RANDOM';
   /** abilities から機械的に作った効果の説明 */
   rules_text?: string;
   /** 駒の見た目（色・紋章・オーラ） */

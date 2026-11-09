@@ -365,10 +365,10 @@ type TriggerType = 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN' | 'TURN
 /** 能力の発動条件 (trigger) がイベントに一致するか。「常時 (ALWAYS)」は毎手番の開始時に1回発動として扱う */
 function triggerMatches(trigger: string | undefined, triggerType: TriggerType): boolean {
   if (!trigger) return false;
-  if (trigger === triggerType) return true;
-  if ((trigger === 'ALWAYS' || trigger === 'AUTO') && triggerType === 'TURN_START') return true;
-  if (trigger === 'AFTER_MOVE' && triggerType === 'ON_MOVE') return true;
-  return false;
+  // 能力は自分の操作がきっかけで発動させる。古い形式の「手番の開始時」「敵が隣に来たとき」は「動いた後」として扱い、
+  // 「常時（ALWAYS）」は手番の開始時に勝手に発動させない（理由が分からない発動になっていたため）
+  const normalized = trigger === 'TURN_START' || trigger === 'ON_APPROACH' || trigger === 'AFTER_MOVE' ? 'ON_MOVE' : trigger;
+  return normalized === triggerType;
 }
 
 /**

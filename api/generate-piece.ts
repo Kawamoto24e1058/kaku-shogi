@@ -129,7 +129,7 @@ function partialRelay(onPartial: OnPartial) {
     checkedLength = text.length;
     if (!/["}\]]/.test(added)) return;
     const partial = extractPartialPiece(text);
-    complete = !!(partial.effect_name && partial.ability_genre && partial.description && partial.appearance && partial.range_geometry);
+    complete = !!(partial.deep_search_analysis && partial.effect_name && partial.ability_genre && partial.description && partial.appearance && partial.range_geometry);
     const serialized = JSON.stringify(partial);
     if (serialized === '{}' || serialized === last || pieceHasNgText(partial as Json)) return;
     last = serialized;
