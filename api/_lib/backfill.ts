@@ -1,4 +1,4 @@
-// 共有キャッシュのバックフィル（api/backfill.ts の Vercel Cron と scripts/backfill.ts で共用）
+// 共有キャッシュのバックフィル（worker/index.ts の Cron Trigger と scripts/backfill.ts で共用）
 // 1. 利用者がAI生成できなかった単語（generation_queue）を要求回数の多い順に
 // 2. 余った枠で事前生成用の単語（shared/seedWords.ts の SEED_WORDS → PREGEN_WORDS）を
 // AI生成して共有キャッシュに登録する。1回の呼び出しで batch 語をまとめて生成するので、

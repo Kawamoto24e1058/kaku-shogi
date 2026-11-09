@@ -6,7 +6,7 @@
 // バズ時に Supabase の無料枠（転送量 5GB/月）を使い切らないよう、
 // キャッシュ済みの駒は GET + CDN キャッシュで返し、回数制限はメモリ上で数える。
 // どれも使えない場合はエラーを返し（ブラウザ側で簡易生成に切り替わる）、単語を待ち行列に積む。
-// 待ち行列は api/backfill.ts（Vercel Cron で1日1回）がAI生成して共有キャッシュに登録する。
+// 待ち行列は worker/index.ts の Cron Trigger（1日1回）がAI生成して共有キャッシュに登録する。
 import { createHash } from 'node:crypto';
 import { generatePiece, NoProviderError, type Json, type OnRawStream } from './_lib/generator.js';
 import { consumeSharedQuota, enqueueWord, findSimilarPiece, getCachedPiece, saveCachedPiece, storeConfigured } from './_lib/pieceCache.js';

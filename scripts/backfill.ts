@@ -1,4 +1,4 @@
-// 共有キャッシュのバックフィルを手元で実行する（本番は api/backfill.ts を Vercel Cron が1日1回呼ぶ）
+// 共有キャッシュのバックフィルを手元で実行する（本番は worker/index.ts の Cron Trigger が1日1回実行する）
 // 実行: npm run backfill   （.env.local の CLOUDFLARE_* と SUPABASE_* を読む）
 // 任意: BACKFILL_LIMIT（1回の実行で登録する最大語数, 既定60）
 //       BACKFILL_BATCH（1回の呼び出しでまとめる語数, 既定5）
