@@ -4,6 +4,7 @@
 // AI生成して共有キャッシュに登録する。1回の呼び出しで batch 語をまとめて生成するので、
 // 1日の「回数」上限に対して何倍もの単語を登録できる。無料枠の上限に達したら静かに終了する。
 import { configuredProviders, generatePieces } from './generator.js';
+import { lookupReferences } from './reference.js';
 import { deleteQueued, getCachedPiece, listQueue, saveCachedPiece, storeConfigured } from './pieceCache.js';
 import { PREGEN_WORDS, SEED_WORDS } from '../../shared/seedWords.js';
 import { wordKey } from '../../shared/wordKey.js';
@@ -55,7 +56,8 @@ export async function runBackfill({ limit, batch, intervalMs, deadline = Infinit
     const chunk = todo.slice(i, i + batch);
     try {
       // 新しいまとまりは deadline までに始め、呼び出し自体は関数の上限（300秒）の手前まで待つ
-      const { pieces, provider } = await generatePieces(chunk.map(c => c.word), providers, deadline + CALL_GRACE_MS);
+      const words = chunk.map(c => c.word);
+      const { pieces, provider } = await generatePieces(words, providers, deadline + CALL_GRACE_MS, undefined, undefined, await lookupReferences(words));
       for (const [j, piece] of pieces.entries()) {
         if (!piece) continue;
         if (pieceHasNgText(piece)) {

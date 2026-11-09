@@ -13,6 +13,7 @@ import { consumeSharedQuota, enqueueWord, findSimilarPiece, getCachedPiece, save
 import { wordKey } from '../shared/wordKey.js';
 import { containsNgWord, pieceHasNgText, setExtraNgWords } from '../shared/moderation.js';
 import { featureFlags } from './_lib/flags.js';
+import { lookupReferences } from './_lib/reference.js';
 import { normalizeFusionWord } from '../shared/challenge.js';
 import { extractPartialPiece, type PartialPiece } from '../shared/partialPiece.js';
 
@@ -136,11 +137,11 @@ function partialRelay(onPartial: OnPartial) {
   };
 }
 
-function generateShared(key: string, word: string, deadline: number, onPartial?: OnPartial, onRaw?: OnRawStream) {
+function generateShared(key: string, word: string, deadline: number, onPartial?: OnPartial, onRaw?: OnRawStream, reference?: Promise<string | null>) {
   let pending = inFlight.get(key);
   if (!pending) {
     pending = (async () => {
-      const result = await generatePiece(word, undefined, deadline, onPartial ? partialRelay(onPartial) : undefined, onRaw);
+      const result = await generatePiece(word, undefined, deadline, onPartial ? partialRelay(onPartial) : undefined, onRaw, await reference);
       if (pieceHasNgText(result.piece)) {
         // 不適切な文章を含む結果は使わず、キャッシュもしない（ブラウザ側で簡易生成になる）
         throw new ModerationError(`generated text for "${word}" was blocked`);
@@ -297,6 +298,8 @@ async function handleRequest(request: Request, onPartial?: OnPartial, onRaw?: On
   if (containsNgWord(word)) return json(400, { error: 'その単語は使えません。別の単語を入力してください。', blocked: true });
 
   const key = wordKey(word);
+  // 元ネタの参考情報（Wikipedia）は、キャッシュ確認・回数制限と並行して調べておく
+  const reference = inFlight.has(key) ? undefined : lookupReferences([word]).then(refs => refs[0]).catch(() => null);
   // 同じ単語を生成中・生成直後なら、その結果を使う（回数制限も消費しない）
   const shared = inFlight.get(key);
   if (shared) {
@@ -323,7 +326,7 @@ async function handleRequest(request: Request, onPartial?: OnPartial, onRaw?: On
   if (quota === 'global') return fallbackResponse(key, word, 429, '本日のAI生成枠が混雑しているため');
 
   try {
-    const { piece } = await generateShared(key, word, startedAt + AI_BUDGET_MS, onPartial, onRaw);
+    const { piece } = await generateShared(key, word, startedAt + AI_BUDGET_MS, onPartial, onRaw, reference);
     return json(200, { piece: { ...piece, word }, source: 'ai' });
   } catch (err) {
     if (err instanceof ModerationError) {
