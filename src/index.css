@@ -1,6 +1,12 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;500;700;900&display=swap');
 @import "tailwindcss";
 
+/* iOS・アプリ内ブラウザが文字を勝手に拡大してレイアウトが崩れるのを防ぐ */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 :root {
   --bg-main: #F7F5F0; /* Hand-made Washi paper white */
   --bg-panel: rgba(255, 255, 255, 0.7); /* Shoji white translucent */
@@ -380,6 +386,13 @@ html, body {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  /* 中身の最小幅で画面より広がらないようにする（狭いスマホで右側が切れていた） */
+  min-width: 0;
+}
+
+.main-content > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .game-board-container {

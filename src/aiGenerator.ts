@@ -365,6 +365,10 @@ export function getRandomCachedPieces(count: number): PieceData[] {
   return result;
 }
 
+/** 2マス先へ動けるマスの上限（通常・成った後）。バランス調整は scripts/simulate-games.ts で確認する */
+const MAX_FAR_MOVES = 2;
+const MAX_FAR_MOVES_PROMOTED = 4;
+
 export function sanitizePieceData(parsed: any, word: string): PieceData {
   // Repair word
   if (!parsed.word || typeof parsed.word !== 'string') {
@@ -637,19 +641,19 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
     const fixCenter = (g: string) => g.split('').map((c, i) => (i === 12 ? '2' : c === '2' ? '1' : c)).join('');
     // 通常時の移動範囲が広すぎる（全方向2マスの24マス等）と1駒で盤面を制圧できてしまうため、
     // 動けるマスが12を超える場合は「歩数2以内（ひし形12マス）」に絞る。成った後の範囲は広いままでよい。
-    const capMobility = (g: string) => {
-      const movable = g.split('').filter(c => c === '1').length;
-      if (movable <= 12) return g;
-      return g.split('').map((c, i) => {
-        const dy = Math.floor(i / 5) - 2;
-        const dx = (i % 5) - 2;
-        return c === '1' && Math.abs(dy) + Math.abs(dx) > 2 ? '0' : c;
-      }).join('');
+    // 2マス先へのマスは飛び越えて移動できるため強い。周囲1マスは全部残し、2マス先は maxFar 個まで（前方を優先）にする。
+    // 自動対局で「周囲1マス＋2マス先4つ」の駒は能力なしでも勝率71%、玉と同じ動きなら50%だった
+    const capMobility = (g: string, maxFar: number) => {
+      const far = g.split('').map((c, i) => ({ c, i, dy: Math.floor(i / 5) - 2, dx: (i % 5) - 2 }))
+        .filter(cell => cell.c === '1' && Math.max(Math.abs(cell.dy), Math.abs(cell.dx)) === 2)
+        .sort((a, b) => a.dy - b.dy || Math.abs(a.dx) - Math.abs(b.dx));
+      const keep = new Set(far.slice(0, maxFar).map(cell => cell.i));
+      return g.split('').map((c, i) => (far.some(cell => cell.i === i) && !keep.has(i) ? '0' : c)).join('');
     };
     parsed.range_geometry = {
-      normal_grid: capMobility(fixCenter(norm)),
+      normal_grid: capMobility(fixCenter(norm), MAX_FAR_MOVES),
       charging_grid: fixCenter(chg),
-      promoted_grid: fixCenter(prom)
+      promoted_grid: capMobility(fixCenter(prom), MAX_FAR_MOVES_PROMOTED)
     };
   }
 

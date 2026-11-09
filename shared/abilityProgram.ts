@@ -318,8 +318,10 @@ export function abilityPower(a: AbilityProgram): number {
   else if (removes && remote) power *= 1.4;
   // 盤上全体・敵玉の周りを狙えること自体が強い
   if (a.target.area === 'ALL' || a.target.area === 'ENEMY_KING_AROUND') power *= 1.5;
-  if (a.condition === 'CHANCE') power *= (a.condition_value ?? 50) / 100;
-  else if (a.condition !== 'NONE') power *= 0.75;
+  // 確率（CHANCE）は1回あたりの強さを下げない。外れても次の手番にまた引けるので、使える頻度だけが下がる
+  // （balanceAbility で充填手番から「当たるまでの平均の待ち」を差し引く）。
+  // 以前は強さに確率を掛けていたため「20%で盤上の敵を捕獲」がほぼ毎回使え、自動対局で勝率80%になった
+  if (a.condition !== 'NONE' && a.condition !== 'CHANCE') power *= 0.75;
   return Math.round(power * 10) / 10;
 }
 
@@ -332,6 +334,8 @@ const ONCE_POWER = 18;
 export function balanceAbility(a: AbilityProgram): AbilityProgram {
   const power = abilityPower(a);
   let required = power <= FREE_POWER ? 0 : Math.ceil((power - FREE_POWER) / 2.5);
+  // 確率で発動する能力は、当たるまで平均 (1/確率 - 1) 手番待つので、その分だけ充填手番を短くする
+  if (a.condition === 'CHANCE') required = Math.max(0, required - Math.floor(100 / (a.condition_value ?? 50) - 1));
   if (power > ONCE_POWER) required = 99;
   // EVERY_N_TURNS は間隔そのものが充填手番になる
   if (a.trigger === 'EVERY_N_TURNS') required = Math.max(required, (a.every ?? 3) - 1);

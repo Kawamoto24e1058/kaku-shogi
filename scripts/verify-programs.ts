@@ -210,8 +210,8 @@ for (const op of PROGRAM_OPS) {
   const a = dailyWords('2026-10-22');
   const b = dailyWords('2026-10-22');
   const c = dailyWords('2026-10-23');
-  check(JSON.stringify(a) === JSON.stringify(b) && JSON.stringify(a) !== JSON.stringify(c) && a.length === 3 && a[2].includes('×') && new Set(a).size === 3,
-    '今日のお題は日付で決まり、毎日変わる（3枚目は合体駒）', `${a.join(' / ')} → 翌日 ${c.join(' / ')}`);
+  check(JSON.stringify(a) === JSON.stringify(b) && JSON.stringify(a) !== JSON.stringify(c) && a.length === 3 && !a.some(w => w.includes('×')) && new Set(a).size === 3,
+    '今日のお題は日付で決まり、毎日変わる（3語とも普通の単語）', `${a.join(' / ')} → 翌日 ${c.join(' / ')}`);
   check(dailyKey(new Date('2026-10-22T15:30:00Z')) === '2026-10-23', '今日のお題は日本時間の0時で切り替わる');
 }
 

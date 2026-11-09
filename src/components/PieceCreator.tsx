@@ -7,7 +7,7 @@ import type { Piece, Player } from '../types';
 import { generateId } from '../gameLogic';
 import { PieceDetailCard } from './PieceDetailCard';
 import { ProgramAbilityList } from './ProgramAbilityList';
-import { FUSION_MARK, normalizeFusionWord } from '../../shared/challenge';
+import { normalizeFusionWord } from '../../shared/challenge';
 import type { PartialPiece } from '../../shared/partialPiece';
 
 /** 生成中の駒の移動範囲（5x5）。AIが書き終えた時点で表示する */
@@ -189,7 +189,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
   };
 
   return (
-    <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '16px', zIndex: 10, position: 'relative' }}>
+    <div style={{ width: '100%', boxSizing: 'border-box', maxWidth: '1000px', margin: '0 auto', padding: '16px', zIndex: 10, position: 'relative' }}>
       
       {/* Matchmaking & Faction Readiness Dashboard */}
       <div 
@@ -362,7 +362,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
               type="text"
               value={word}
               onChange={(e) => setWord(e.target.value)}
-              placeholder="単語（例：忍者）や 2語の合体（例：猫×新幹線）"
+              placeholder="単語を入力（例：忍者、満員電車）"
               className="cyber-input"
               style={{ flex: 1 }}
               maxLength={24}
@@ -377,16 +377,6 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
               概念をコンパイルする
             </button>
           </form>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', margin: '-8px 0 20px', fontSize: '12px', color: 'var(--text-muted)' }}>
-            <button
-              type="button"
-              onClick={() => setWord(w => (w.includes(FUSION_MARK) ? w : `${w.trim()}${FUSION_MARK}`))}
-              style={{ padding: '4px 10px', borderRadius: '999px', border: '1px solid rgba(139, 92, 26, 0.3)', background: '#fff', fontWeight: 700, color: '#92400e' }}
-            >
-              ＋ 合体（{FUSION_MARK}）
-            </button>
-            <span>2つの言葉を {FUSION_MARK} でつなぐと、両方の性質を持つ合体駒になります</span>
-          </div>
           </>
         )}
 

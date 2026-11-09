@@ -3,6 +3,7 @@
 // App.tsx の手番処理（手番開始の能力 → 指し手 → 移動・駒取り・取られた時の能力 → 地形 → 手番終了の状態異常の経過）を
 // 簡略化して再現している。画面の演出や、手動で対象を選ぶ能力の操作は含まない。
 (globalThis as { localStorage?: unknown }).localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+import { readFileSync } from 'node:fs';
 import type { Board, Piece, Player, TileState } from '../src/types';
 import { normalizeAbilityPrograms, describeAbilities, abilityPower } from '../shared/abilityProgram';
 
@@ -32,6 +33,11 @@ interface PoolEntry { name: string; data: Record<string, unknown>; kind: 'offlin
 const pool: PoolEntry[] = [];
 for (const archetype of OFFLINE_ARCHETYPES) {
   pool.push({ name: `簡易:${archetype.key}`, data: buildOfflinePiece(`簡易${archetype.key}`, archetype) as unknown as Record<string, unknown>, kind: 'offline' });
+}
+// EXTRA_POOL=ファイル で、実際にAIが作った駒（npm run eval:generation の EVAL_SAVE で保存したもの）も混ぜる
+if (process.env.EXTRA_POOL) {
+  const extra = JSON.parse(readFileSync(process.env.EXTRA_POOL, 'utf8')) as Record<string, unknown>[];
+  for (const data of extra) pool.push({ name: `AI:${String(data.word)}`, kind: 'ai-like', data });
 }
 // 実際の AI 出力で見た形の能力（今回の試作で出たもの）
 const AI_LIKE: Record<string, unknown[]> = {
