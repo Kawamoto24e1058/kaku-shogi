@@ -156,6 +156,28 @@ interface OpenAICompatibleConfig {
 /** 書いている途中の出力（それまでの全文）を受け取る。再試行すると空から始まり直す */
 export type OnText = (textSoFar: string) => void;
 
+/**
+ * AIの出力ストリーム（Server-Sent Events のバイト列）をそのまま受け取る。
+ * Worker ではこれを JavaScript で読まずにブラウザへ流す（1文字ずつ解析すると無料プランの CPU 時間を超えるため）。
+ * 再試行のたびに新しいストリームが渡される
+ */
+export type OnRawStream = (stream: ReadableStream<Uint8Array>) => void;
+
+/** SSE の全文から、AIが書いた文章をつなげて取り出す（OpenAI 互換・Workers AI 独自のどちらの形にも対応） */
+export function textFromSSE(sse: string): string {
+  // 1行ごとに全体を JSON.parse すると（数百行ある）CPU 時間がかかるので、文字の部分だけを取り出して読む
+  const pattern = /"(?:content|response)":"((?:[^"\\]|\\.)*)"/g;
+  let text = '';
+  for (const match of sse.matchAll(pattern)) {
+    try {
+      text += JSON.parse(`"${match[1]}"`) as string;
+    } catch {
+      // 壊れた行は読み飛ばす（最後に全体を JSON として検証する）
+    }
+  }
+  return text;
+}
+
 /** OpenAI 互換の chat/completions を呼ぶ。JSONモードに非対応のモデルなら(400)、指定なしで再試行する。
  * onText があれば stream: true で受け取り、届いた分を順に渡す（生成中の駒を少しずつ見せるため） */
 async function callOpenAICompatible(config: OpenAICompatibleConfig, words: string[], deadline: number, onText?: OnText): Promise<Json[]> {
@@ -247,14 +269,14 @@ function bindingText(data: unknown): string {
   return d?.choices?.[0]?.message?.content ?? d?.choices?.[0]?.delta?.content ?? '';
 }
 
-async function callWorkersAIBinding(binding: WorkersAIBinding, model: string, words: string[], deadline: number, onText?: OnText): Promise<Json[]> {
+async function callWorkersAIBinding(binding: WorkersAIBinding, model: string, words: string[], deadline: number, onRaw?: OnRawStream): Promise<Json[]> {
   const inputs = {
     messages: [{ role: 'user', content: buildPrompt(words) }],
     response_format: { type: 'json_object' },
     temperature: 0.9,
     max_tokens: OUTPUT_TOKENS_PER_PIECE * words.length,
     ...(WORKERS_AI_THINKING ? {} : { chat_template_kwargs: { enable_thinking: false } }),
-    ...(onText ? { stream: true } : {}),
+    ...(onRaw ? { stream: true } : {}),
   };
   const timeoutMs = callTimeout(words, deadline);
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -273,34 +295,14 @@ async function callWorkersAIBinding(binding: WorkersAIBinding, model: string, wo
         throw new ProviderError(`workers-ai binding: ${message.slice(0, 300)}`, status);
       }
       if (result instanceof ReadableStream) {
-        const reader = result.pipeThrough(new TextDecoderStream()).getReader();
-        let buffer = '';
-        let text = '';
-        onText?.('');
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += value;
-          const lines = buffer.split('\n');
-          buffer = lines.pop() ?? '';
-          let grew = false;
-          for (const line of lines) {
-            if (!line.startsWith('data:')) continue;
-            const payload = line.slice(5).trim();
-            if (!payload || payload === '[DONE]') continue;
-            try {
-              const delta = bindingText(JSON.parse(payload));
-              if (delta) {
-                text += delta;
-                grew = true;
-              }
-            } catch {
-              // 壊れた行は読み飛ばす（最後に全体を JSON として検証する）
-            }
-          }
-          if (grew) onText?.(text);
+        const stream = result as ReadableStream<Uint8Array>;
+        if (onRaw) {
+          // 片方はそのままブラウザへ、もう片方は終わってから一度に読む（どちらも JavaScript で塊ごとに触らない）
+          const [toClient, toServer] = stream.tee();
+          onRaw(toClient);
+          return textFromSSE(await new Response(toServer).text());
         }
-        return text;
+        return textFromSSE(await new Response(stream).text());
       }
       return bindingText(result);
     })();
@@ -315,7 +317,7 @@ async function callWorkersAIBinding(binding: WorkersAIBinding, model: string, wo
 export interface Provider {
   name: string;
   /** deadline: この時刻（Date.now()）までに応答がなければ打ち切る */
-  run: (words: string[], deadline?: number, onText?: OnText) => Promise<Json[]>;
+  run: (words: string[], deadline?: number, onText?: OnText, onRaw?: OnRawStream) => Promise<Json[]>;
 }
 
 export function configuredProviders(): Provider[] {
@@ -326,7 +328,7 @@ export function configuredProviders(): Provider[] {
   const binding = workersAIBinding;
   if (binding) {
     for (const model of [WORKERS_AI_MODEL, WORKERS_AI_FALLBACK_MODEL].filter((m, i, all) => m && all.indexOf(m) === i)) {
-      providers.push({ name: `workers-ai:${model}`, run: (w, d = Infinity, t) => callWorkersAIBinding(binding, model, w, d, t) });
+      providers.push({ name: `workers-ai:${model}`, run: (w, d = Infinity, _t, r) => callWorkersAIBinding(binding, model, w, d, r) });
     }
   } else if (cfAccount && cfToken) {
     const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/ai/v1`;
@@ -389,7 +391,7 @@ function nextUtcMidnight(): number {
  * 混雑（429 / 503 など）で失敗したプロバイダは、少し待って1回だけ再試行してから次へ進む。
  * 全体で待つ時間は関数の時間制限に収まるよう短くしている。
  */
-export async function generatePieces(words: string[], providers = configuredProviders(), deadline = Infinity, onText?: OnText): Promise<BatchResult> {
+export async function generatePieces(words: string[], providers = configuredProviders(), deadline = Infinity, onText?: OnText, onRaw?: OnRawStream): Promise<BatchResult> {
   if (providers.length === 0) throw new NoProviderError('no LLM provider is configured');
   let lastError: unknown;
   for (const provider of providers) {
@@ -405,7 +407,7 @@ export async function generatePieces(words: string[], providers = configuredProv
         throw lastError;
       }
       try {
-        const pieces = alignToWords(words, await provider.run(words, deadline, onText));
+        const pieces = alignToWords(words, await provider.run(words, deadline, onText, onRaw));
         if (pieces.every(p => p === null)) throw new ProviderError(`${provider.name} returned no usable piece`);
         return { pieces, provider: provider.name };
       } catch (err) {
@@ -424,7 +426,7 @@ export async function generatePieces(words: string[], providers = configuredProv
 }
 
 /** 1語だけ生成する */
-export async function generatePiece(word: string, providers = configuredProviders(), deadline = Infinity, onText?: OnText): Promise<{ piece: Json; provider: string }> {
-  const { pieces, provider } = await generatePieces([word], providers, deadline, onText);
+export async function generatePiece(word: string, providers = configuredProviders(), deadline = Infinity, onText?: OnText, onRaw?: OnRawStream): Promise<{ piece: Json; provider: string }> {
+  const { pieces, provider } = await generatePieces([word], providers, deadline, onText, onRaw);
   return { piece: pieces[0]!, provider };
 }

@@ -2,10 +2,10 @@ import type { PieceData } from './types';
 import { AREA_SHAPES, normalizeActions } from '../shared/abilityCatalog';
 import { buildOfflinePiece } from './offlineGenerator';
 import { wordKey } from '../shared/wordKey';
-import { containsNgWord } from '../shared/moderation';
+import { containsNgWord, pieceHasNgText } from '../shared/moderation';
 import { normalizeAbilityPrograms, describeAbilities, normalizeAppearance } from '../shared/abilityProgram';
 import { normalizeFusionWord } from '../shared/challenge';
-import type { PartialPiece } from '../shared/partialPiece';
+import { extractPartialPiece, type PartialPiece } from '../shared/partialPiece';
 
 const AREA_SHAPE_SET = new Set<string>(AREA_SHAPES);
 // 対象マスではなく発動した駒自身に作用するアクション（範囲が自分のマスだけでも効果が出る）
@@ -170,25 +170,76 @@ export function warmUpGenerator(): void {
  */
 export class BlockedWordError extends Error {}
 
-/** AIの返事を1行ずつ読む（Accept: application/x-ndjson の応答）。最後の done 行の中身を通常の応答として返す */
+/** AIの出力イベント（OpenAI 互換・Workers AI 独自のどちらの形にも対応）から、書かれた文字を取り出す */
+function deltaFromEvent(event: unknown): string {
+  const e = event as { response?: unknown; choices?: { delta?: { content?: string }; message?: { content?: string } }[] };
+  if (typeof e?.response === 'string') return e.response;
+  return e?.choices?.[0]?.delta?.content ?? e?.choices?.[0]?.message?.content ?? '';
+}
+
+/**
+ * AIの返事を1行ずつ読む（Accept: application/x-ndjson の応答。形式は api/generate-piece.ts の streamGeneratePiece）。
+ * サーバーは AI の出力（data: 行）をそのまま流してくるので、書き終わった項目の取り出しはここで行う。
+ * 最後の done 行の中身を通常の応答として返す
+ */
 async function readGenerateStream(res: Response, onPartial: (partial: PartialPiece) => void): Promise<{ status: number; body: Record<string, unknown> | null }> {
   if (!res.body || !(res.headers.get('content-type') || '').includes('application/x-ndjson')) {
     return { status: res.status, body: await res.json().catch(() => null) };
   }
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = '';
+  let text = '';
+  let lastSent = '';
+  let complete = false;
+  const showProgress = () => {
+    if (complete) return;
+    const partial = extractPartialPiece(text);
+    const serialized = JSON.stringify(partial);
+    if (serialized === '{}' || serialized === lastSent || pieceHasNgText(partial as Record<string, unknown>)) return;
+    lastSent = serialized;
+    complete = !!(partial.effect_name && partial.ability_genre && partial.description && partial.appearance && partial.range_geometry);
+    onPartial(partial);
+  };
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
     buffer += value;
     const lines = buffer.split('\n');
     buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      const message = JSON.parse(line) as { type: string; piece?: PartialPiece; status?: number; body?: Record<string, unknown> };
-      if (message.type === 'partial' && message.piece) onPartial(message.piece);
-      if (message.type === 'done') return { status: message.status ?? 500, body: message.body ?? null };
+    let grew = false;
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (line.startsWith('data:')) {
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+        try {
+          const delta = deltaFromEvent(JSON.parse(payload));
+          if (delta) {
+            text += delta;
+            grew = true;
+          }
+        } catch {
+          // 壊れた行は読み飛ばす
+        }
+        continue;
+      }
+      let message: { type?: string; piece?: PartialPiece; status?: number; body?: Record<string, unknown> };
+      try {
+        message = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (message.type === 'reset') {
+        text = '';
+        complete = false;
+      } else if (message.type === 'partial' && message.piece) {
+        onPartial(message.piece);
+      } else if (message.type === 'done') {
+        return { status: message.status ?? 500, body: message.body ?? null };
+      }
     }
+    if (grew) showProgress();
   }
   return { status: 502, body: null };
 }

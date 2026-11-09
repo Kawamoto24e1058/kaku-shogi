@@ -25,10 +25,10 @@ interface ExecutionContext {
 const BACKFILL_BUDGET_MS = 200_000;
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     setWorkersAIBinding(env.AI);
     const { pathname } = new URL(request.url);
-    if (pathname === '/api/generate-piece') return handleGeneratePiece(request);
+    if (pathname === '/api/generate-piece') return handleGeneratePiece(request, task => ctx.waitUntil(task));
     if (pathname === '/api/status') {
       return new Response(JSON.stringify(featureFlags()), {
         headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=60' },

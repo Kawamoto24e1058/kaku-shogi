@@ -8,7 +8,7 @@
 // どれも使えない場合はエラーを返し（ブラウザ側で簡易生成に切り替わる）、単語を待ち行列に積む。
 // 待ち行列は api/backfill.ts（Vercel Cron で1日1回）がAI生成して共有キャッシュに登録する。
 import { createHash } from 'node:crypto';
-import { generatePiece, NoProviderError, type Json } from './_lib/generator.js';
+import { generatePiece, NoProviderError, type Json, type OnRawStream } from './_lib/generator.js';
 import { consumeSharedQuota, enqueueWord, findSimilarPiece, getCachedPiece, saveCachedPiece, storeConfigured } from './_lib/pieceCache.js';
 import { wordKey } from '../shared/wordKey.js';
 import { containsNgWord, pieceHasNgText, setExtraNgWords } from '../shared/moderation.js';
@@ -118,8 +118,17 @@ type OnPartial = (partial: PartialPiece) => void;
  */
 function partialRelay(onPartial: OnPartial) {
   let last = '';
+  let checkedLength = 0;
+  let complete = false;
   return (text: string) => {
+    // 無料プランの CPU 時間（1回 10ms 程度）に収めるため、読み直す回数を絞る:
+    // 表示に使う5項目がそろったら以後は何もしない。値が閉じうる文字（" } ]）が届いたときだけ読み直す
+    if (complete) return;
+    const added = text.slice(checkedLength);
+    checkedLength = text.length;
+    if (!/["}\]]/.test(added)) return;
     const partial = extractPartialPiece(text);
+    complete = !!(partial.effect_name && partial.ability_genre && partial.description && partial.appearance && partial.range_geometry);
     const serialized = JSON.stringify(partial);
     if (serialized === '{}' || serialized === last || pieceHasNgText(partial as Json)) return;
     last = serialized;
@@ -127,11 +136,11 @@ function partialRelay(onPartial: OnPartial) {
   };
 }
 
-function generateShared(key: string, word: string, deadline: number, onPartial?: OnPartial) {
+function generateShared(key: string, word: string, deadline: number, onPartial?: OnPartial, onRaw?: OnRawStream) {
   let pending = inFlight.get(key);
   if (!pending) {
     pending = (async () => {
-      const result = await generatePiece(word, undefined, deadline, onPartial ? partialRelay(onPartial) : undefined);
+      const result = await generatePiece(word, undefined, deadline, onPartial ? partialRelay(onPartial) : undefined, onRaw);
       if (pieceHasNgText(result.piece)) {
         // 不適切な文章を含む結果は使わず、キャッシュもしない（ブラウザ側で簡易生成になる）
         throw new ModerationError(`generated text for "${word}" was blocked`);
@@ -207,39 +216,64 @@ async function lookupCached(k: string): Promise<Response> {
   }
 }
 
-export async function handleGeneratePiece(request: Request): Promise<Response> {
+export async function handleGeneratePiece(request: Request, waitUntil?: (task: Promise<unknown>) => void): Promise<Response> {
   if (request.method === 'POST' && (request.headers.get('accept') || '').includes('application/x-ndjson')) {
-    return streamGeneratePiece(request);
+    return streamGeneratePiece(request, waitUntil);
   }
   return handleRequest(request);
 }
 
 /**
- * 途中経過つきの生成。1行に1つの JSON を順に送る:
- *   {"type":"partial","piece":{...書き終わった項目...}}  … AIが書くたびに
- *   {"type":"done","status":200,"body":{...通常の応答と同じ...}}  … 最後に1回
+ * 途中経過つきの生成。次の行が順に届く（ブラウザ側は src/aiGenerator.ts の readGenerateStream）:
+ *   {"type":"reset"}                         … AIの出力が（最初から／再試行で）始まる
+ *   data: {...}                              … AIの出力そのもの（Server-Sent Events）。Worker では JavaScript を通さずに流す
+ *   {"type":"partial","piece":{...}}         … AIの出力を JavaScript で読める環境（Vercel など）での途中経過
+ *   {"type":"done","status":200,"body":{...}} … 最後に1回。中身は通常の応答と同じ
+ * AIの出力を塊ごとに解析すると、Workers の無料プランの CPU 時間（1回 10ms 程度）を大きく超えるため、
+ * 途中経過の解析はブラウザに任せている。
  */
-function streamGeneratePiece(request: Request): Response {
+function streamGeneratePiece(request: Request, waitUntil?: (task: Promise<unknown>) => void): Response {
+  // Workers の IdentityTransformStream はバイト列をそのまま流す（JavaScript を通らない）。無い環境では標準の TransformStream
+  const Identity = (globalThis as { IdentityTransformStream?: new () => TransformStream<Uint8Array, Uint8Array> }).IdentityTransformStream;
+  const { readable, writable } = Identity ? new Identity() : new TransformStream<Uint8Array, Uint8Array>();
   const encoder = new TextEncoder();
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const send = (line: Json) => controller.enqueue(encoder.encode(`${JSON.stringify(line)}\n`));
+  // 書き込みは順番に行う（AIの出力を流している間は、その完了を待ってから次の行を書く）
+  let chain: Promise<void> = Promise.resolve();
+  const writeLine = (line: Json) => {
+    chain = chain.then(async () => {
+      const writer = writable.getWriter();
       try {
-        const res = await handleRequest(request, piece => send({ type: 'partial', piece: piece as Json }));
-        send({ type: 'done', status: res.status, body: await res.json().catch(() => ({})) as Json });
-      } catch (err) {
-        console.error('[generate-piece] stream failed:', (err as Error).message);
-        send({ type: 'done', status: 500, body: { error: 'AI生成サーバーでエラーが起きたため、簡易生成で作成しました。' } });
+        await writer.write(encoder.encode(`\n${JSON.stringify(line)}\n`));
+      } finally {
+        writer.releaseLock();
       }
-      controller.close();
-    },
-  });
-  return new Response(stream, {
+    });
+  };
+  const pipeRaw: OnRawStream = stream => {
+    writeLine({ type: 'reset' });
+    chain = chain
+      .then(() => stream.pipeTo(writable, { preventClose: true, preventAbort: true }))
+      .catch(err => console.warn('[generate-piece] relay interrupted:', (err as Error).message));
+  };
+  const task = (async () => {
+    try {
+      const res = await handleRequest(request, piece => writeLine({ type: 'partial', piece: piece as Json }), pipeRaw);
+      writeLine({ type: 'done', status: res.status, body: await res.json().catch(() => ({})) as Json });
+    } catch (err) {
+      console.error('[generate-piece] stream failed:', (err as Error).message);
+      writeLine({ type: 'done', status: 500, body: { error: 'AI生成サーバーでエラーが起きたため、簡易生成で作成しました。' } });
+    }
+    await chain.catch(() => undefined);
+    await writable.close().catch(() => undefined);
+  })();
+  // 利用者が途中で画面を閉じても、生成と共有キャッシュへの保存は最後まで行う
+  waitUntil?.(task);
+  return new Response(readable, {
     headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' },
   });
 }
 
-async function handleRequest(request: Request, onPartial?: OnPartial): Promise<Response> {
+async function handleRequest(request: Request, onPartial?: OnPartial, onRaw?: OnRawStream): Promise<Response> {
   const startedAt = Date.now();
   if (request.method === 'GET') {
     const k = new URL(request.url).searchParams.get('k');
@@ -289,7 +323,7 @@ async function handleRequest(request: Request, onPartial?: OnPartial): Promise<R
   if (quota === 'global') return fallbackResponse(key, word, 429, '本日のAI生成枠が混雑しているため');
 
   try {
-    const { piece } = await generateShared(key, word, startedAt + AI_BUDGET_MS, onPartial);
+    const { piece } = await generateShared(key, word, startedAt + AI_BUDGET_MS, onPartial, onRaw);
     return json(200, { piece: { ...piece, word }, source: 'ai' });
   } catch (err) {
     if (err instanceof ModerationError) {
