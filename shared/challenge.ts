@@ -50,17 +50,17 @@ function hash(text: string): number {
 
 /**
  * その日のお題3語。事前生成リスト（shared/seedWords.ts）から選ぶので、
- * 共有キャッシュに入っていれば AI を呼ばずに即座に駒ができる。3語目は毎日1つの合体駒。
+ * 共有キャッシュに入っていれば AI を呼ばずに即座に駒ができる。
  */
 export function dailyWords(key: string = dailyKey()): string[] {
   const picked: string[] = [];
   let seed = hash(`kaku-shogi:${key}`);
-  while (picked.length < 4) {
+  while (picked.length < 3) {
     const word = SEED_WORDS[seed % SEED_WORDS.length];
     if (!picked.includes(word)) picked.push(word);
     seed = hash(`${seed}`);
   }
-  return [picked[0], picked[1], `${picked[2]}${FUSION_MARK}${picked[3]}`];
+  return picked;
 }
 
 /** 表示用の日付（10/22） */

@@ -120,9 +120,9 @@ export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHover
       />
 
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '12px' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
-          <h3 style={{ fontSize: '22px', color: text, fontWeight: 'bold', letterSpacing: '0.05em', margin: 0, fontFamily: 'var(--font-cyber)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap', minWidth: 0 }}>
+          <h3 style={{ fontSize: '22px', color: text, fontWeight: 'bold', letterSpacing: '0.05em', margin: 0, fontFamily: 'var(--font-cyber)', overflowWrap: 'anywhere' }}>
             {piece.isHisha && piece.isPromoted ? '竜王' : (piece.isKaku && piece.isPromoted ? '竜馬' : (piece.isPawn && (piece.word === '歩' || piece.word === '歩兵' || piece.word === 'と金' || piece.word === '封印歩兵') && piece.isPromoted ? 'と金' : (piece.isPromoted && piece.promoted_effect?.effect_name ? piece.promoted_effect.effect_name : piece.word)))}
           </h3>
           {theme && (
@@ -245,7 +245,7 @@ export const PieceDetailCard: React.FC<PieceDetailCardProps> = ({ piece, isHover
           </div>
           {piece.range_geometry.charging_grid && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-              <span style={{ fontSize: '8px', color: 'var(--color-murasaki)', fontFamily: 'var(--font-cyber)' }}>充填中（十字移動）</span>
+              <span style={{ fontSize: '8px', color: 'var(--color-murasaki)', fontFamily: 'var(--font-cyber)' }}>能力の充填中の移動</span>
               <RangeGrid gridStr={piece.range_geometry.charging_grid} size={36} />
             </div>
           )}

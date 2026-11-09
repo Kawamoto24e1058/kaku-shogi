@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs';
 // 駒生成の「精度」と「効率」を、決まった単語の組で測るスクリプト（キャッシュには保存しない）
 // 実行: npm run eval:generation [-- 単語1 単語2 ...]
 //   CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN（Workers AI の REST API）を使う。
@@ -73,7 +74,12 @@ interface Row {
   triggers: number;
   broken: string[];
   name: string;
+  /** 盤面を大きく動かす部品（必殺技）を持っているか */
+  signature: boolean;
+  ops: string[];
 }
+
+const SIGNATURE_OPS = new Set(['DESTROY', 'CAPTURE', 'CONTROL', 'SWAP', 'TELEPORT', 'SPAWN', 'WALL', 'EXTRA_ACTION', 'TRANSFORM_PAWN', 'STEAL_HAND']);
 
 const words = process.argv.slice(2).length ? process.argv.slice(2) : DEFAULT_WORDS;
 const providers = configuredProviders();
@@ -81,6 +87,8 @@ if (providers.length === 0) throw new Error('CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_
 console.log(`モデル: ${providers[0].name} / プロンプト ${buildPrompt(['x']).length} 文字 / ${words.length} 語\n`);
 
 const rows: Row[] = [];
+// EVAL_SAVE=ファイル で、生成した駒をそのまま保存する（npm run simulate の EXTRA_POOL で対局させられる）
+const saved: Record<string, unknown>[] = [];
 const CONCURRENCY = 3;
 for (let i = 0; i < words.length; i += CONCURRENCY) {
   await Promise.all(words.slice(i, i + CONCURRENCY).map(async word => {
@@ -88,6 +96,7 @@ for (let i = 0; i < words.length; i += CONCURRENCY) {
     try {
       const { pieces } = await generatePieces([word], providers);
       const raw = pieces[0] as Record<string, unknown>;
+      saved.push(structuredClone(raw));
       const seconds = (Date.now() - started) / 1000;
       const rawAbilities = Array.isArray(raw.abilities) ? raw.abilities as { effects?: unknown[] }[] : [];
       const kept = normalizeAbilityPrograms(structuredClone(raw.abilities)) ?? [];
@@ -102,16 +111,19 @@ for (let i = 0; i < words.length; i += CONCURRENCY) {
         effectsRaw: rawAbilities.reduce((n, a) => n + (Array.isArray(a.effects) ? a.effects.length : 0), 0),
         effectsKept: kept.reduce((n, a) => n + a.effects.length, 0),
         fired: fired.filter(Boolean).length, triggers: fired.length, broken,
+        ops: [...ops],
+        signature: kept.some(a => a.effects.some(e => SIGNATURE_OPS.has(e.op) || ((e.op === 'PUSH' || e.op === 'PULL') && (e.value ?? 1) >= 2))),
       });
     } catch (err) {
-      rows.push({ word, ok: false, seconds: (Date.now() - started) / 1000, name: (err as Error).message.slice(0, 60), abilitiesRaw: 0, abilitiesKept: 0, effectsRaw: 0, effectsKept: 0, fired: 0, triggers: 0, broken: [] });
+      rows.push({ word, ok: false, seconds: (Date.now() - started) / 1000, name: (err as Error).message.slice(0, 60), abilitiesRaw: 0, abilitiesKept: 0, effectsRaw: 0, effectsKept: 0, fired: 0, triggers: 0, broken: [], ops: [], signature: false });
     }
   }));
 }
 
 rows.sort((a, b) => words.indexOf(a.word) - words.indexOf(b.word));
+if (process.env.EVAL_SAVE) writeFileSync(process.env.EVAL_SAVE, JSON.stringify(saved));
 for (const r of rows) {
-  console.log(`${r.ok ? '✓' : '✗'} ${r.word.padEnd(8, '　')} 《${r.name}》 ${r.seconds.toFixed(1)}秒 能力${r.abilitiesKept}/${r.abilitiesRaw} 効果${r.effectsKept}/${r.effectsRaw} 発動${r.fired}/${r.triggers}${r.broken.length ? ' 不一致:' + r.broken.join('・') : ''}`);
+  console.log(`${r.ok ? '✓' : '✗'} ${r.word.padEnd(8, '　')} 《${r.name}》 ${r.seconds.toFixed(1)}秒 能力${r.abilitiesKept}/${r.abilitiesRaw} 効果${r.effectsKept}/${r.effectsRaw} 発動${r.fired}/${r.triggers} ${r.signature ? '★' : '　'}${r.ops.join(',')}${r.broken.length ? ' 不一致:' + r.broken.join('・') : ''}`);
 }
 const ok = rows.filter(r => r.ok);
 const sum = (f: (r: Row) => number) => ok.reduce((n, r) => n + f(r), 0);
@@ -121,4 +133,7 @@ console.log(`
   効果が残った割合      ${(100 * sum(r => r.effectsKept) / Math.max(1, sum(r => r.effectsRaw))).toFixed(0)}%
   盤面で発動した割合    ${(100 * sum(r => r.fired) / Math.max(1, sum(r => r.triggers))).toFixed(0)}%（条件・確率・対象なしで不発のものを含む）
   説明文と能力の不一致  ${ok.filter(r => r.broken.length).length}/${ok.length} 語
+  必殺技（★）がある駒  ${ok.filter(r => r.signature).length}/${ok.length} 語
+  STUN を使う駒        ${ok.filter(r => r.ops.includes('STUN')).length}/${ok.length} 語
+  使われた部品の種類    ${new Set(ok.flatMap(r => r.ops)).size} 種類
   平均時間              ${(sum(r => r.seconds) / Math.max(1, ok.length)).toFixed(1)}秒`);
