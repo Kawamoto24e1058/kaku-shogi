@@ -297,10 +297,18 @@ async function callWorkersAIBinding(binding: WorkersAIBinding, model: string, wo
       if (result instanceof ReadableStream) {
         const stream = result as ReadableStream<Uint8Array>;
         if (onRaw) {
-          // 片方はそのままブラウザへ、もう片方は終わってから一度に読む（どちらも JavaScript で塊ごとに触らない）
+          // 片方はそのままブラウザへ流し、もう片方はサーバーで検証・保存用に読む。どちらも JavaScript で塊ごとに触らない。
+          // サーバー側を tee の枝から直接 Response.text() で読むと、大きな単位でまとめて読まれてブラウザ側まで
+          // 数秒止まるため、IdentityTransformStream を挟んで届いた分ずつ流れるようにしている
           const [toClient, toServer] = stream.tee();
           onRaw(toClient);
-          return textFromSSE(await new Response(toServer).text());
+          const Identity = (globalThis as { IdentityTransformStream?: new () => TransformStream<Uint8Array, Uint8Array> }).IdentityTransformStream;
+          if (!Identity) return textFromSSE(await new Response(toServer).text());
+          const relay = new Identity();
+          const piping = toServer.pipeTo(relay.writable).catch(() => undefined);
+          const body = await new Response(relay.readable).text();
+          await piping;
+          return textFromSSE(body);
         }
         return textFromSSE(await new Response(stream).text());
       }
