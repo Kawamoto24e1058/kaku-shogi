@@ -3,6 +3,7 @@
   "outputDirectory": "dist",
   "installCommand": "npm ci",
   "framework": "vite",
+  "regions": ["hnd1"],
   "functions": {
     "api/backfill.ts": { "maxDuration": 300 },
     "api/*.ts": { "maxDuration": 30 }

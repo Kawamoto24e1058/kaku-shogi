@@ -1,11 +1,11 @@
 // 共有キャッシュのバックフィル（api/backfill.ts の Vercel Cron と scripts/backfill.ts で共用）
 // 1. 利用者がAI生成できなかった単語（generation_queue）を要求回数の多い順に
-// 2. 余った枠で事前生成用の単語（shared/seedWords.ts）を
+// 2. 余った枠で事前生成用の単語（shared/seedWords.ts の SEED_WORDS → PREGEN_WORDS）を
 // AI生成して共有キャッシュに登録する。1回の呼び出しで batch 語をまとめて生成するので、
 // 1日の「回数」上限に対して何倍もの単語を登録できる。無料枠の上限に達したら静かに終了する。
 import { configuredProviders, generatePieces } from './generator.js';
 import { deleteQueued, getCachedPiece, listQueue, saveCachedPiece, storeConfigured } from './pieceCache.js';
-import { SEED_WORDS } from '../../shared/seedWords.js';
+import { PREGEN_WORDS, SEED_WORDS } from '../../shared/seedWords.js';
 import { wordKey } from '../../shared/wordKey.js';
 import { containsNgWord, pieceHasNgText } from '../../shared/moderation.js';
 import { dailyKey, dailyWords } from '../../shared/challenge.js';
@@ -23,6 +23,7 @@ export interface BackfillOptions {
 }
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const CALL_GRACE_MS = 80_000;
 
 export async function runBackfill({ limit, batch, intervalMs, deadline = Infinity, log = console.log }: BackfillOptions): Promise<number> {
   if (!storeConfigured()) throw new Error('SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY / SUPABASE_SERVER_TOKEN are not set');
@@ -35,7 +36,7 @@ export async function runBackfill({ limit, batch, intervalMs, deadline = Infinit
   const tomorrow = dailyKey(new Date(Date.now() + 86_400_000));
   for (const word of [...dailyWords(), ...dailyWords(tomorrow)]) candidates.set(wordKey(word), word);
   for (const q of await listQueue(limit * 2)) if (!candidates.has(q.key)) candidates.set(q.key, q.word || q.key);
-  for (const word of SEED_WORDS) if (!candidates.has(wordKey(word))) candidates.set(wordKey(word), word);
+  for (const word of [...SEED_WORDS, ...PREGEN_WORDS]) if (!candidates.has(wordKey(word))) candidates.set(wordKey(word), word);
 
   const todo: { key: string; word: string }[] = [];
   for (const [key, word] of candidates) {
@@ -53,7 +54,8 @@ export async function runBackfill({ limit, batch, intervalMs, deadline = Infinit
     if (i > 0) await sleep(intervalMs);
     const chunk = todo.slice(i, i + batch);
     try {
-      const { pieces, provider } = await generatePieces(chunk.map(c => c.word), providers);
+      // 新しいまとまりは deadline までに始め、呼び出し自体は関数の上限（300秒）の手前まで待つ
+      const { pieces, provider } = await generatePieces(chunk.map(c => c.word), providers, deadline + CALL_GRACE_MS);
       for (const [j, piece] of pieces.entries()) {
         if (!piece) continue;
         if (pieceHasNgText(piece)) {
