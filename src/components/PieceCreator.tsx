@@ -8,11 +8,6 @@ import { generateId } from '../gameLogic';
 import { PieceDetailCard } from './PieceDetailCard';
 import { ProgramAbilityList } from './ProgramAbilityList';
 import { FUSION_MARK, normalizeFusionWord } from '../../shared/challenge';
-import { SEED_WORDS } from '../../shared/seedWords';
-
-// 事前生成済み（共有キャッシュにある）言葉から選んで見せる。押すとAIを待たずにすぐ駒になる
-const QUICK_WORD_COUNT = 6;
-const pickQuickWords = () => [...SEED_WORDS].sort(() => Math.random() - 0.5).slice(0, QUICK_WORD_COUNT);
 
 const SCAN_STAGES = [
   '深層概念マトリクス結合中...',
@@ -55,7 +50,6 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
   const [createdPieces, setCreatedPieces] = useState<Piece[]>([]);
   const [stageIdx, setStageIdx] = useState(0);
   const [notice, setNotice] = useState('');
-  const [quickWords, setQuickWords] = useState(pickQuickWords);
 
   const maxPieces = 3; 
   const leftRole = onlineMode ? (myRole || 'sente') : player;
@@ -381,31 +375,6 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
             </button>
             <span>2つの言葉を {FUSION_MARK} でつなぐと、両方の性質を持つ合体駒になります</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', margin: '-8px 0 20px', fontSize: '12px', color: 'var(--text-muted)' }}>
-            <span>⚡ すぐ作れる言葉：</span>
-            {quickWords.map(w => (
-              <button
-                key={w}
-                type="button"
-                onClick={() => {
-                  if (slotsUsed >= maxPieces) return;
-                  setQuickWords(prev => prev.filter(q => q !== w));
-                  void generateWord(w);
-                }}
-                style={{ padding: '3px 10px', borderRadius: '999px', border: '1px solid rgba(139, 92, 26, 0.25)', background: '#fff', color: 'var(--text-primary)', fontSize: '12px' }}
-              >
-                {w}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setQuickWords(pickQuickWords())}
-              aria-label="別の言葉を表示"
-              style={{ padding: '3px 8px', borderRadius: '999px', border: 'none', background: 'transparent', color: 'var(--text-muted)', fontSize: '12px' }}
-            >
-              ↻
-            </button>
-          </div>
           </>
         )}
 
@@ -441,7 +410,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
               {slotsUsed < maxPieces && (
                 <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>待っている間に次の単語も入力できます</p>
               )}
-              <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>初めての言葉はAIが一から考えるため、少し時間がかかります（⚡の言葉はすぐできます）</p>
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>初めての言葉はAIが一から考えるため、10秒ほどかかります</p>
               <p style={{ fontSize: '12px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
                 ({scanStatus})
               </p>
