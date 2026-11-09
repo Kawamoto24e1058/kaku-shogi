@@ -23,6 +23,8 @@ export interface ProgramRunResult {
 }
 
 const SIZE = 9;
+/** ランダム型で「1ゲーム1回」の能力を引いた後、残りの能力が使えるようになるまでの手番 */
+const RANDOM_AFTER_ONCE_COOLDOWN = 4;
 const inBounds = (y: number, x: number) => y >= 0 && y < SIZE && x >= 0 && x < SIZE;
 const isObstacle = (p: Piece | null) => !!p && (p.type === 'wall' || p.type === 'hazard' || !!p.isObstacle);
 
@@ -467,10 +469,21 @@ export function runAbilityPrograms(
   const cooldowns = [...(piece.abilityCooldowns ?? piece.abilities.map(() => 0))];
   let anyTriggered = false;
 
+  const ready = (ability: AbilityProgram, index: number) =>
+    abilityMatchesEvent(ability, event) && (cooldowns[index] ?? 0) === 0
+    && conditionHolds(ability, nextBoard, state.selfPos ?? state.origin, piece, player, capturedPieces.length, state.opponentCaptured.length);
+  // ランダム型（ガチャ・サイコロなど）は、使える能力のうち1つだけをランダムに選んで発動する
+  let chosen: number | null = null;
+  if (piece.ability_mode === 'RANDOM') {
+    const candidates = piece.abilities.map((a, i) => (ready(a, i) ? i : -1)).filter(i => i >= 0);
+    if (candidates.length === 0) return empty;
+    chosen = candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
   piece.abilities.forEach((ability, index) => {
-    if (!abilityMatchesEvent(ability, event) || (cooldowns[index] ?? 0) > 0) return;
+    if (chosen !== null && index !== chosen) return;
+    if (!ready(ability, index)) return;
     const center = state.selfPos ?? state.origin;
-    if (!conditionHolds(ability, nextBoard, center, piece, player, capturedPieces.length, state.opponentCaptured.length)) return;
     // 取られたときは自分自身への効果は意味がない
     if (!state.selfPos && ability.target.area === 'SELF') return;
 
@@ -488,6 +501,15 @@ export function runAbilityPrograms(
     if (triggered) {
       anyTriggered = true;
       cooldowns[index] = ability.cooldown;
+      if (chosen !== null) {
+        // ランダム型は「1回引いたら、また引けるまで待つ」。充填中の間はどの能力も選ばれない。
+        // 能力ごとに別々に充填すると、どれかが毎手番使えてしまい強すぎた（自動対局で勝率76%）。
+        // 1ゲーム1回の大当たりを引いた後は、残りの能力を4手番待たせる
+        const shared = ability.cooldown >= 99 ? RANDOM_AFTER_ONCE_COOLDOWN : ability.cooldown;
+        piece.abilities!.forEach((_, i) => {
+          if (i !== index && (cooldowns[i] ?? 0) < 99) cooldowns[i] = Math.max(cooldowns[i] ?? 0, shared);
+        });
+      }
     } else if (targets.length === 0) {
       state.logs.push({ player, message: `【${ability.name}】対象がいなかったため不発でした。`, type: 'system' });
     }

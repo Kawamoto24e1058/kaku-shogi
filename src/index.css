@@ -1010,8 +1010,11 @@ button, input, [role="button"] {
   justify-content: center;
   align-items: center;
   z-index: 9999;
-  background: rgba(4, 2, 12, 0.45);
-  backdrop-filter: blur(4px);
+  /* 手番ごとに画面全体を暗く・ぼかすのは激しすぎたので、上部に細い帯を出すだけにする */
+  align-items: flex-start;
+  padding-top: 112px;
+  box-sizing: border-box;
+  background: transparent;
   pointer-events: none;
   animation: overlayFade 1.2s forwards;
 }
@@ -1019,8 +1022,8 @@ button, input, [role="button"] {
 .turn-change-content {
   position: relative;
   width: 100%;
-  max-width: 600px;
-  padding: 24px clamp(16px, 4vw, 40px);
+  max-width: 360px;
+  padding: 10px 16px;
   text-align: center;
   border-top: 2px solid;
   border-bottom: 2px solid;
@@ -1032,13 +1035,13 @@ button, input, [role="button"] {
 .sente-turn-alert .turn-change-content {
   border-color: var(--color-shinku);
   background: var(--bg-panel);
-  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .gote-turn-alert .turn-change-content {
   border-color: var(--color-gold);
   background: var(--bg-panel);
-  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .turn-change-subtitle {
@@ -1058,7 +1061,7 @@ button, input, [role="button"] {
 
 .turn-change-title {
   font-family: var(--font-cyber);
-  font-size: clamp(18px, 5vw, 28px);
+  font-size: clamp(15px, 4vw, 20px);
   font-weight: bold;
   letter-spacing: 0.15em;
 }
@@ -1872,4 +1875,37 @@ button, input, [role="button"] {
   background: #c2410c;
   color: #fff;
   font-weight: 700;
+}
+
+/* 能力発動の短い表示（App.tsx の abilityToast。必殺技以外はカットインの代わりにこれだけ出す） */
+.ability-toast {
+  position: fixed;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  max-width: calc(100vw - 32px);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(30, 20, 10, 0.86);
+  color: #fdf6e3;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  animation: ability-toast 1.6s ease forwards;
+}
+
+@keyframes ability-toast {
+  0% { opacity: 0; transform: translate(-50%, -6px); }
+  12% { opacity: 1; transform: translate(-50%, 0); }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ability-toast { animation: none; }
 }

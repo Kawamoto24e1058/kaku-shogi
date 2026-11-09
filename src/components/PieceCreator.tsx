@@ -509,6 +509,11 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
           return (
             <div key={p.key} className="cyber-panel" style={{ padding: '15px', display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center', justifyContent: 'center', minHeight: 'min(340px, 30vh)', borderStyle: 'dashed', borderColor: accent, background: color ? `${color}33` : 'transparent', borderRadius: '16px', transition: 'background 0.4s ease, border-color 0.4s ease' }}>
               <p style={{ color: 'var(--text-primary)', fontSize: '16px', fontWeight: 'bold' }}>「{p.word}」</p>
+              {preview?.deep_search_analysis && (
+                <p style={{ fontSize: '12px', lineHeight: 1.6, color: 'var(--text-secondary)', maxWidth: '320px', textAlign: 'center' }}>
+                  <span style={{ fontWeight: 700 }}>読み解き：</span>{preview.deep_search_analysis}
+                </p>
+              )}
               {preview?.effect_name && (
                 <p style={{ fontSize: '20px', fontWeight: 900, letterSpacing: '0.1em', color: 'var(--text-primary)' }}>
                   {preview.appearance?.emblem && <span style={{ marginRight: '8px', color: accent }}>{preview.appearance.emblem}</span>}
@@ -519,7 +524,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
               {preview?.range_geometry?.normal_grid && <MiniRange grid={preview.range_geometry.normal_grid} color={accent} />}
               {preview?.description && <p style={{ fontSize: '12px', lineHeight: 1.6, color: 'var(--text-primary)', maxWidth: '320px', textAlign: 'center' }}>{preview.description}</p>}
               <p style={{ color: 'var(--color-gold)', fontSize: '12px', fontFamily: 'var(--font-cyber)' }}>
-                {preview?.description ? '能力を組み立て中…' : preview?.effect_name ? '姿を描いています…' : '生成中…'}
+                {preview?.description ? '能力を組み立て中…' : preview?.effect_name ? '姿を描いています…' : preview?.deep_search_analysis ? '技を考えています…' : '言葉を読み解いています…'}
               </p>
             </div>
           );

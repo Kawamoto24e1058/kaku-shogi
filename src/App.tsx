@@ -41,6 +41,17 @@ import {
 } from './onlineStore';
 import { openXShare, dailyShareUrl } from './share';
 import { dailyKey, dailyLabel, dailyWords } from '../shared/challenge';
+
+/** 画面全体を揺らす演出。激しすぎるという意見を受けて止めている（戻すなら true） */
+const SCREEN_SHAKE_ENABLED = false;
+
+/**
+ * 全画面のカットインを出す「必殺技」か。1ゲーム1回、または充填手番が4以上（＝システムが強いと判断した）能力だけ。
+ * 普段の能力は盤の上の短い表示で知らせる
+ */
+function isSignatureActivation(piece: Piece, trigger: string): boolean {
+  return (piece.abilities ?? []).some(a => a.trigger === trigger && a.cooldown >= 4);
+}
 import { recordDailyResult } from './dailyRecord';
 import { chooseCpuMove } from './cpuAi';
 
@@ -542,6 +553,7 @@ export const App: React.FC = () => {
         );
 
         if (trapEffectRes.triggered) {
+          await announceAbility(trapPiece, 'ON_TAKEN');
           boardState = trapEffectRes.board;
           if (trapEffectRes.capturedPieces && trapEffectRes.capturedPieces.length > 0) {
             capturedState[event.owner] = [...capturedState[event.owner], ...trapEffectRes.capturedPieces];
@@ -690,6 +702,8 @@ export const App: React.FC = () => {
 
         if (effectRes.triggered || effectRes.logs.length > 0) {
           if (effectRes.triggered) {
+            const firedPiece = boardState[event.position[0]]?.[event.position[1]];
+            if (firedPiece) await announceAbility(firedPiece, event.triggerType);
             boardState = effectRes.board;
             capturedState[event.owner] = effectRes.capturedPieces;
             if (effectRes.opponentCapturedPieces) {
@@ -1125,6 +1139,25 @@ export const App: React.FC = () => {
   // FX visual states
   const [screenShake, setScreenShake] = useState(false);
   const [screenShakeIntensity, setScreenShakeIntensity] = useState(4);
+  // 普段の能力発動は全画面のカットインではなく、盤の上に短い文字で知らせる（必殺技だけカットイン）
+  const [abilityToast, setAbilityToast] = useState<{ text: string; key: number } | null>(null);
+  const showAbilityToast = (text: string) => {
+    const key = Date.now();
+    setAbilityToast({ text, key });
+    setTimeout(() => setAbilityToast(current => (current?.key === key ? null : current)), 1600);
+  };
+  /**
+   * 能力の発動を知らせる。必殺技（1ゲーム1回・充填の長い能力）だけ全画面のカットイン、
+   * それ以外は「▲「消しゴム」《書直》発動」のような短い表示（誰のどの駒の能力かが分かるように）
+   */
+  const announceAbility = async (piece: Piece, trigger: string) => {
+    const label = `${piece.owner === 'sente' ? '▲' : '▽'}「${piece.word}」《${piece.effect_name || '能力'}》`;
+    if (piece.abilities?.length && isSignatureActivation(piece, trigger)) {
+      await triggerCutinWithGate({ type: trigger === 'ON_TAKEN' ? 'AMBUSH' : 'SKILL', title: piece.effect_name || piece.word, subtitle: piece.word, comboHits: ['必殺技'] });
+    } else {
+      showAbilityToast(label);
+    }
+  };
   const [laserEffect] = useState<{ from: [number, number]; to: [number, number] } | null>(null);
   const [explosionEffects, setExplosionEffects] = useState<[number, number][]>([]);
   const [showCheckOverlay, setShowCheckOverlay] = useState<boolean>(false);
@@ -2367,7 +2400,10 @@ export const App: React.FC = () => {
       // ── Persona 5 / P3R Styled Cutin Launch (With Async Execution Gate) ──
       const trgStr = triggerType as string;
       const specActions = spec?.actions || (sourcePiece.custom_ability?.actions) || [effectType as any];
-      if (specActions.includes('PROBABILITY_STRIKE') || specActions.includes('CHAOS_GAMBLE')) {
+      if (sourcePiece.abilities?.length && !isSignatureActivation(sourcePiece, trgStr)) {
+        // 普段の能力は短い表示だけ（全画面のカットインは必殺技のときだけ）
+        showAbilityToast(`${sourcePiece.owner === 'sente' ? '▲' : '▽'}「${sourcePiece.word}」《${sourcePiece.effect_name || '能力'}》`);
+      } else if (specActions.includes('PROBABILITY_STRIKE') || specActions.includes('CHAOS_GAMBLE')) {
         const isSuccess = Math.random() < (spec?.success_rate || 0.5);
         await triggerCutinWithGate({
           type: 'GAMBLE',
@@ -3585,7 +3621,7 @@ export const App: React.FC = () => {
 
   return (
     <div
-      className={`app-container ${screenShake ? 'screen-shake' : ''} phase-${state.phase}`}
+      className={`app-container ${SCREEN_SHAKE_ENABLED && screenShake ? 'screen-shake' : ''} phase-${state.phase}`}
       style={{ '--shake-intensity': screenShakeIntensity } as React.CSSProperties}
     >
       
@@ -3615,7 +3651,6 @@ export const App: React.FC = () => {
       {turnChangeAlert && (
         <div className={`turn-change-overlay ${turnChangeAlert === 'sente' ? 'sente-turn-alert' : 'gote-turn-alert'}`}>
           <div className="turn-change-content">
-            <div className="turn-change-subtitle" style={{ color: 'var(--color-gold)' }}>SYSTEM STATUS UPDATE</div>
             <div className="turn-change-title" style={{ color: '#1A1A1A' }}>
               {turnChangeAlert === 'sente'
                 ? `▲ ${playerNames.sente || 'プレイヤー1'} の手番`
@@ -4054,6 +4089,11 @@ export const App: React.FC = () => {
           </div>
         );
       })()}
+      {abilityToast && (
+        <div key={abilityToast.key} className="ability-toast" role="status" aria-live="polite">
+          {abilityToast.text} 発動
+        </div>
+      )}
       {/* Persona 5 / P3R Styled Cutin Overlay */}
       <PersonaCutin
         type={cutinState.type}

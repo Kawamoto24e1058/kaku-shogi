@@ -206,8 +206,9 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   const spawnExplosion = (pos: { x: number, y: number }, theme: string, effectType: string, visualEffect?: VisualEffect) => {
     // --- DATA-DRIVEN PATH: Use AI-designed visual_effect if available ---
     if (visualEffect) {
-      const count = Math.max(10, Math.min(100, visualEffect.particle_count));
-      const speed = Math.max(0.3, Math.min(5.0, visualEffect.particle_speed));
+      // 粒の数・速さは控えめに抑える（AIの指定そのままだと派手すぎた）
+      const count = Math.max(8, Math.min(36, visualEffect.particle_count));
+      const speed = Math.max(0.3, Math.min(2.0, visualEffect.particle_speed));
       const color = visualEffect.particle_color || '#ffffff';
       const ttype = visualEffect.trajectory_type;
 

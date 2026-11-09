@@ -92,7 +92,7 @@ const ARCHETYPES: Archetype[] = [
     key: 'fortress', category: '守り・堅さ',
     keywords: ['盾', '壁', '岩', '石', '山', '城', '鉄', '鎧', '亀', '要塞', 'ダム', '金庫', 'shield'],
     names: ['金剛不壊', '鉄壁の構え'], genre: '防御・結界', mechanics: 'RULE_BREAK', theme: 'NATURE_STONE',
-    grid: G.HEAVY, promotedGrid: G.KING, trigger: 'TURN_START', target: 'SELF', actions: ['GUARD_STANCE'], cooldown: 3,
+    grid: G.HEAVY, promotedGrid: G.KING, trigger: 'ON_MOVE', target: 'SELF', actions: ['GUARD_STANCE'], cooldown: 3,
     visual: { trajectory_type: 'BURST', particle_color: '#94a3b8' },
     effectText: '自身が1手番のあいだ、効果や捕獲を受け付けない絶対防護になる',
     promotedName: '不落城塞', promotedText: '移動範囲が大きく広がる。',
@@ -137,7 +137,7 @@ const ARCHETYPES: Archetype[] = [
     key: 'blessing', category: '聖・癒し',
     keywords: ['神', '天使', '聖', '仏', '医', '薬', '病院', '祈', '癒', '寺', '神社', 'お守り', 'ケーキ', 'プリン', '寿司', 'ラーメン', 'カレー', 'ご飯', 'パン', '料理'],
     names: ['加護の光', '滋養の恵み'], genre: '支援・強化', mechanics: 'RULE_BREAK', theme: 'MYSTIC_MIST',
-    grid: G.KING, promotedGrid: G.WIDE, trigger: 'TURN_START', target: 'SELF', actions: ['SHIELD_GAIN'], cooldown: 3,
+    grid: G.KING, promotedGrid: G.WIDE, trigger: 'ON_MOVE', target: 'SELF', actions: ['SHIELD_GAIN'], cooldown: 3,
     visual: { trajectory_type: 'BURST', particle_color: '#fde68a' },
     effectText: '自身に、攻撃や効果を1度だけ防ぐ聖盾をまとう',
     promotedName: '大いなる加護', promotedText: '移動範囲が大きく広がる。',
@@ -164,7 +164,7 @@ const ARCHETYPES: Archetype[] = [
     key: 'swarm', category: '群れ・増殖',
     keywords: ['人', '増', '虫', 'アリ', '蜂', '植物', '種', '草', '森', '木', '花', '桜', 'キノコ', '軍', '学校', 'クラス', '会社'],
     names: ['群生増殖', '芽吹き'], genre: '置物・量産', mechanics: 'RULE_BREAK', theme: 'NATURE_STONE',
-    grid: G.CROSS, promotedGrid: G.KING, trigger: 'TURN_START', target: 'SQUARE_3X3', actions: ['SPAWN_TOKEN'], cooldown: 4,
+    grid: G.CROSS, promotedGrid: G.KING, trigger: 'ON_MOVE', target: 'SQUARE_3X3', actions: ['SPAWN_TOKEN'], cooldown: 4,
     visual: { trajectory_type: 'BURST', particle_color: '#4ade80' },
     effectText: '周囲の空きマスに分身を生み出す（盤上に最大2体まで）',
     promotedName: '大繁殖', promotedText: '移動範囲が大きく広がる。',
@@ -225,7 +225,7 @@ export const OFFLINE_ARCHETYPES: readonly Archetype[] = ARCHETYPES;
 
 const TRIGGER_TEXT: Record<string, string> = {
   ON_MOVE: '自身の移動完了時（自動発動）',
-  TURN_START: '自分の手番の開始時（自動発動）',
+  TURN_START: '自分が動いた後',
   ON_TAKEN: '自身が敵に取られた瞬間（自動発動）',
 };
 
