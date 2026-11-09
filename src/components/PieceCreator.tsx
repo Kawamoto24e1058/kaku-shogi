@@ -8,6 +8,16 @@ import { generateId } from '../gameLogic';
 import { PieceDetailCard } from './PieceDetailCard';
 import { ProgramAbilityList } from './ProgramAbilityList';
 import { FUSION_MARK, normalizeFusionWord } from '../../shared/challenge';
+import type { PartialPiece } from '../../shared/partialPiece';
+
+/** 生成中の駒の移動範囲（5x5）。AIが書き終えた時点で表示する */
+const MiniRange: React.FC<{ grid: string; color: string }> = ({ grid, color }) => (
+  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 12px)', gap: '2px' }} aria-label="移動範囲">
+    {grid.split('/').join('').split('').map((c, i) => (
+      <span key={i} style={{ width: '12px', height: '12px', borderRadius: '2px', background: c === '2' ? '#111' : c === '1' ? color : 'rgba(0,0,0,0.06)' }} />
+    ))}
+  </div>
+);
 
 const SCAN_STAGES = [
   '深層概念マトリクス結合中...',
@@ -45,7 +55,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
 }) => {
   const [word, setWord] = useState('');
   // 生成中の単語。複数の単語を並行して生成できるようにし、3枚分の待ち時間を1枚分程度に短縮する
-  const [pendingWords, setPendingWords] = useState<{ key: string; word: string }[]>([]);
+  const [pendingWords, setPendingWords] = useState<{ key: string; word: string; preview?: PartialPiece }[]>([]);
   const loading = pendingWords.length > 0;
   const [createdPieces, setCreatedPieces] = useState<Piece[]>([]);
   const [stageIdx, setStageIdx] = useState(0);
@@ -104,7 +114,9 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
     setPendingWords(prev => [...prev, { key, word: target }]);
 
     try {
-      const { piece: pieceData, notice: generationNotice, source } = await generatePieceWithSource(target);
+      const { piece: pieceData, notice: generationNotice, source } = await generatePieceWithSource(target, preview => {
+        setPendingWords(prev => prev.map(p => (p.key === key ? { ...p, preview } : p)));
+      });
       setNotice(generationNotice ? `${source === 'similar' ? '近い言葉のAI駒' : '簡易生成'}：${generationNotice}` : '');
 
       const newPiece: Piece = {
@@ -410,7 +422,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
               {slotsUsed < maxPieces && (
                 <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>待っている間に次の単語も入力できます</p>
               )}
-              <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>初めての言葉はAIが一から考えるため、10秒ほどかかります</p>
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>初めての言葉はAIが一から考えるため、5〜15秒ほどかかります（できた部分から表示します）</p>
               <p style={{ fontSize: '12px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
                 ({scanStatus})
               </p>
@@ -499,12 +511,29 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
           );
         })}
 
-        {pendingWords.map(p => (
-          <div key={p.key} className="cyber-panel" style={{ padding: '15px', display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center', justifyContent: 'center', minHeight: 'min(340px, 30vh)', borderStyle: 'dashed', borderColor: 'var(--color-gold)', background: 'transparent', borderRadius: '16px' }}>
-            <p style={{ color: 'var(--text-primary)', fontSize: '16px', fontWeight: 'bold' }}>「{p.word}」</p>
-            <p style={{ color: 'var(--color-gold)', fontSize: '12px', fontFamily: 'var(--font-cyber)' }}>生成中…</p>
-          </div>
-        ))}
+        {pendingWords.map(p => {
+          // AIが書き終えた項目から順に見せる（名前 → 色 → 移動範囲 → 説明文。能力は完成後に表示）
+          const preview = p.preview;
+          const color = preview?.appearance?.color;
+          const accent = preview?.appearance?.accent || 'var(--color-gold)';
+          return (
+            <div key={p.key} className="cyber-panel" style={{ padding: '15px', display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center', justifyContent: 'center', minHeight: 'min(340px, 30vh)', borderStyle: 'dashed', borderColor: accent, background: color ? `${color}33` : 'transparent', borderRadius: '16px', transition: 'background 0.4s ease, border-color 0.4s ease' }}>
+              <p style={{ color: 'var(--text-primary)', fontSize: '16px', fontWeight: 'bold' }}>「{p.word}」</p>
+              {preview?.effect_name && (
+                <p style={{ fontSize: '20px', fontWeight: 900, letterSpacing: '0.1em', color: 'var(--text-primary)' }}>
+                  {preview.appearance?.emblem && <span style={{ marginRight: '8px', color: accent }}>{preview.appearance.emblem}</span>}
+                  《{preview.effect_name}》
+                </p>
+              )}
+              {preview?.ability_genre && <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{preview.ability_genre}</p>}
+              {preview?.range_geometry?.normal_grid && <MiniRange grid={preview.range_geometry.normal_grid} color={accent} />}
+              {preview?.description && <p style={{ fontSize: '12px', lineHeight: 1.6, color: 'var(--text-primary)', maxWidth: '320px', textAlign: 'center' }}>{preview.description}</p>}
+              <p style={{ color: 'var(--color-gold)', fontSize: '12px', fontFamily: 'var(--font-cyber)' }}>
+                {preview?.description ? '能力を組み立て中…' : preview?.effect_name ? '姿を描いています…' : '生成中…'}
+              </p>
+            </div>
+          );
+        })}
 
         {Array.from({ length: Math.max(0, maxPieces - slotsUsed) }).map((_, i) => (
           <div key={i} className="cyber-panel" style={{ padding: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 'min(340px, 18vh)', borderStyle: 'dashed', borderColor: 'var(--text-muted)', background: 'transparent', borderRadius: '16px' }}>

@@ -153,22 +153,28 @@ interface OpenAICompatibleConfig {
   extraBody?: Json;
 }
 
-/** OpenAI 互換の chat/completions を呼ぶ。JSONモードに非対応のモデルなら(400)、指定なしで再試行する */
-async function callOpenAICompatible(config: OpenAICompatibleConfig, words: string[], deadline: number): Promise<Json[]> {
+/** 書いている途中の出力（それまでの全文）を受け取る。再試行すると空から始まり直す */
+export type OnText = (textSoFar: string) => void;
+
+/** OpenAI 互換の chat/completions を呼ぶ。JSONモードに非対応のモデルなら(400)、指定なしで再試行する。
+ * onText があれば stream: true で受け取り、届いた分を順に渡す（生成中の駒を少しずつ見せるため） */
+async function callOpenAICompatible(config: OpenAICompatibleConfig, words: string[], deadline: number, onText?: OnText): Promise<Json[]> {
   const call = async (jsonMode: boolean) => {
-    const data = await fetchJson(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [{ role: 'user', content: buildPrompt(words) }],
-        ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
-        temperature: 0.9,
-        max_tokens: OUTPUT_TOKENS_PER_PIECE * words.length,
-        ...(config.extraBody || {}),
-      }),
-    }, callTimeout(words, deadline)) as { choices?: { message?: { content?: string } }[] };
-    const text = data.choices?.[0]?.message?.content || '';
+    const body = JSON.stringify({
+      model: config.model,
+      messages: [{ role: 'user', content: buildPrompt(words) }],
+      ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
+      temperature: 0.9,
+      max_tokens: OUTPUT_TOKENS_PER_PIECE * words.length,
+      ...(onText ? { stream: true } : {}),
+      ...(config.extraBody || {}),
+    });
+    const url = `${config.baseUrl.replace(/\/$/, '')}/chat/completions`;
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` };
+    const text = onText
+      ? await streamText(url, { method: 'POST', headers, body }, callTimeout(words, deadline), onText)
+      : ((await fetchJson(url, { method: 'POST', headers, body }, callTimeout(words, deadline)) as { choices?: { message?: { content?: string } }[] })
+        .choices?.[0]?.message?.content || '');
     if (!text) throw new ProviderError(`${config.model} returned an empty response`);
     return extractPieces(text);
   };
@@ -180,10 +186,51 @@ async function callOpenAICompatible(config: OpenAICompatibleConfig, words: strin
   }
 }
 
+/** Server-Sent Events（data: {...}）で届く出力をつなげて返す。途中経過は onText へ */
+async function streamText(url: string, init: RequestInit, timeoutMs: number, onText: OnText): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    if (!res.ok || !res.body) {
+      const detail = await res.text().catch(() => '');
+      throw new ProviderError(`${new URL(url).host} returned ${res.status}: ${detail.slice(0, 300)}`, res.status);
+    }
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let text = '';
+    onText('');
+    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+      buffer += decoder.decode(chunk, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      let grew = false;
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+        try {
+          const delta = (JSON.parse(payload) as { choices?: { delta?: { content?: string } }[] }).choices?.[0]?.delta?.content;
+          if (delta) {
+            text += delta;
+            grew = true;
+          }
+        } catch {
+          // 壊れた行は読み飛ばす（最後に全体を JSON として検証する）
+        }
+      }
+      if (grew) onText(text);
+    }
+    return text;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface Provider {
   name: string;
   /** deadline: この時刻（Date.now()）までに応答がなければ打ち切る */
-  run: (words: string[], deadline?: number) => Promise<Json[]>;
+  run: (words: string[], deadline?: number, onText?: OnText) => Promise<Json[]>;
 }
 
 export function configuredProviders(): Provider[] {
@@ -195,14 +242,14 @@ export function configuredProviders(): Provider[] {
     const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/ai/v1`;
     for (const model of [WORKERS_AI_MODEL, WORKERS_AI_FALLBACK_MODEL].filter((m, i, all) => m && all.indexOf(m) === i)) {
       const extraBody = WORKERS_AI_THINKING ? undefined : { chat_template_kwargs: { enable_thinking: false } };
-      providers.push({ name: `workers-ai:${model}`, run: (w, d = Infinity) => callOpenAICompatible({ baseUrl, apiKey: cfToken, model, extraBody }, w, d) });
+      providers.push({ name: `workers-ai:${model}`, run: (w, d = Infinity, t) => callOpenAICompatible({ baseUrl, apiKey: cfToken, model, extraBody }, w, d, t) });
     }
   }
 
   const fb = { baseUrl: process.env.FALLBACK_LLM_BASE_URL, apiKey: process.env.FALLBACK_LLM_API_KEY, model: process.env.FALLBACK_LLM_MODEL };
   if (fb.baseUrl && fb.apiKey && fb.model) {
     const config = fb as OpenAICompatibleConfig;
-    providers.push({ name: `fallback:${config.model}`, run: (w, d = Infinity) => callOpenAICompatible(config, w, d) });
+    providers.push({ name: `fallback:${config.model}`, run: (w, d = Infinity, t) => callOpenAICompatible(config, w, d, t) });
   }
 
   const geminiKey = process.env.GEMINI_API_KEY;
@@ -232,14 +279,34 @@ function isTransient(err: unknown): boolean {
 }
 
 /**
+ * 無料枠を使い切ったプロバイダ（Workers AI の「1日 10,000 Neurons」など）は、枠が戻る UTC 0時まで呼ばない。
+ * 有料プランではないので超えても課金はされず、エラーが返るだけ。毎回呼んで失敗を待つ無駄を省く（インスタンスごとの記録）
+ */
+const exhaustedUntil = new Map<string, number>();
+
+function isDailyQuotaError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : '';
+  return /daily free allocation|neurons|4006|quota/i.test(message) && (!(err instanceof ProviderError) || [429, 403, 400].includes(err.status ?? 0));
+}
+
+function nextUtcMidnight(): number {
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+}
+
+/**
  * 設定済みのプロバイダを順に試し、最初に成功した結果を返す。全滅なら最後のエラーを投げる。
  * 混雑（429 / 503 など）で失敗したプロバイダは、少し待って1回だけ再試行してから次へ進む。
  * 全体で待つ時間は関数の時間制限に収まるよう短くしている。
  */
-export async function generatePieces(words: string[], providers = configuredProviders(), deadline = Infinity): Promise<BatchResult> {
+export async function generatePieces(words: string[], providers = configuredProviders(), deadline = Infinity, onText?: OnText): Promise<BatchResult> {
   if (providers.length === 0) throw new NoProviderError('no LLM provider is configured');
   let lastError: unknown;
   for (const provider of providers) {
+    if ((exhaustedUntil.get(provider.name) ?? 0) > Date.now()) {
+      lastError = new ProviderError(`${provider.name} has used up today's free allocation`, 429);
+      continue;
+    }
     for (let attempt = 0; attempt < 2; attempt++) {
       // 関数の時間制限を超えると応答そのものが返らない（ブラウザには 504 だけが届く）。
       // 残り時間が少なければ再試行・次のプロバイダを諦め、代替（近い単語・待ち行列）に回す
@@ -248,12 +315,16 @@ export async function generatePieces(words: string[], providers = configuredProv
         throw lastError;
       }
       try {
-        const pieces = alignToWords(words, await provider.run(words, deadline));
+        const pieces = alignToWords(words, await provider.run(words, deadline, onText));
         if (pieces.every(p => p === null)) throw new ProviderError(`${provider.name} returned no usable piece`);
         return { pieces, provider: provider.name };
       } catch (err) {
         lastError = err;
         console.warn(`[generator] ${provider.name} failed (attempt ${attempt + 1}):`, (err as Error).message);
+        if (isDailyQuotaError(err)) {
+          exhaustedUntil.set(provider.name, nextUtcMidnight());
+          break;
+        }
         if (!isTransient(err) || attempt > 0) break;
         await sleep(800 + Math.floor(Math.random() * 700));
       }
@@ -263,7 +334,7 @@ export async function generatePieces(words: string[], providers = configuredProv
 }
 
 /** 1語だけ生成する */
-export async function generatePiece(word: string, providers = configuredProviders(), deadline = Infinity): Promise<{ piece: Json; provider: string }> {
-  const { pieces, provider } = await generatePieces([word], providers, deadline);
+export async function generatePiece(word: string, providers = configuredProviders(), deadline = Infinity, onText?: OnText): Promise<{ piece: Json; provider: string }> {
+  const { pieces, provider } = await generatePieces([word], providers, deadline, onText);
   return { piece: pieces[0]!, provider };
 }
