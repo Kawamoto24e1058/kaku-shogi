@@ -12,7 +12,8 @@
     "verify:abilities": "tsx scripts/verify-abilities.ts",
     "verify:programs": "tsx scripts/verify-programs.ts",
     "simulate": "tsx scripts/simulate-games.ts",
-    "try:generate": "tsx scripts/try-generate.ts"
+    "try:generate": "tsx scripts/try-generate.ts",
+    "bench:models": "tsx scripts/bench-models.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

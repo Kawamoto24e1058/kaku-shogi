@@ -5,6 +5,7 @@ import { wordKey } from '../shared/wordKey';
 import { containsNgWord } from '../shared/moderation';
 import { normalizeAbilityPrograms, describeAbilities, normalizeAppearance } from '../shared/abilityProgram';
 import { normalizeFusionWord } from '../shared/challenge';
+import type { PartialPiece } from '../shared/partialPiece';
 
 const AREA_SHAPE_SET = new Set<string>(AREA_SHAPES);
 // 対象マスではなく発動した駒自身に作用するアクション（範囲が自分のマスだけでも効果が出る）
@@ -169,7 +170,30 @@ export function warmUpGenerator(): void {
  */
 export class BlockedWordError extends Error {}
 
-export async function generatePieceWithSource(word: string): Promise<GeneratedPiece> {
+/** AIの返事を1行ずつ読む（Accept: application/x-ndjson の応答）。最後の done 行の中身を通常の応答として返す */
+async function readGenerateStream(res: Response, onPartial: (partial: PartialPiece) => void): Promise<{ status: number; body: Record<string, unknown> | null }> {
+  if (!res.body || !(res.headers.get('content-type') || '').includes('application/x-ndjson')) {
+    return { status: res.status, body: await res.json().catch(() => null) };
+  }
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += value;
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const message = JSON.parse(line) as { type: string; piece?: PartialPiece; status?: number; body?: Record<string, unknown> };
+      if (message.type === 'partial' && message.piece) onPartial(message.piece);
+      if (message.type === 'done') return { status: message.status ?? 500, body: message.body ?? null };
+    }
+  }
+  return { status: 502, body: null };
+}
+
+export async function generatePieceWithSource(word: string, onPartial?: (partial: PartialPiece) => void): Promise<GeneratedPiece> {
   // 「猫+新幹線」などは「猫×新幹線」にそろえ、合体駒として同じキャッシュを使う
   const trimmed = normalizeFusionWord(word.trim());
   if (containsNgWord(trimmed)) throw new BlockedWordError('その単語は使えません。別の単語を入力してください。');
@@ -198,22 +222,30 @@ export async function generatePieceWithSource(word: string): Promise<GeneratedPi
     // サーバーは30秒以内に必ず答える作りだが、回線が詰まったときに待たせ続けないよう打ち切る
     const res = await fetch(API_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...deviceHeader() },
+      headers: {
+        'Content-Type': 'application/json',
+        ...deviceHeader(),
+        // 途中経過を受け取れるときは、AIが書いた部分から順に見せる
+        ...(onPartial ? { Accept: 'application/x-ndjson' } : {}),
+      },
       body: JSON.stringify({ word: trimmed }),
       signal: AbortSignal.timeout(GENERATE_TIMEOUT_MS),
     });
-    const body = await res.json().catch(() => null);
-    if (res.ok && body?.piece) {
+    const { status, body } = onPartial
+      ? await readGenerateStream(res, onPartial)
+      : { status: res.status, body: await res.json().catch(() => null) };
+    const ok = status >= 200 && status < 300;
+    if (ok && body?.piece) {
       const piece = sanitizePieceData(body.piece, trimmed);
       if (body.source === 'similar') {
         // 近い単語の流用は仮のもの。後でAI版が登録されるので端末にはキャッシュしない
-        return { piece, source: 'similar', notice: body.notice };
+        return { piece, source: 'similar', notice: typeof body.notice === 'string' ? body.notice : undefined };
       }
       saveToCache(trimmed, piece);
       return { piece, source: body.source === 'cache' ? 'cache' : 'ai' };
     }
-    if (body?.blocked) throw new BlockedWordError(body.error);
-    const notice = body?.error || `AI生成サーバーが応答しませんでした (${res.status})`;
+    if (body?.blocked) throw new BlockedWordError(String(body.error ?? 'その単語は使えません。'));
+    const notice = (typeof body?.error === 'string' && body.error) || `AI生成サーバーが応答しませんでした (${status})`;
     return { piece: generateOfflinePiece(trimmed), source: 'offline', notice };
   } catch (error) {
     if (error instanceof BlockedWordError) throw error;

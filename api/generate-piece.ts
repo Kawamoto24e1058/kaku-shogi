@@ -1,5 +1,6 @@
 // GET  /api/generate-piece?k=<wordKey> -> { piece } | 404   … 共有キャッシュの参照（CDNでキャッシュされる）
 // POST /api/generate-piece  { word: string } -> { piece, source }
+//      Accept: application/x-ndjson を付けると、AIが書いている途中の駒も順に送る（streamGeneratePiece）
 // LLMのAPIキーはこの関数（サーバー）だけが環境変数で保持する。
 // 処理順: 共有キャッシュ → IP単位レート制限 → 全体の1日上限 → LLM（複数プロバイダを順に試す）。
 // バズ時に Supabase の無料枠（転送量 5GB/月）を使い切らないよう、
@@ -13,6 +14,7 @@ import { wordKey } from '../shared/wordKey.js';
 import { containsNgWord, pieceHasNgText, setExtraNgWords } from '../shared/moderation.js';
 import { featureFlags } from './_lib/flags.js';
 import { normalizeFusionWord } from '../shared/challenge.js';
+import { extractPartialPiece, type PartialPiece } from '../shared/partialPiece.js';
 
 setExtraNgWords((process.env.NG_WORDS || '').split(','));
 
@@ -106,11 +108,27 @@ const inFlight = new Map<string, Promise<{ piece: Json; provider: string }>>();
 
 class ModerationError extends Error {}
 
-function generateShared(key: string, word: string, deadline: number) {
+type OnPartial = (partial: PartialPiece) => void;
+
+/**
+ * AIの途中経過から、書き終わった項目だけを onPartial に渡す。同じ内容は送らず、不適切な表現を含むものも送らない
+ */
+function partialRelay(onPartial: OnPartial) {
+  let last = '';
+  return (text: string) => {
+    const partial = extractPartialPiece(text);
+    const serialized = JSON.stringify(partial);
+    if (serialized === '{}' || serialized === last || pieceHasNgText(partial as Json)) return;
+    last = serialized;
+    onPartial(partial);
+  };
+}
+
+function generateShared(key: string, word: string, deadline: number, onPartial?: OnPartial) {
   let pending = inFlight.get(key);
   if (!pending) {
     pending = (async () => {
-      const result = await generatePiece(word, undefined, deadline);
+      const result = await generatePiece(word, undefined, deadline, onPartial ? partialRelay(onPartial) : undefined);
       if (pieceHasNgText(result.piece)) {
         // 不適切な文章を含む結果は使わず、キャッシュもしない（ブラウザ側で簡易生成になる）
         throw new ModerationError(`generated text for "${word}" was blocked`);
@@ -187,6 +205,38 @@ async function lookupCached(k: string): Promise<Response> {
 }
 
 export async function handleGeneratePiece(request: Request): Promise<Response> {
+  if (request.method === 'POST' && (request.headers.get('accept') || '').includes('application/x-ndjson')) {
+    return streamGeneratePiece(request);
+  }
+  return handleRequest(request);
+}
+
+/**
+ * 途中経過つきの生成。1行に1つの JSON を順に送る:
+ *   {"type":"partial","piece":{...書き終わった項目...}}  … AIが書くたびに
+ *   {"type":"done","status":200,"body":{...通常の応答と同じ...}}  … 最後に1回
+ */
+function streamGeneratePiece(request: Request): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (line: Json) => controller.enqueue(encoder.encode(`${JSON.stringify(line)}\n`));
+      try {
+        const res = await handleRequest(request, piece => send({ type: 'partial', piece: piece as Json }));
+        send({ type: 'done', status: res.status, body: await res.json().catch(() => ({})) as Json });
+      } catch (err) {
+        console.error('[generate-piece] stream failed:', (err as Error).message);
+        send({ type: 'done', status: 500, body: { error: 'AI生成サーバーでエラーが起きたため、簡易生成で作成しました。' } });
+      }
+      controller.close();
+    },
+  });
+  return new Response(stream, {
+    headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' },
+  });
+}
+
+async function handleRequest(request: Request, onPartial?: OnPartial): Promise<Response> {
   const startedAt = Date.now();
   if (request.method === 'GET') {
     const k = new URL(request.url).searchParams.get('k');
@@ -236,7 +286,7 @@ export async function handleGeneratePiece(request: Request): Promise<Response> {
   if (quota === 'global') return fallbackResponse(key, word, 429, '本日のAI生成枠が混雑しているため');
 
   try {
-    const { piece } = await generateShared(key, word, startedAt + AI_BUDGET_MS);
+    const { piece } = await generateShared(key, word, startedAt + AI_BUDGET_MS, onPartial);
     return json(200, { piece: { ...piece, word }, source: 'ai' });
   } catch (err) {
     if (err instanceof ModerationError) {
