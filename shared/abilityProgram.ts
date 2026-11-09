@@ -235,6 +235,8 @@ function reconcileTargetKind(target: ProgramTarget, effects: ProgramEffect[]): P
     return { ...target, area, who: 'EMPTY' };
   }
   if (target.who === 'EMPTY' && !effects.some(e => e.op === 'TILE')) return { ...target, who: 'ENEMY' };
+  // 隣の駒はそれ以上引き寄せられない。「周囲1マスを引き寄せる」は何も起きないので、周囲2マスに広げる
+  if (effects.some(e => e.op === 'PULL') && target.area === 'ADJACENT') return { ...target, area: 'RADIUS_2' };
   // 味方を強化する部品は味方に、敵を弱める部品は敵に向ける（SELF はそのまま）
   const buffs = effects.every(e => ['SHIELD', 'GUARD', 'CLEANSE', 'STEALTH'].includes(e.op));
   if (buffs && target.area !== 'SELF') return { ...target, who: 'ALLY' };
@@ -247,10 +249,16 @@ function reconcileTargetKind(target: ProgramTarget, effects: ProgramEffect[]): P
 function normalizeAbility(raw: unknown, index: number): AbilityProgram | null {
   if (!raw || typeof raw !== 'object') return null;
   const a = raw as Record<string, unknown>;
-  const trigger = oneOf(PROGRAM_TRIGGERS, a.trigger, 'ON_MOVE');
-  const effects = (Array.isArray(a.effects) ? a.effects : [])
+  let trigger = oneOf(PROGRAM_TRIGGERS, a.trigger, 'ON_MOVE');
+  const validEffects = (Array.isArray(a.effects) ? a.effects : [])
     .map(normalizeEffect)
-    .filter((e): e is ProgramEffect => e !== null)
+    .filter((e): e is ProgramEffect => e !== null);
+  // 「取られたら逃げる」（取られたときの瞬間移動・入れ替え・隠れる）は、取られた後では実行できない。
+  // 能力ごと捨てずに「敵が隣に来たとき（＝取られそうなとき）に逃げる」へ読み替えて、AIの狙いを残す
+  if (trigger === 'ON_TAKEN' && validEffects.length > 0 && validEffects.every(e => NEEDS_SELF_ON_BOARD.has(e.op))) {
+    trigger = 'ON_APPROACH';
+  }
+  const effects = validEffects
     // 取られたときは自分はもう盤上にいないので、自分が動く・自分に掛ける部品は使えない
     .filter(e => trigger !== 'ON_TAKEN' || !NEEDS_SELF_ON_BOARD.has(e.op))
     // 同じ部品の重複は1つにまとめる

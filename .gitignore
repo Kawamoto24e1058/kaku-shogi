@@ -35,3 +35,7 @@ dist-ssr
 firebase-debug.log
 firestore-debug.log
 .firebaserc
+
+# Cloudflare Workers のローカル用シークレット / ビルド出力
+.dev.vars
+.wrangler

@@ -1,0 +1,9 @@
+{
+  "_comment": "ブラウザに埋め込まれる公開設定（秘密ではない値だけ）。ビルド時に vite.config.ts が読み、環境変数が無いときの既定値にする",
+  "VITE_SITE_URL": "https://kaku-shogi.momotech.workers.dev",
+  "VITE_SUPABASE_URL": "https://ahwfldxicjvrosgvryxn.supabase.co",
+  "VITE_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_vci3NpSwK1cqDzptRvmSIg_BtaaQEUC",
+  "VITE_OPERATOR_NAME": "もとはる",
+  "VITE_CONTACT_URL": "mailto:kharu2514@gmail.com?subject=%E6%9E%B6%E7%A9%BA%E5%B0%86%E6%A3%8B%E3%81%B8%E3%81%AE%E3%81%8A%E5%95%8F%E3%81%84%E5%90%88%E3%82%8F%E3%81%9B",
+  "VITE_LEGAL_UPDATED": "2026年11月9日"
+}

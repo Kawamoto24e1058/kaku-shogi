@@ -34,9 +34,26 @@ async function rest(path: string, init: RequestInit = {}): Promise<unknown> {
 
 const rpc = (name: string, args: Json) => rest(`rpc/${name}`, { method: 'POST', body: JSON.stringify(args) });
 
+// 同じインスタンス内の短期キャッシュ。人気の単語を何度も DB に問い合わせないようにする
+// （Cloudflare の workers.dev では応答が CDN にキャッシュされないため、その代わり）。
+// 無い単語も短く覚えるが、保存したときに上書きするので、生成直後の二重生成にはならない
+const MEMO_MAX = 500;
+const MEMO_HIT_MS = 10 * 60_000;
+const MEMO_MISS_MS = 30_000;
+const memo = new Map<string, { data: Json | null; expires: number }>();
+
+function remember(key: string, data: Json | null): void {
+  if (memo.size >= MEMO_MAX) memo.delete(memo.keys().next().value as string);
+  memo.set(key, { data, expires: Date.now() + (data ? MEMO_HIT_MS : MEMO_MISS_MS) });
+}
+
 export async function getCachedPiece(key: string): Promise<Json | null> {
+  const hit = memo.get(key);
+  if (hit && hit.expires > Date.now()) return hit.data;
   const rows = await rest(`pieces?select=data&key=eq.${encodeURIComponent(key)}&limit=1`) as { data: Json }[];
-  return rows[0]?.data ?? null;
+  const data = rows[0]?.data ?? null;
+  remember(key, data);
+  return data;
 }
 
 export async function saveCachedPiece(key: string, piece: Json, meta: { provider: string; backfilled?: boolean }): Promise<void> {
@@ -44,6 +61,7 @@ export async function saveCachedPiece(key: string, piece: Json, meta: { provider
     p_token: SERVER_TOKEN, p_key: key, p_word: String(piece.word ?? key).slice(0, 64),
     p_data: piece, p_provider: meta.provider, p_backfilled: !!meta.backfilled,
   });
+  remember(key, piece);
 }
 
 /**

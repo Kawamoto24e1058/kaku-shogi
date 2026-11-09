@@ -171,7 +171,23 @@ for (const op of PROGRAM_OPS) {
   // 取られたときに自分が動く効果は捨てる（実際の AI 出力で見つかった不発）
   const fixed = normalizeAbilityPrograms([{ trigger: 'ON_TAKEN', target: { area: 'ADJACENT', who: 'EMPTY' }, effects: [{ op: 'TELEPORT' }] },
     { trigger: 'ON_TAKEN', target: { area: 'ATTACKER', who: 'ENEMY' }, effects: [{ op: 'TELEPORT' }, { op: 'FREEZE', value: 1 }] }]);
-  check(!!fixed && fixed.length === 1 && fixed[0].effects.map(e => e.op).join() === 'FREEZE', '取られたときの瞬間移動などは取り除く');
+  check(!!fixed && fixed.length === 2 && fixed[0].trigger === 'ON_APPROACH' && fixed[0].effects[0].op === 'TELEPORT',
+    '「取られたら逃げる」だけの能力は「敵が隣に来たら逃げる」に読み替える');
+  check(!!fixed && fixed[1].trigger === 'ON_TAKEN' && fixed[1].effects.map(e => e.op).join() === 'FREEZE', '取られたときの瞬間移動などは、他の効果があれば取り除く');
+}
+
+{
+  // 引き寄せは隣の駒を選ばない（実際の AI 出力で「周囲1マスの最も近い敵を引き寄せる」が不発だった）
+  const fixed = normalizeAbilityPrograms([{ trigger: 'ON_MOVE', target: { area: 'ADJACENT', who: 'ENEMY', pick: 'NEAREST', count: 1 }, effects: [{ op: 'PULL', value: 1 }] }]);
+  check(!!fixed && fixed[0].target.area === 'RADIUS_2', '「周囲1マスを引き寄せる」は周囲2マスに広げる');
+  const abilities = program({ trigger: 'ON_MOVE', target: { area: 'CROSS', who: 'ENEMY', pick: 'NEAREST', count: 1 }, effects: [{ op: 'PULL', value: 1 }] });
+  const board = setup(abilities);
+  // 縦横の隣（4,5）に敵、上に2つ離れて（1,4）に敵。隣の敵は動かせないので、離れた敵を引き寄せる
+  board[3][4] = null;
+  board[2][4] = null;
+  board[1][4] = mk('gote', 'far-enemy');
+  const res = applyAutomatedEffect(board, [4, 4], 'ON_MOVE', 'sente', [], [5, 4]);
+  check(res.triggered && res.board[2][4]?.id === 'far-enemy', '隣の駒ではなく、引き寄せられる駒を選ぶ');
 }
 
 {

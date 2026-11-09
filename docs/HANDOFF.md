@@ -6,7 +6,18 @@
 - **秘密の値（APIトークンなど）をチャットに表示しない・貼らせない**。ダッシュボードの入力欄か、ファイル（`.env.local`）で受け渡す。
 - 課金を有効にしない（Supabase は Free、Vercel は Hobby、Cloudflare は Workers Free のまま）。
 
-## 済んでいること（2026-10-22 時点）
+## 現在の構成（2026-11-09 に Cloudflare へ移行）
+- 本番: **https://kaku-shogi.momotech.workers.dev**（Cloudflare Workers Free。`wrangler.jsonc`、入口は `worker/index.ts`）
+  - 画面・JS は静的配信（Worker を起動しない）。API は `/api/generate-piece`・`/api/status` だけ Worker を通る
+  - Workers AI は AI バインディング（トークン不要）。シークレットは `SUPABASE_SERVER_TOKEN` だけ
+  - 毎日 23:30 UTC に Cron Trigger でバックフィル
+  - 旧URL `kaku-shogi.vercel.app` は `vercel.json` の転送だけが動く（Vercel の関数・Cron は使っていない）
+- デプロイは今のところ手元から `npm run build && npx wrangler deploy`。
+  **GitHub への push で自動デプロイするには、利用者がダッシュボードで Workers Builds をつなぐ**（README のセットアップ 3）
+- 実測（本番）: 生成1回の CPU 11〜12ms、参照 6ms。生成は名前が約2〜3秒、完成が約10秒。1枚 約23 Neurons（1日 約430枚）
+- 精度の確認は `npm run eval:generation`（24語。生成24/24、能力が残る100%、盤面で効果94%）
+
+## 済んでいること（2026-10-22 時点。ホスティングは当時 Vercel）
 - Supabase プロジェクト `ahwfldxicjvrosgvryxn`（東京、Free）に `supabase/schema.sql` を適用済み（自動掃除の pg_cron も登録済み）。
   anon ロールで権限を確認済み: 部屋を作った人と最初の入室者だけが書き換えられ、部屋の削除は作った人だけ。
   ランダムマッチの待ち行列は自分自身を取らず、1人は1回しか取り出されない。
@@ -28,7 +39,7 @@
 2. 作業ブランチから main へのプルリクエストを作り、Preview デプロイで確認 → 利用者の承認を得てマージ。
 3. 本番で確認: 駒生成（AI）・CPU対戦・2つのブラウザでオンライン対戦（部屋コード／ランダム）・
    `/terms.html`・`/privacy.html`・Xに投稿したときのカード表示。
-   Vercel → Cron Jobs から `/api/backfill` を手動実行し、駒が `public.pieces` に増えることを確認。
+   （移行後）Cloudflare の Worker → Settings → Triggers の Cron で動作を確認し、駒が `public.pieces` に増えることを確認。
 
 ## 利用者に依頼すること（自動化できない）
 - **最優先: 古い Gemini APIキーの無効化**（Google AI Studio）。main ブランチと、main から作られた本番サイトの JavaScript に

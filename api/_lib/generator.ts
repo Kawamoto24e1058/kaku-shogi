@@ -17,6 +17,9 @@ const WORKERS_AI_MODEL = process.env.WORKERS_AI_MODEL || '@cf/google/gemma-4-26b
 const WORKERS_AI_FALLBACK_MODEL = process.env.WORKERS_AI_FALLBACK_MODEL || '';
 // Gemma 4 などは既定で「思考」してから答えるため、5語まとめると90秒を超えることがある。駒生成では思考を切る
 const WORKERS_AI_THINKING = process.env.WORKERS_AI_THINKING === 'true';
+// 同じ名前を付けた呼び出しは同じサーバーに回され、毎回同じプロンプトの前半（約2,500トークン）がキャッシュされる。
+// 計測では1枚あたり約34 → 約23 Neurons になり、無料枠（1日 10,000 Neurons）で作れる枚数が約1.5倍になった
+const WORKERS_AI_AFFINITY = { 'x-session-affinity': 'kaku-shogi-piece-prompt' };
 const ENABLE_GEMINI = process.env.ENABLE_GEMINI === 'true';
 // gemini-3.5-flash は非推奨で、後継モデルに自動で振り替えられる（2026年10月時点の公式ドキュメント）。
 // モデル名は変わりやすいので、環境変数 GEMINI_MODEL / GEMINI_FALLBACK_MODEL で差し替えられるようにしている
@@ -149,12 +152,36 @@ interface OpenAICompatibleConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** プロバイダ固有の追加ヘッダー */
+  extraHeaders?: Record<string, string>;
   /** プロバイダ固有の追加パラメータ */
   extraBody?: Json;
 }
 
 /** 書いている途中の出力（それまでの全文）を受け取る。再試行すると空から始まり直す */
 export type OnText = (textSoFar: string) => void;
+
+/**
+ * AIの出力ストリーム（Server-Sent Events のバイト列）をそのまま受け取る。
+ * Worker ではこれを JavaScript で読まずにブラウザへ流す（1文字ずつ解析すると無料プランの CPU 時間を超えるため）。
+ * 再試行のたびに新しいストリームが渡される
+ */
+export type OnRawStream = (stream: ReadableStream<Uint8Array>) => void;
+
+/** SSE の全文から、AIが書いた文章をつなげて取り出す（OpenAI 互換・Workers AI 独自のどちらの形にも対応） */
+export function textFromSSE(sse: string): string {
+  // 1行ごとに全体を JSON.parse すると（数百行ある）CPU 時間がかかるので、文字の部分だけを取り出して読む
+  const pattern = /"(?:content|response)":"((?:[^"\\]|\\.)*)"/g;
+  let text = '';
+  for (const match of sse.matchAll(pattern)) {
+    try {
+      text += JSON.parse(`"${match[1]}"`) as string;
+    } catch {
+      // 壊れた行は読み飛ばす（最後に全体を JSON として検証する）
+    }
+  }
+  return text;
+}
 
 /** OpenAI 互換の chat/completions を呼ぶ。JSONモードに非対応のモデルなら(400)、指定なしで再試行する。
  * onText があれば stream: true で受け取り、届いた分を順に渡す（生成中の駒を少しずつ見せるため） */
@@ -170,7 +197,7 @@ async function callOpenAICompatible(config: OpenAICompatibleConfig, words: strin
       ...(config.extraBody || {}),
     });
     const url = `${config.baseUrl.replace(/\/$/, '')}/chat/completions`;
-    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` };
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}`, ...(config.extraHeaders || {}) };
     const text = onText
       ? await streamText(url, { method: 'POST', headers, body }, callTimeout(words, deadline), onText)
       : ((await fetchJson(url, { method: 'POST', headers, body }, callTimeout(words, deadline)) as { choices?: { message?: { content?: string } }[] })
@@ -227,10 +254,83 @@ async function streamText(url: string, init: RequestInit, timeoutMs: number, onT
   }
 }
 
+/** Cloudflare Workers の AI バインディング（env.AI）。Worker で動くときだけ setWorkersAIBinding で渡される */
+export interface WorkersAIBinding {
+  run(model: string, inputs: Record<string, unknown>, options?: { extraHeaders?: Record<string, string> }): Promise<unknown>;
+}
+
+let workersAIBinding: WorkersAIBinding | null = null;
+
+/** Worker の起動時に呼ぶ。以後は APIトークンを使わず、同じ Cloudflare の中から直接 AI を呼ぶ */
+export function setWorkersAIBinding(binding: WorkersAIBinding | null | undefined): void {
+  workersAIBinding = binding ?? null;
+}
+
+/** 応答の形（OpenAI 互換の choices / Workers AI 独自の response）の違いを吸収して文章を取り出す */
+function bindingText(data: unknown): string {
+  const d = data as { response?: unknown; choices?: { message?: { content?: string }; delta?: { content?: string } }[] };
+  if (typeof d?.response === 'string') return d.response;
+  if (d?.response && typeof d.response === 'object') return JSON.stringify(d.response);
+  return d?.choices?.[0]?.message?.content ?? d?.choices?.[0]?.delta?.content ?? '';
+}
+
+async function callWorkersAIBinding(binding: WorkersAIBinding, model: string, words: string[], deadline: number, onRaw?: OnRawStream): Promise<Json[]> {
+  const inputs = {
+    messages: [{ role: 'user', content: buildPrompt(words) }],
+    response_format: { type: 'json_object' },
+    temperature: 0.9,
+    max_tokens: OUTPUT_TOKENS_PER_PIECE * words.length,
+    ...(WORKERS_AI_THINKING ? {} : { chat_template_kwargs: { enable_thinking: false } }),
+    ...(onRaw ? { stream: true } : {}),
+  };
+  const timeoutMs = callTimeout(words, deadline);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new ProviderError(`workers-ai binding timed out after ${timeoutMs}ms`, 504)), timeoutMs);
+  });
+  try {
+    const run = (async () => {
+      let result: unknown;
+      try {
+        result = await binding.run(model, inputs, { extraHeaders: WORKERS_AI_AFFINITY });
+      } catch (err) {
+        // バインディングのエラーには HTTP の状態がないので、無料枠切れ・混雑を文言から判断する
+        const message = (err as Error).message || String(err);
+        const status = /daily free allocation|neurons|4006/i.test(message) ? 429 : /capacity|overloaded|3040|timeout/i.test(message) ? 503 : 500;
+        throw new ProviderError(`workers-ai binding: ${message.slice(0, 300)}`, status);
+      }
+      if (result instanceof ReadableStream) {
+        const stream = result as ReadableStream<Uint8Array>;
+        if (onRaw) {
+          // 片方はそのままブラウザへ流し、もう片方はサーバーで検証・保存用に読む。どちらも JavaScript で塊ごとに触らない。
+          // サーバー側を tee の枝から直接 Response.text() で読むと、大きな単位でまとめて読まれてブラウザ側まで
+          // 数秒止まるため、IdentityTransformStream を挟んで届いた分ずつ流れるようにしている
+          const [toClient, toServer] = stream.tee();
+          onRaw(toClient);
+          const Identity = (globalThis as { IdentityTransformStream?: new () => TransformStream<Uint8Array, Uint8Array> }).IdentityTransformStream;
+          if (!Identity) return textFromSSE(await new Response(toServer).text());
+          const relay = new Identity();
+          const piping = toServer.pipeTo(relay.writable).catch(() => undefined);
+          const body = await new Response(relay.readable).text();
+          await piping;
+          return textFromSSE(body);
+        }
+        return textFromSSE(await new Response(stream).text());
+      }
+      return bindingText(result);
+    })();
+    const text = await Promise.race([run, timeout]);
+    if (!text) throw new ProviderError(`${model} returned an empty response`);
+    return extractPieces(text);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface Provider {
   name: string;
   /** deadline: この時刻（Date.now()）までに応答がなければ打ち切る */
-  run: (words: string[], deadline?: number, onText?: OnText) => Promise<Json[]>;
+  run: (words: string[], deadline?: number, onText?: OnText, onRaw?: OnRawStream) => Promise<Json[]>;
 }
 
 export function configuredProviders(): Provider[] {
@@ -238,11 +338,16 @@ export function configuredProviders(): Provider[] {
 
   const cfAccount = process.env.CLOUDFLARE_ACCOUNT_ID;
   const cfToken = process.env.CLOUDFLARE_API_TOKEN;
-  if (cfAccount && cfToken) {
+  const binding = workersAIBinding;
+  if (binding) {
+    for (const model of [WORKERS_AI_MODEL, WORKERS_AI_FALLBACK_MODEL].filter((m, i, all) => m && all.indexOf(m) === i)) {
+      providers.push({ name: `workers-ai:${model}`, run: (w, d = Infinity, _t, r) => callWorkersAIBinding(binding, model, w, d, r) });
+    }
+  } else if (cfAccount && cfToken) {
     const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/ai/v1`;
     for (const model of [WORKERS_AI_MODEL, WORKERS_AI_FALLBACK_MODEL].filter((m, i, all) => m && all.indexOf(m) === i)) {
       const extraBody = WORKERS_AI_THINKING ? undefined : { chat_template_kwargs: { enable_thinking: false } };
-      providers.push({ name: `workers-ai:${model}`, run: (w, d = Infinity, t) => callOpenAICompatible({ baseUrl, apiKey: cfToken, model, extraBody }, w, d, t) });
+      providers.push({ name: `workers-ai:${model}`, run: (w, d = Infinity, t) => callOpenAICompatible({ baseUrl, apiKey: cfToken, model, extraBody, extraHeaders: WORKERS_AI_AFFINITY }, w, d, t) });
     }
   }
 
@@ -299,7 +404,7 @@ function nextUtcMidnight(): number {
  * 混雑（429 / 503 など）で失敗したプロバイダは、少し待って1回だけ再試行してから次へ進む。
  * 全体で待つ時間は関数の時間制限に収まるよう短くしている。
  */
-export async function generatePieces(words: string[], providers = configuredProviders(), deadline = Infinity, onText?: OnText): Promise<BatchResult> {
+export async function generatePieces(words: string[], providers = configuredProviders(), deadline = Infinity, onText?: OnText, onRaw?: OnRawStream): Promise<BatchResult> {
   if (providers.length === 0) throw new NoProviderError('no LLM provider is configured');
   let lastError: unknown;
   for (const provider of providers) {
@@ -315,7 +420,7 @@ export async function generatePieces(words: string[], providers = configuredProv
         throw lastError;
       }
       try {
-        const pieces = alignToWords(words, await provider.run(words, deadline, onText));
+        const pieces = alignToWords(words, await provider.run(words, deadline, onText, onRaw));
         if (pieces.every(p => p === null)) throw new ProviderError(`${provider.name} returned no usable piece`);
         return { pieces, provider: provider.name };
       } catch (err) {
@@ -334,7 +439,7 @@ export async function generatePieces(words: string[], providers = configuredProv
 }
 
 /** 1語だけ生成する */
-export async function generatePiece(word: string, providers = configuredProviders(), deadline = Infinity, onText?: OnText): Promise<{ piece: Json; provider: string }> {
-  const { pieces, provider } = await generatePieces([word], providers, deadline, onText);
+export async function generatePiece(word: string, providers = configuredProviders(), deadline = Infinity, onText?: OnText, onRaw?: OnRawStream): Promise<{ piece: Json; provider: string }> {
+  const { pieces, provider } = await generatePieces([word], providers, deadline, onText, onRaw);
   return { piece: pieces[0]!, provider };
 }

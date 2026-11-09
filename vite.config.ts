@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -55,6 +56,12 @@ export default defineConfig(({ mode }) => {
   // サーバー用の秘密値（GEMINI_API_KEY 等）を開発時だけ process.env に流し込む。
   // VITE_ 接頭辞が無いのでクライアントのバンドルには含まれない。
   Object.assign(process.env, loadEnv(mode, process.cwd(), ''))
+  // 公開して問題ない設定（サイトURL・Supabase の公開キー・運営者名など）は deploy/public-config.json に置き、
+  // 環境変数が無いときの既定値にする。どこでビルドしても（Cloudflare の自動ビルドでも）同じ値が入る
+  const publicConfig = JSON.parse(readFileSync(new URL('./deploy/public-config.json', import.meta.url), 'utf8')) as Record<string, string>
+  for (const [key, value] of Object.entries(publicConfig)) {
+    if (key.startsWith('VITE_') && !process.env[key]) process.env[key] = value
+  }
   const vercelHost = process.env.VERCEL_PROJECT_PRODUCTION_URL
   const siteUrl = (process.env.VITE_SITE_URL || (vercelHost ? `https://${vercelHost}` : '')).replace(/\/$/, '')
   const contactUrl = process.env.VITE_CONTACT_URL || ''

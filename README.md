@@ -5,19 +5,21 @@
 ## 構成（すべて無料枠で運用・非商用）
 
 ```
-ブラウザ (React + Vite, 静的配信 / Vercel)
-  ├─ GET  /api/generate-piece?k=… ─► CDN キャッシュ（生成済みの駒。関数も DB も使わない）
-  ├─ POST /api/generate-piece ─────► Vercel Function ─► Cloudflare Workers AI（Gemma 4）
-  │                                         └─► Supabase（共有キャッシュ。サーバー用トークン付き RPC）
+ブラウザ (React + Vite) ── https://kaku-shogi.momotech.workers.dev
+  ├─ 画面・JS・画像 ───────────────► Cloudflare の静的配信（Worker を起動しない）
+  ├─ GET  /api/generate-piece?k=… ─► Worker ─► Supabase（共有キャッシュ。よく使う単語は Worker のメモリから）
+  ├─ POST /api/generate-piece ─────► Worker ─► Workers AI（Gemma 4。AI バインディングでトークン不要）
+  │                                    └─ AI の出力をそのままブラウザへ流し、書けた部分から表示する
   ├─ GET  /api/status ─────────────► 緊急スイッチ（AI生成・オンライン対戦の停止、お知らせ）
   └─ Supabase（オンライン対戦。読み取り＋RPC のみ、Realtime で同期）
-Vercel Cron（毎日）── GET /api/backfill ─► 待ち行列・事前生成単語を AI 生成して共有キャッシュへ
+Cron Trigger（毎日 23:30 UTC）─► 待ち行列・事前生成単語を AI 生成して共有キャッシュへ
+旧URL kaku-shogi.vercel.app ─► 新URL へ転送（vercel.json）
 ```
 
 | 役割 | サービス | 無料枠を超えたとき |
 | --- | --- | --- |
-| ホスティング・API | Vercel Hobby（**非商用のみ**。広告・寄付・決済を入れる場合は Pro か Cloudflare へ） | 課金されず、上限到達で一時停止 |
-| 駒生成 AI | Cloudflare Workers AI（無料で1日1万neuron＝約190駒） | 課金されずエラー → 近い単語の流用・簡易生成に切り替わる |
+| 配信・API | Cloudflare Workers Free（静的ファイルは回数無制限、API は1日10万回。商用利用可） | 課金されず、API だけがエラー → 簡易生成で遊べる |
+| 駒生成 AI | Cloudflare Workers AI（無料で1日1万 Neurons。実測で1枚 約23 Neurons＝**約430枚/日**） | 課金されずエラー → その日は呼ばず、近い単語の流用・簡易生成に切り替わる |
 | DB・リアルタイム同期 | Supabase Free（500MB、転送 5GB/月、Realtime 同時接続 200） | 課金されず制限される → オンライン対戦に案内を表示。Realtime の上限時はポーリングに切り替え |
 
 > **Gemini API を既定で使わない理由**：Gemini API の利用規約（2026年3月23日発効版）には
@@ -25,10 +27,14 @@ Vercel Cron（毎日）── GET /api/backfill ─► 待ち行列・事前生�
 > コードは残してあり、`ENABLE_GEMINI=true` で有効になる（自分だけで試す開発用）。
 
 ### バズったときの安全装置
-- **生成済みの駒は CDN から返す**：同じ単語への2回目以降は Vercel の CDN が応答し、関数も DB も使わない
+- **画面は Worker を通さずに配信**：静的ファイルは Cloudflare の無料配信で、回数・転送量の上限を気にしなくてよい
+- **生成済みの駒は Worker のメモリと Supabase から返す**：人気の単語は DB にも問い合わせない
+- **AI の出力を Worker で1文字ずつ処理しない**：無料プランの CPU 時間（1回 10ms 程度）に収めるため、
+  出力は `tee()` してブラウザへそのまま流し、サーバーは最後に一度だけ読む（実測 11〜12ms／生成）
+- **プロンプトの前半をキャッシュさせる**：`x-session-affinity` で毎回同じサーバーに回し、1枚あたり約34→約23 Neurons
 - **回数制限はメモリで数える**：DB を消費しない（インスタンスごとの目安。AI はすべて無料枠で、超えても課金されない）
 - **対戦データを小さくする**：盤面・駒データは gzip して保存（約 1/4〜1/5）、ログは直近 150 件まで、2 日で自動削除（pg_cron）
-- **緊急スイッチ**：Vercel の環境変数を変えて再デプロイすると反映
+- **緊急スイッチ**：`wrangler.jsonc` の `vars`（またはダッシュボードの Worker の変数）を変えて再デプロイすると反映
   - `FEATURE_AI_GENERATION=off` … AI生成を止める（キャッシュ・近い単語・簡易生成で動き続ける）
   - `FEATURE_ONLINE_MATCH=off` … オンライン対戦の新規開始を止め、トップに案内を出す
   - `SITE_NOTICE=…` … トップ画面にお知らせを出す
@@ -71,14 +77,14 @@ AI は能力を `shared/abilityProgram.ts` の部品（きっかけ・条件・�
    全能力型がエンジン上で実際に効果を発揮することを `npm run verify:abilities` で確認できる。
 
 AI 呼び出しを節約する工夫:
-- プロンプトはエンジンが解釈する項目だけに絞って約 2,200 トークン
+- プロンプトはエンジンが解釈する項目だけに絞って約 2,500 トークン（単語以外の固定部分はキャッシュされる）
 - 同じ単語への同時リクエストは 1 回の生成を共有する
 - バックフィルは 1 回の呼び出しで 5 語をまとめて生成する
 
-AI で生成できなかった単語は `generation_queue` に積まれ、Vercel Cron（`vercel.json`、毎日 日本時間 8:30 頃に `/api/backfill`）が
+AI で生成できなかった単語は `generation_queue` に積まれ、Worker の Cron Trigger（`wrangler.jsonc`、毎日 日本時間 8:30）が
 その日に余った無料枠で AI 生成して共有キャッシュに登録します。次にその単語を入れた人からは AI 版になります。
 初回デプロイ後は `shared/seedWords.ts` の単語も少しずつ事前生成されます。
-`/api/backfill` は Vercel が付ける `CRON_SECRET` で保護されています。手元からは `npm run backfill` で実行できます。
+手元からは `npm run backfill` で実行できます。
 
 ## セットアップ
 
@@ -105,11 +111,15 @@ AI で生成できなかった単語は `generation_queue` に積まれ、Vercel
 3. `CLOUDFLARE_ACCOUNT_ID` と `CLOUDFLARE_API_TOKEN` に設定（`VITE_` を付けない＝ブラウザに配信されない）。
 4. 公開前に 10〜20 語ほど生成して、駒の品質を確認する。
 
-### 3. Vercel
+### 3. Cloudflare Workers（配信・API）
 
-1. このリポジトリを Vercel にインポート（Framework: Vite。`vercel.json` で設定済み）。
-2. Settings → Environment Variables に `.env.example` の値を登録（`SUPABASE_SERVER_TOKEN` と `CRON_SECRET` は Sensitive にする）。
-3. デプロイ。OGP 画像の URL は本番ドメインが自動で使われます（独自ドメインの場合は `VITE_SITE_URL` を設定）。
+1. 公開してよい設定（サイトURL・Supabase の URL と Publishable key・運営者名・問い合わせ先）は `deploy/public-config.json`。
+   Worker 側の Supabase の値は `wrangler.jsonc` の `vars`。
+2. シークレットを登録: `npx wrangler secret put SUPABASE_SERVER_TOKEN`（Workers AI は AI バインディングなのでトークン不要）。
+3. デプロイ: `npm run build && npx wrangler deploy`。
+   GitHub への push で自動デプロイしたい場合は、ダッシュボード → Workers & Pages → kaku-shogi → Settings → Builds で
+   このリポジトリをつなぎ、Build command に `npm ci && npm run build`、Deploy command に `npx wrangler deploy` を設定する。
+4. 使用量・ログ: ダッシュボード → Workers & Pages → kaku-shogi（Observability）、AI → Workers AI。
 
 ## 開発
 
@@ -132,7 +142,8 @@ AI のキー（`CLOUDFLARE_*`）が未設定でも、駒は簡易生成で作ら
 
 | パス | 内容 |
 | --- | --- |
-| `api/generate-piece.ts` | 駒生成 API（CDN キャッシュ参照・レート制限・AI 呼び出し・NG チェック） |
+| `worker/index.ts`, `wrangler.jsonc` | Cloudflare Worker の入口（API・静的配信・毎日のバックフィル）と設定 |
+| `api/generate-piece.ts` | 駒生成 API（キャッシュ参照・レート制限・AI 呼び出し・途中経過の中継・NG チェック） |
 | `api/_lib/prompt.ts`, `api/_lib/pieceSchema.ts` | 生成プロンプトと構造化出力スキーマ |
 | `shared/abilityCatalog.ts` | エンジンが実行できる能力アクションの一覧（クライアント・サーバー共通） |
 | `src/aiGenerator.ts` | 生成結果の補正（サニタイズ）・キャッシュ・オフライン生成 |
@@ -141,7 +152,8 @@ AI のキー（`CLOUDFLARE_*`）が未設定でも、駒は簡易生成で作ら
 | `shared/moderation.ts` | NG ワードフィルター |
 | `terms.html`, `privacy.html` | 利用規約・プライバシーポリシー |
 | `src/offlineGenerator.ts` | AI が使えないときの簡易生成（能力型ライブラリ） |
-| `api/backfill.ts`, `api/_lib/backfill.ts` | 待ち行列・事前生成単語の AI 生成（Vercel Cron。手元では `scripts/backfill.ts`） |
+| `api/_lib/backfill.ts` | 待ち行列・事前生成単語の AI 生成（Worker の Cron Trigger。手元では `scripts/backfill.ts`） |
+| `scripts/eval-generation.ts` | 生成の精度を決まった単語の組で測る（`npm run eval:generation`） |
 | `api/_lib/pieceCache.ts` | 共有キャッシュ・待ち行列（Supabase の RPC を fetch で呼ぶ） |
 | `src/onlineStore.ts` | オンライン対戦の保存・同期（圧縮、Realtime、ポーリング切り替え） |
 | `shared/abilityProgram.ts`, `src/abilityEngine.ts` | 能力プログラムの定義（検証・強さ調整・説明文）と実行エンジン |

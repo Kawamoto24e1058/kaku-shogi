@@ -1,0 +1,26 @@
+// Cloudflare Workers の設定（npx wrangler deploy）。手順は docs/HANDOFF.md
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kaku-shogi",
+  "main": "worker/index.ts",
+  "compatibility_date": "2025-09-01",
+  // node:crypto・Buffer・process.env を使えるようにする（api/ のコードを Vercel と共用するため）
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    // 画面の URL（/ 以外）は index.html を返す。/api/* だけ Worker を通す（静的ファイルは Worker を起動しない）
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "ai": { "binding": "AI" },
+  "triggers": { "crons": ["30 23 * * *"] },
+  "observability": { "enabled": true },
+  // 公開して問題ない値だけ。SUPABASE_SERVER_TOKEN はシークレット（npx wrangler secret put SUPABASE_SERVER_TOKEN）
+  "vars": {
+    "SUPABASE_URL": "https://ahwfldxicjvrosgvryxn.supabase.co",
+    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_vci3NpSwK1cqDzptRvmSIg_BtaaQEUC"
+  }
+}
