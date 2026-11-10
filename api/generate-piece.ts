@@ -8,7 +8,7 @@
 // どれも使えない場合はエラーを返し（ブラウザ側で簡易生成に切り替わる）、単語を待ち行列に積む。
 // 待ち行列は worker/index.ts の Cron Trigger（1日1回）がAI生成して共有キャッシュに登録する。
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { configuredProviders, generatePiece, isQuotaExhausted, NoProviderError, type Json, type OnRawStream } from './_lib/generator.js';
+import { configuredProviders, generatePiece, isQuotaExhausted, NoProviderError, type Json, type OnRawStream, type OnWait } from './_lib/generator.js';
 import { consumeSharedQuota, enqueueWord, findSimilarPiece, getCachedPiece, saveCachedPiece, storeConfigured } from './_lib/pieceCache.js';
 import { wordKey } from '../shared/wordKey.js';
 import { containsNgWord, pieceHasNgText, setExtraNgWords } from '../shared/moderation.js';
@@ -24,8 +24,9 @@ const PER_IP_PER_HOUR = Number(process.env.RATE_LIMIT_PER_HOUR || 10);
 const PER_IP_PER_DAY = Number(process.env.RATE_LIMIT_PER_DAY || 40);
 const PER_DEVICE_PER_DAY = Number(process.env.RATE_LIMIT_PER_DEVICE_PER_DAY || 30);
 const GLOBAL_PER_DAY = Number(process.env.GLOBAL_DAILY_LIMIT || 1000);
-// 関数の上限（vercel.json の maxDuration: 30秒）より前に AI を諦め、近い単語の流用・待ち行列への登録まで済ませて応答する
-const AI_BUDGET_MS = 22_000;
+// AI に使う時間の上限。混雑時は無料枠の回復（1分あたりの上限）を待つこともあるので長めにとる。
+// 過ぎたら近い単語の流用・待ち行列への登録まで済ませて応答する（ブラウザ側は60秒で打ち切る）
+const AI_BUDGET_MS = 45_000;
 
 const json = (status: number, body: Json) =>
   new Response(JSON.stringify(body), {
@@ -146,11 +147,11 @@ function partialRelay(onPartial: OnPartial) {
   };
 }
 
-function generateShared(key: string, word: string, deadline: number, onPartial?: OnPartial, onRaw?: OnRawStream, reference?: Promise<string | null>) {
+function generateShared(key: string, word: string, deadline: number, onPartial?: OnPartial, onRaw?: OnRawStream, reference?: Promise<string | null>, onWait?: OnWait) {
   let pending = inFlight.get(key);
   if (!pending) {
     pending = (async () => {
-      const result = await generatePiece(word, undefined, deadline, onPartial ? partialRelay(onPartial) : undefined, onRaw, await reference);
+      const result = await generatePiece(word, undefined, deadline, onPartial ? partialRelay(onPartial) : undefined, onRaw, await reference, onWait);
       if (pieceHasNgText(result.piece)) {
         // 不適切な文章を含む結果は使わず、キャッシュもしない（ブラウザ側で簡易生成になる）
         throw new ModerationError(`generated text for "${word}" was blocked`);
@@ -244,6 +245,7 @@ export async function handleGeneratePiece(request: Request, waitUntil?: (task: P
  *   {"type":"reset"}                         … AIの出力が（最初から／再試行で）始まる
  *   data: {...}                              … AIの出力そのもの（Server-Sent Events）。Worker では JavaScript を通さずに流す
  *   {"type":"partial","piece":{...}}         … AIの出力を JavaScript で読める環境（Vercel など）での途中経過
+ *   {"type":"wait","seconds":15}             … どのAIも混雑していて、回復を待っている（ブラウザに「順番待ち」と出す）
  *   {"type":"done","status":200,"body":{...}} … 最後に1回。中身は通常の応答と同じ
  * AIの出力を塊ごとに解析すると、Workers の無料プランの CPU 時間（1回 10ms 程度）を大きく超えるため、
  * 途中経過の解析はブラウザに任せている。
@@ -273,7 +275,8 @@ function streamGeneratePiece(request: Request, waitUntil?: (task: Promise<unknow
   };
   const task = (async () => {
     try {
-      const res = await handleRequest(request, piece => writeLine({ type: 'partial', piece: piece as Json }), pipeRaw);
+      const res = await handleRequest(request, piece => writeLine({ type: 'partial', piece: piece as Json }), pipeRaw,
+        seconds => writeLine({ type: 'wait', seconds }));
       writeLine({ type: 'done', status: res.status, body: await res.json().catch(() => ({})) as Json });
     } catch (err) {
       console.error('[generate-piece] stream failed:', (err as Error).message);
@@ -289,7 +292,7 @@ function streamGeneratePiece(request: Request, waitUntil?: (task: Promise<unknow
   });
 }
 
-async function handleRequest(request: Request, onPartial?: OnPartial, onRaw?: OnRawStream): Promise<Response> {
+async function handleRequest(request: Request, onPartial?: OnPartial, onRaw?: OnRawStream, onWait?: OnWait): Promise<Response> {
   const startedAt = Date.now();
   // 運営者の動作確認用: 予備AIで使えるモデルの一覧（サーバー用トークンが必要）
   if (request.method === 'POST' && isProviderTest(request, 'models')) {
@@ -328,7 +331,7 @@ async function handleRequest(request: Request, onPartial?: OnPartial, onRaw?: On
     const providers = configuredProviders().filter(p => p.name.startsWith('fallback:'));
     try {
       const { piece, provider } = await generatePiece(word, providers, startedAt + AI_BUDGET_MS,
-        onPartial ? partialRelay(onPartial) : undefined, onRaw, reference);
+        onPartial ? partialRelay(onPartial) : undefined, onRaw, reference, onWait);
       return json(200, { piece: { ...piece, word }, source: 'ai', provider });
     } catch (err) {
       return json(502, { error: (err as Error).message.slice(0, 300) });
@@ -362,7 +365,7 @@ async function handleRequest(request: Request, onPartial?: OnPartial, onRaw?: On
   if (quota === 'global') return fallbackResponse(key, word, 429, '本日のAI生成枠が混雑しているため', reference);
 
   try {
-    const { piece } = await generateShared(key, word, startedAt + AI_BUDGET_MS, onPartial, onRaw, reference);
+    const { piece } = await generateShared(key, word, startedAt + AI_BUDGET_MS, onPartial, onRaw, reference, onWait);
     return json(200, { piece: { ...piece, word }, source: 'ai' });
   } catch (err) {
     if (err instanceof ModerationError) {

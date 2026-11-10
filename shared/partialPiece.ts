@@ -2,6 +2,8 @@
 // JSON 全体はまだ閉じていないので、項目ごとに「値が閉じているか」を確かめてから読む。
 
 export interface PartialPiece {
+  /** AIが混雑していて、回復を待っている秒数（サーバーの wait 行。AIの出力ではない） */
+  wait_seconds?: number;
   /** 読み解き（AIが最初に書く。元ネタ・一番の特徴・将棋でどう働くか） */
   deep_search_analysis?: string;
   effect_name?: string;

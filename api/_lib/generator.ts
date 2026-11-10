@@ -37,10 +37,26 @@ const MIN_CALL_MS = 8_000;
 
 export class ProviderError extends Error {
   readonly status?: number;
-  constructor(message: string, status?: number) {
+  /** 混雑（429）のとき、次に使えるようになるまでの目安（ミリ秒）。分からなければ undefined */
+  readonly retryAfterMs?: number;
+  constructor(message: string, status?: number, retryAfterMs?: number) {
     super(message);
     this.status = status;
+    this.retryAfterMs = retryAfterMs;
   }
+}
+
+/** 混雑時の「何秒後にまた使えるか」を、Retry-After ヘッダーか本文（"try again in 1m2.5s"）から読む */
+function parseRetryAfterMs(res: Response, detail: string): number | undefined {
+  const header = Number(res.headers.get('retry-after'));
+  if (Number.isFinite(header) && header > 0) return header * 1000;
+  const m = /try again in (?:(\d+)m)?([\d.]+)s/i.exec(detail);
+  if (m) return (Number(m[1] || 0) * 60 + Number(m[2])) * 1000;
+  return undefined;
+}
+
+function httpError(url: string, res: Response, detail: string): ProviderError {
+  return new ProviderError(`${new URL(url).host} returned ${res.status}: ${detail.slice(0, 300)}`, res.status, parseRetryAfterMs(res, detail));
 }
 
 /** LLMプロバイダが1つも設定されていない（＝障害ではなく設定不足） */
@@ -53,7 +69,7 @@ async function fetchJson(url: string, init: RequestInit, timeoutMs: number): Pro
     const res = await fetch(url, { ...init, signal: controller.signal });
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
-      throw new ProviderError(`${new URL(url).host} returned ${res.status}: ${detail.slice(0, 300)}`, res.status);
+      throw httpError(url, res, detail);
     }
     return await res.json();
   } finally {
@@ -154,6 +170,8 @@ interface OpenAICompatibleConfig {
   model: string;
   /** プロバイダ固有の追加ヘッダー */
   extraHeaders?: Record<string, string>;
+  /** 短い指示（COMPACT_GUIDE）を使う。1分あたりのトークン上限が小さい予備のAI向け */
+  compactPrompt?: boolean;
   /** プロバイダ固有の追加パラメータ */
   extraBody?: Json;
 }
@@ -207,7 +225,7 @@ async function callOpenAICompatible(config: OpenAICompatibleConfig, words: strin
   const call = async (jsonMode: boolean) => {
     const body = JSON.stringify({
       model: config.model,
-      messages: [{ role: 'user', content: buildPrompt(words, references) }],
+      messages: [{ role: 'user', content: buildPrompt(words, references, config.compactPrompt) }],
       ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
       temperature: 0.9,
       max_tokens: OUTPUT_TOKENS_PER_PIECE * words.length,
@@ -241,7 +259,7 @@ async function relayFromFetch(url: string, init: RequestInit, timeoutMs: number,
     const res = await fetch(url, { ...init, signal: controller.signal });
     if (!res.ok || !res.body) {
       const detail = await res.text().catch(() => '');
-      throw new ProviderError(`${new URL(url).host} returned ${res.status}: ${detail.slice(0, 300)}`, res.status);
+      throw httpError(url, res, detail);
     }
     return await relayAndReadSSE(res.body, onRaw);
   } finally {
@@ -257,7 +275,7 @@ async function streamText(url: string, init: RequestInit, timeoutMs: number, onT
     const res = await fetch(url, { ...init, signal: controller.signal });
     if (!res.ok || !res.body) {
       const detail = await res.text().catch(() => '');
-      throw new ProviderError(`${new URL(url).host} returned ${res.status}: ${detail.slice(0, 300)}`, res.status);
+      throw httpError(url, res, detail);
     }
     const decoder = new TextDecoder();
     let buffer = '';
@@ -376,14 +394,19 @@ export function configuredProviders(): Provider[] {
 
   // 予備の無料AI（OpenAI 互換。例: Groq）。FALLBACK_LLM_MODEL はカンマ区切りで複数書け、上から順に試す
   // （無料のモデルは提供終了・名前の変更があるので、1つが使えなくても次へ進めるように）
-  const fbBase = process.env.FALLBACK_LLM_BASE_URL;
-  const fbKey = process.env.FALLBACK_LLM_API_KEY;
-  const fbModels = (process.env.FALLBACK_LLM_MODEL || '').split(',').map(m => m.trim()).filter(Boolean);
-  if (fbBase && fbKey) {
+  // 予備のAIは会社ごとに別の無料枠があるので、複数つなげるほど混雑に強くなる。
+  // FALLBACK_LLM_*（1社目）、FALLBACK2_LLM_*、FALLBACK3_LLM_* … の順に試す
+  for (const prefix of ['FALLBACK', 'FALLBACK2', 'FALLBACK3', 'FALLBACK4']) {
+    const fbBase = process.env[`${prefix}_LLM_BASE_URL`];
+    const fbKey = process.env[`${prefix}_LLM_API_KEY`];
+    const fbModels = (process.env[`${prefix}_LLM_MODEL`] || '').split(',').map(m => m.trim()).filter(Boolean);
+    if (!fbBase || !fbKey) continue;
     for (const model of fbModels) {
       // 考える過程（reasoning）が長いと遅く枠も減るので、駒生成では最小にする（Groq の指定方法）
-      const extraBody = /qwen/i.test(model) ? { reasoning_effort: 'none' } : /gpt-oss/i.test(model) ? { reasoning_effort: 'low' } : undefined;
-      const config: OpenAICompatibleConfig = { baseUrl: fbBase, apiKey: fbKey, model, extraBody };
+      const extraBody = /groq\.com/.test(fbBase)
+        ? (/qwen/i.test(model) ? { reasoning_effort: 'none' } : /gpt-oss/i.test(model) ? { reasoning_effort: 'low' } : undefined)
+        : undefined;
+      const config: OpenAICompatibleConfig = { baseUrl: fbBase, apiKey: fbKey, model, extraBody, compactPrompt: true };
       providers.push({ name: `fallback:${model}`, run: (w, d = Infinity, t, r, refs) => callOpenAICompatible(config, w, d, t, refs, r) });
     }
   }
@@ -440,34 +463,89 @@ function nextUtcMidnight(): number {
  * 混雑（429 / 503 など）で失敗したプロバイダは、少し待って1回だけ再試行してから次へ進む。
  * 全体で待つ時間は関数の時間制限に収まるよう短くしている。
  */
-export async function generatePieces(words: string[], providers = configuredProviders(), deadline = Infinity, onText?: OnText, onRaw?: OnRawStream, references?: (string | null)[]): Promise<BatchResult> {
+/** 混雑で待つときに呼ばれる（ブラウザに「順番待ち あと◯秒」を出すため） */
+export type OnWait = (seconds: number) => void;
+
+/** 1日（または長時間）の上限に達した混雑か。これは待っても回復しないので、その日は呼ばない */
+function isLongLimit(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : '';
+  return /per day|\(TPD\)|\(RPD\)|daily/i.test(message);
+}
+
+/** 1分あたりの上限など、数十秒待てば回復する混雑 */
+const DEFAULT_RETRY_MS = 15_000;
+/** 混雑の回復を待って再挑戦する最大回数（全体の制限時間内で） */
+const MAX_WAIT_ROUNDS = 6;
+
+export async function generatePieces(words: string[], providers = configuredProviders(), deadline = Infinity, onText?: OnText, onRaw?: OnRawStream, references?: (string | null)[], onWait?: OnWait): Promise<BatchResult> {
   if (providers.length === 0) throw new NoProviderError('no LLM provider is configured');
   let lastError: unknown;
+  // 1分あたりの上限で断られたプロバイダと、次に使えるようになる時刻
+  const waiting: { provider: Provider; readyAt: number }[] = [];
+
+  const attempt = async (provider: Provider): Promise<BatchResult | null> => {
+    const pieces = alignToWords(words, await provider.run(words, deadline, onText, onRaw, references));
+    if (pieces.every(p => p === null)) throw new ProviderError(`${provider.name} returned no usable piece`);
+    return { pieces, provider: provider.name };
+  };
+
+  const handleFailure = (provider: Provider, err: unknown, tryNumber: number): 'retry' | 'next' => {
+    lastError = err;
+    console.warn(`[generator] ${provider.name} failed (attempt ${tryNumber}):`, (err as Error).message);
+    if (isDailyQuotaError(err) || (err instanceof ProviderError && err.status === 429 && isLongLimit(err))) {
+      const retry = err instanceof ProviderError && err.retryAfterMs ? Date.now() + err.retryAfterMs : nextUtcMidnight();
+      exhaustedUntil.set(provider.name, Math.min(retry, nextUtcMidnight()));
+      return 'next';
+    }
+    if (err instanceof ProviderError && err.status === 429) {
+      // 1分あたりの上限: すぐには再試行せず、他のプロバイダを先に試す。全部だめなら回復を待つ
+      waiting.push({ provider, readyAt: Date.now() + (err.retryAfterMs ?? DEFAULT_RETRY_MS) });
+      return 'next';
+    }
+    return isTransient(err) && tryNumber === 1 ? 'retry' : 'next';
+  };
+
   for (const provider of providers) {
     if ((exhaustedUntil.get(provider.name) ?? 0) > Date.now()) {
       lastError = new ProviderError(`${provider.name} has used up today's free allocation`, 429);
       continue;
     }
-    for (let attempt = 0; attempt < 2; attempt++) {
-      // 関数の時間制限を超えると応答そのものが返らない（ブラウザには 504 だけが届く）。
+    for (let tryNumber = 1; tryNumber <= 2; tryNumber++) {
       // 残り時間が少なければ再試行・次のプロバイダを諦め、代替（近い単語・待ち行列）に回す
       if (deadline - Date.now() < MIN_CALL_MS) {
         lastError ??= new ProviderError('no time left for another attempt', 504);
         throw lastError;
       }
       try {
-        const pieces = alignToWords(words, await provider.run(words, deadline, onText, onRaw, references));
-        if (pieces.every(p => p === null)) throw new ProviderError(`${provider.name} returned no usable piece`);
-        return { pieces, provider: provider.name };
+        const result = await attempt(provider);
+        if (result) return result;
       } catch (err) {
-        lastError = err;
-        console.warn(`[generator] ${provider.name} failed (attempt ${attempt + 1}):`, (err as Error).message);
-        if (isDailyQuotaError(err)) {
-          exhaustedUntil.set(provider.name, nextUtcMidnight());
-          break;
-        }
-        if (!isTransient(err) || attempt > 0) break;
+        if (handleFailure(provider, err, tryNumber) === 'next') break;
         await sleep(800 + Math.floor(Math.random() * 700));
+      }
+    }
+  }
+
+  // どのプロバイダも1分あたりの上限だったときは、いちばん早く回復するものを待って、もう一度だけ試す
+  // （無料の枠は数十秒で回復するので、すぐ仮の駒にするより、少し待ってでもAIで作る方がよい）
+  // 混雑が続くときは、断られるたびに次の回復時刻を読み直して、時間の許す限り繰り返す
+  // （同時に大勢が来ると、待っている間に他のリクエストが枠を使ってしまうことがあるため）
+  for (let round = 0; round < MAX_WAIT_ROUNDS && waiting.length > 0; round++) {
+    waiting.sort((a, b) => a.readyAt - b.readyAt);
+    const next = waiting.shift()!;
+    // 待ち時間を少しずらして、同時に待っていたリクエストが一斉に再挑戦しないようにする
+    const waitMs = Math.max(0, next.readyAt - Date.now()) + 300 + Math.floor(Math.random() * 1500);
+    if (Date.now() + waitMs + MIN_CALL_MS > deadline) break;
+    onWait?.(Math.ceil(waitMs / 1000));
+    await sleep(waitMs);
+    try {
+      const result = await attempt(next.provider);
+      if (result) return result;
+    } catch (err) {
+      lastError = err;
+      console.warn(`[generator] ${next.provider.name} failed after waiting:`, (err as Error).message);
+      if (err instanceof ProviderError && err.status === 429 && !isLongLimit(err) && !isDailyQuotaError(err)) {
+        waiting.push({ provider: next.provider, readyAt: Date.now() + (err.retryAfterMs ?? DEFAULT_RETRY_MS) });
       }
     }
   }
@@ -475,7 +553,7 @@ export async function generatePieces(words: string[], providers = configuredProv
 }
 
 /** 1語だけ生成する */
-export async function generatePiece(word: string, providers = configuredProviders(), deadline = Infinity, onText?: OnText, onRaw?: OnRawStream, reference?: string | null): Promise<{ piece: Json; provider: string }> {
-  const { pieces, provider } = await generatePieces([word], providers, deadline, onText, onRaw, [reference ?? null]);
+export async function generatePiece(word: string, providers = configuredProviders(), deadline = Infinity, onText?: OnText, onRaw?: OnRawStream, reference?: string | null, onWait?: OnWait): Promise<{ piece: Json; provider: string }> {
+  const { pieces, provider } = await generatePieces([word], providers, deadline, onText, onRaw, [reference ?? null], onWait);
   return { piece: pieces[0]!, provider };
 }

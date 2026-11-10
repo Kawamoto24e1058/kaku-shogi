@@ -524,7 +524,9 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
               {preview?.range_geometry?.normal_grid && <MiniRange grid={preview.range_geometry.normal_grid} color={accent} />}
               {preview?.description && <p style={{ fontSize: '12px', lineHeight: 1.6, color: 'var(--text-primary)', maxWidth: '320px', textAlign: 'center' }}>{preview.description}</p>}
               <p style={{ color: 'var(--color-gold)', fontSize: '12px', fontFamily: 'var(--font-cyber)' }}>
-                {preview?.description ? '能力を組み立て中…' : preview?.effect_name ? '姿を描いています…' : preview?.deep_search_analysis ? '技を考えています…' : '言葉を読み解いています…'}
+                {preview?.wait_seconds
+                  ? `混雑のため順番待ち中…（あと約${preview.wait_seconds}秒）`
+                  : preview?.description ? '能力を組み立て中…' : preview?.effect_name ? '姿を描いています…' : preview?.deep_search_analysis ? '技を考えています…' : '言葉を読み解いています…'}
               </p>
             </div>
           );

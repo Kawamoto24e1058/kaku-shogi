@@ -16,7 +16,7 @@
     "run_worker_first": ["/api/*"]
   },
   "ai": { "binding": "AI" },
-  "triggers": { "crons": ["30 23 * * *"] },
+  "triggers": { "crons": ["30 23 * * *", "*/10 * * * *"] },
   "observability": { "enabled": true },
   // 公開して問題ない値だけ。SUPABASE_SERVER_TOKEN・FALLBACK_LLM_API_KEY はシークレット（npx wrangler secret put ...）
   "vars": {

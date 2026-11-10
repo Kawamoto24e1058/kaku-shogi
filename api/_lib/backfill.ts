@@ -20,13 +20,15 @@ export interface BackfillOptions {
   intervalMs: number;
   /** この時刻（Date.now()）を過ぎたら次のまとまりを始めない */
   deadline?: number;
+  /** 古い仕様の駒の作り直しもする（毎晩の1回だけ。こまめな実行ではプレイヤーの枠を減らさないため行わない） */
+  includeStale?: boolean;
   log?: (message: string) => void;
 }
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const CALL_GRACE_MS = 80_000;
 
-export async function runBackfill({ limit, batch, intervalMs, deadline = Infinity, log = console.log }: BackfillOptions): Promise<number> {
+export async function runBackfill({ limit, batch, intervalMs, deadline = Infinity, includeStale = true, log = console.log }: BackfillOptions): Promise<number> {
   if (!storeConfigured()) throw new Error('SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY / SUPABASE_SERVER_TOKEN are not set');
   const providers = configuredProviders();
   if (providers.length === 0) throw new Error('no LLM provider is configured');
@@ -53,7 +55,7 @@ export async function runBackfill({ limit, batch, intervalMs, deadline = Infinit
     todo.push({ key, word });
   }
   // 2. 古い仕様の駒の作り直し（既にある駒なので、キャッシュ済みでも対象にする）
-  if (todo.length < limit) {
+  if (includeStale && todo.length < limit) {
     const stalePieces = await listStalePieces(limit - todo.length).catch(err => {
       log(`stale lookup failed: ${(err as Error).message}`);
       return [] as { key: string; word: string }[];
