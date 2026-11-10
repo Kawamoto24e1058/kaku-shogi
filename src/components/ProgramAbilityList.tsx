@@ -7,7 +7,8 @@ function traitStatus(piece: Piece): { text: string; color: string } {
   const kind = piece.trait?.kind;
   if (kind === 'LIFESPAN') return { text: `残り${piece.traitLife ?? piece.trait?.value ?? TRAIT_SPECS.LIFESPAN.value![2]}手番`, color: '#b45309' };
   if (kind === 'SLOW' && (piece.traitRest ?? 0) > 0) return { text: '休み中', color: '#7c3aed' };
-  if (kind === 'UNDYING') return piece.traitUsed ? { text: '使用済み', color: '#9ca3af' } : { text: 'あと1回', color: '#059669' };
+  if (kind === 'UNDYING' || kind === 'SPLIT' || kind === 'REFLECT') return piece.traitUsed ? { text: '使用済み', color: '#9ca3af' } : { text: 'あと1回', color: '#059669' };
+  if (kind === 'INVISIBLE' && piece.isStealth) return { text: '姿を消している', color: '#7c3aed' };
   if (kind === 'GROWTH') return { text: `成長${piece.traitLevel ?? 0}/2`, color: '#059669' };
   return { text: 'ずっと', color: '#6b7280' };
 }

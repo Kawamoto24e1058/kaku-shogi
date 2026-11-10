@@ -39,11 +39,12 @@ const GUIDE = `あなたは「架空将棋」の駒デザイナーです。9x9�
 - 性質（trait）: ずっと働く、動き方そのものの特徴。そのキャラの本質が「動き方」にあるときだけ1つ付ける（無ければ null）。
 ${TRAIT_LIST}
   組み合わせの例: ゴールドシップ（気性の荒い競走馬）→ trait: {"kind":"WILD"} ＋ 動いた後に前の敵を押し出す能力。ゾンビ → trait: {"kind":"UNDYING"} ＋ 取ったときに隣を歩兵にする能力。
+  ほかの例: ドラゴン・鳥→FLYING、盾役・ヒーロー→TAUNT、スライム・細胞→SPLIT、鏡→REFLECT、力士・岩→HEAVY、幽霊・忍者→INVISIBLE。性質だけで本質を表せるなら能力は控えめでよい。
   性質の弱点（暴れ馬・寿命・鈍足など）はシステムが能力の充填を短くして補うので、合うなら遠慮せず付ける。
 
 各能力 = { name, trigger, condition, condition_value?, target, effects[], cooldown }
 - name: 2〜6文字の漢字の技名
-- trigger: ON_MOVE=自分が動いた後（基本はこれ） / ON_CAPTURE=敵駒を取ったとき / ON_PROMOTE=成ったとき / ON_TAKEN=自分が取られたとき（罠・置き土産）
+- trigger: ON_MOVE=自分が動いた後（基本はこれ） / ON_CAPTURE=敵駒を取ったとき / ON_PROMOTE=成ったとき / ON_TAKEN=自分が取られたとき（罠・置き土産） / ON_DROP=持ち駒から打ったとき（奇襲・援軍・着地） / ON_ALLY_TAKEN=味方の駒が取られたとき（仇討ち・守護者・怒り）
 - condition（任意）: NONE / IN_ENEMY_CAMP / IN_OWN_CAMP / ENEMIES_NEAR_AT_LEAST(n体) / ALLIES_NEAR_AT_LEAST(n体) / NO_ALLY_NEAR / MY_HAND_AT_LEAST(n枚) / ENEMY_HAND_AT_LEAST(n枚) / PROMOTED=成っていれば / CHANCE(n%)。数値は condition_value
 - target: { area, who, pick, count }
   - area: SELF / ADJACENT=周囲1マス / RADIUS_2=周囲2マス / FRONT_LINE=前方一直線 / LINES_8=8方向の直線 / DIAGONALS / CROSS=縦横 / ROW=横一列 / COLUMN=縦一列 / ALL=盤上すべて / ENEMY_KING_AROUND=敵玉の周り / ATTACKER=自分を取った駒（ON_TAKEN のみ）
@@ -96,7 +97,7 @@ const COMPACT_GUIDE = `「架空将棋」（9x9の将棋）の変則駒を、単
 2. 能力は原則1つ（その特徴を表す主役の技。効果は2つまで）。盤面がはっきり動く効果を中心に。PUSH と STUN の組み合わせは使わない（どの駒も同じになるため）。その単語でしか出ない効果を選ぶ。
 ability_mode は "SINGLE"。くじ・ガチャ・サイコロ・天気のように「当たり外れ」が本質の単語だけ "RANDOM"（能力2〜3個から毎回1つ）。
 能力 = {name(2-6字の漢字), trigger, condition, condition_value?, target:{area,who,pick,count}, effects:[{op,value?,tile?}], cooldown(0-5、99=1ゲーム1回)}
-- trigger: ON_MOVE(動いた後・基本) / ON_CAPTURE(取ったとき) / ON_PROMOTE(成ったとき) / ON_TAKEN(取られたとき)
+- trigger: ON_MOVE(動いた後・基本) / ON_CAPTURE(取ったとき) / ON_PROMOTE(成ったとき) / ON_TAKEN(取られたとき) / ON_DROP(打ったとき) / ON_ALLY_TAKEN(味方が取られたとき=仇討ち)
 - condition: NONE / IN_ENEMY_CAMP / ENEMIES_NEAR_AT_LEAST / NO_ALLY_NEAR / PROMOTED / CHANCE(%)
 - area: SELF / ADJACENT / RADIUS_2 / FRONT_LINE / LINES_8 / CROSS / ROW / COLUMN / ALL / ATTACKER(ON_TAKENのみ)。who: ENEMY/ALLY/ANY/EMPTY。pick: ALL/NEAREST/STRONGEST/WEAKEST/RANDOM
 - op: ${OP_NAMES}。TILE は tile=${TILE_KINDS.join('/')}
@@ -104,7 +105,7 @@ ability_mode は "SINGLE"。くじ・ガチャ・サイコロ・天気のよう�
 例 消しゴム: 「書いた文字を消して書き直す」→ {"name":"書直","trigger":"ON_CAPTURE","condition":"NONE","target":{"area":"ADJACENT","who":"ENEMY","pick":"STRONGEST","count":1},"effects":[{"op":"TRANSFORM_PAWN"}],"cooldown":3}
 例 鏡: 「映ったものと入れ替わる」→ {"name":"鏡写","trigger":"ON_MOVE","condition":"NONE","target":{"area":"RADIUS_2","who":"ENEMY","pick":"STRONGEST","count":1},"effects":[{"op":"SWAP"}],"cooldown":3}
 （例の効果をそのまま使い回さない。単語ごとに読み解きから選び直す）
-2b. trait（性質。キャラの本質が動き方にあるときだけ1つ、無ければ null）: ${Object.entries(TRAIT_SPECS).map(([k, v]) => `${k}=${v.label}`).join(' / ')}。例 ゴールドシップ → {"kind":"WILD"}（操作できず勝手に敵へ向かう）＋ 動いた後の能力。弱点の性質は充填が短くなる。
+2b. trait（性質。キャラの本質が動き方にあるときだけ1つ、無ければ null）: ${Object.entries(TRAIT_SPECS).map(([k, v]) => `${k}=${v.label}`).join(' / ')}。例 ゴールドシップ → {"kind":"WILD"}（操作できず勝手に敵へ向かう）＋ 動いた後の能力。例 鳥→FLYING、スライム→SPLIT、鏡→REFLECT、幽霊→INVISIBLE。弱点の性質は充填が短くなる。
 3. range_geometry: 5x5 を上の行（敵陣側）から5行、/区切り。1=動ける 0=不可、中央は2。例 周囲1マス 00000/01110/01210/01110/00000。速いものは前に広く、重いものは狭く。promoted_grid は normal_grid より広く。logic_code は通常 "normal"。
 4. 文章: effect_name(2-6字の漢字の技名)、ability_genre(10字以内)、description(80字以内。能力で起きることだけ。スタン・バフなどのカタカナ用語は使わず、麻痺・強化と書く)、appearance{color:#rrggbb, accent:#rrggbb, emblem:1-2字, aura:NONE/GLOW/FLAME/SPARK/MIST/RIPPLE/SHADOW}、promoted_effect{effect_name, description(40字以内)}
 出力は {"pieces":[...]} のJSONのみ。キーの順: word, deep_search_analysis, effect_name, ability_genre, appearance, range_geometry{normal_grid,promoted_grid}, description, ability_mode, abilities, trait, logic_code, promoted_effect`;

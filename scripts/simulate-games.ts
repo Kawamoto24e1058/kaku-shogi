@@ -59,7 +59,7 @@ for (const [word, abilities] of Object.entries(AI_LIKE)) {
   pool.push({ name: `AI風:${word}`, kind: 'ai-like', data: { word, effect_name: word, range_geometry: baseRange, abilities, description: word, promoted_effect: { effect_name: `${word}・醒`, description: '' }, logic_code: 'normal' } });
 }
 // 部品をでたらめに組み合わせた能力（AI がおかしな組み合わせを出した場合の確認用）
-const TRIGGERS = ['ON_MOVE', 'TURN_START', 'EVERY_N_TURNS', 'ON_CAPTURE', 'ON_TAKEN', 'ON_APPROACH', 'ON_PROMOTE'];
+const TRIGGERS = ['ON_MOVE', 'TURN_START', 'EVERY_N_TURNS', 'ON_CAPTURE', 'ON_TAKEN', 'ON_APPROACH', 'ON_PROMOTE', 'ON_DROP', 'ON_ALLY_TAKEN'];
 const AREAS = ['SELF', 'ADJACENT', 'RADIUS_2', 'FRONT_LINE', 'LINES_8', 'DIAGONALS', 'CROSS', 'ROW', 'COLUMN', 'ALL', 'ENEMY_KING_AROUND', 'ATTACKER', '01110/00000/00200/00000/00000'];
 const OPS = ['DESTROY', 'CAPTURE', 'PUSH', 'PULL', 'SWAP', 'TELEPORT', 'FREEZE', 'STUN', 'SILENCE', 'CONTROL', 'DOOM', 'TRANSFORM_PAWN', 'SHIELD', 'GUARD', 'STEALTH', 'CLEANSE', 'EXTRA_ACTION', 'SPAWN', 'WALL', 'TILE', 'STEAL_HAND'];
 const CONDITIONS = ['NONE', 'NONE', 'NONE', 'IN_ENEMY_CAMP', 'ENEMIES_NEAR_AT_LEAST', 'CHANCE', 'PROMOTED', 'MY_HAND_AT_LEAST'];
@@ -184,9 +184,21 @@ function playGame(senteEntries: PoolEntry[], goteEntries: PoolEntry[]): GameResu
           if (promote && again3 && again3.id === landing.id && isTriggerMatching(again3, 'ON_PROMOTE')) r = runEffect(move.to, 'ON_PROMOTE', turn, move.from) ?? r;
           if (r?.reAction) { again = true; extraActionChain = Math.max(extraActionChain, actions); }
         }
+        // 味方が取られたとき（仇討ち）: 取られた側の駒
+        if (captured.length) {
+          for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) {
+            const p = board[y][x];
+            if (p && p.owner === opp(turn) && p.abilities?.length && isTriggerMatching(p, 'ON_ALLY_TAKEN')) runEffect([y, x], 'ON_ALLY_TAKEN', opp(turn));
+          }
+        }
       } else if (move.piece && move.index !== undefined) {
         board = executeDrop(board, move.piece, move.to, turn);
         hands[turn] = hands[turn].filter((_, i) => i !== move.index);
+        const dropped = board[move.to[0]][move.to[1]];
+        if (dropped && dropped.abilities?.length && isTriggerMatching(dropped, 'ON_DROP')) {
+          const r = runEffect(move.to, 'ON_DROP', turn);
+          if (r?.reAction) { again = true; extraActionChain = Math.max(extraActionChain, actions); }
+        }
       }
       if (!kingAlive(board, opp(turn))) return { winner: turn, plies: ply, reason: 'king-gone', maxPieces, extraActionChain, abilityTriggers, ...res0 };
       if (!kingAlive(board, turn)) return { winner: opp(turn), plies: ply, reason: 'own-king-gone', maxPieces, extraActionChain, abilityTriggers, ...res0 };
