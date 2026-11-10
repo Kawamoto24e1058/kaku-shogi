@@ -21,7 +21,7 @@ const memoryCache = new Map<string, PieceData>();
 // バージョン管理されたワンタイムキャッシュクリーンアップ（v4にアップデートして古いキャッシュを全消去）
 try {
   if (typeof window !== 'undefined' && window.localStorage) {
-    const CURRENT_VERSION = 'v10'; // v10: 能力1つ化・発動タイミングの見直し（古い駒の端末キャッシュを捨てる）
+    const CURRENT_VERSION = 'v11'; // v11: 新しい駒から古い自律移動・移動指定を外す（古い駒の端末キャッシュを捨てる）
     const activeVersion = localStorage.getItem('shogi_cache_version');
     if (activeVersion !== CURRENT_VERSION) {
       localStorage.removeItem('shogi_piece_cache');
@@ -673,6 +673,16 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
       const hit = aliases.find(([re]) => re.test(lc));
       if (hit) parsed.logic_code = hit[1];
     }
+    // 金・桂の動きは 5x5 のマス目で表せるので、マス目に書き直す（画面に出す移動範囲と実際の動きを一致させる）
+    const asGrid: Record<string, string> = {
+      move_like_gold: '0000001110012100010000000',
+      move_like_knight: '0101000000002000000000000',
+    };
+    const grid = asGrid[String(parsed.logic_code)];
+    if (grid) {
+      parsed.range_geometry = { ...(parsed.range_geometry || {}), normal_grid: grid };
+      parsed.logic_code = 'normal';
+    }
   }
 
   // Safeguard: Check if custom_moves is empty or undefined
@@ -915,6 +925,20 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
     delete parsed.rules_text;
   }
   parsed.appearance = normalizeAppearance(parsed.appearance, String(parsed.effect_name || parsed.word || ''));
+
+  // 能力プログラム・性質を持つ新しい駒は、古い仕組みの指定を持たせない（勝手に動く・操作できない・謎の発動の原因になる）
+  //   - 勝手に動くのは性質「暴れ馬」だけ
+  //   - 移動は 5x5 のマス目（遠くまで動く飛・角・香・砲・8方向3マスだけは logic_code で残す）
+  if (parsed.abilities?.length || parsed.trait) {
+    const wild = parsed.trait?.kind === 'WILD';
+    parsed.isAutonomous = wild;
+    if (parsed.custom_ability) parsed.custom_ability.isAutonomous = wild;
+    if (parsed.mechanics_type === 'AUTOMATIC_DRIVE' && !wild) parsed.mechanics_type = 'UNKNOWN_HERESY';
+    const LONG_RANGE = ['move_like_rook', 'move_like_bishop', 'move_like_lance', 'move_like_cannon', 'move_like_queen_limit_3', 'queen_limit_3'];
+    if (!LONG_RANGE.includes(String(parsed.logic_code))) parsed.logic_code = 'normal';
+    if (parsed.promoted_effect && !LONG_RANGE.includes(String(parsed.promoted_effect.logic_code))) parsed.promoted_effect.logic_code = 'normal';
+  }
+
 
   // ─── Safeguard: カスタム駒のフラグ保護 (標準歩兵成り化防止) ──────────────────────
   parsed.isPawn = false;

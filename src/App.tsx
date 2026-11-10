@@ -991,6 +991,7 @@ export const App: React.FC = () => {
 
   const isAutonomous = (p: Piece | null): boolean => {
     if (!p) return false;
+    if (p.abilities?.length || p.trait) return traitKind(p) === 'WILD';
     if (p.isAutonomous === true || p.custom_ability?.isAutonomous === true) return true;
     const logicCode = getPieceLogicCode(p);
     return logicCode === 'random_teleport' || isAutoNormalMover(p);
