@@ -232,13 +232,34 @@ export const App: React.FC = () => {
     return true; // Local PvP: both Sente and Gote are human
   };
 
+  /** 味方が取られたとき（仇討ち）: 取られた側の駒のうち、この発動タイミングの能力を持つ駒のイベント */
+  const allyTakenEvents = (board: Board, mover: Player, captured: boolean): AbilityEvent[] => {
+    if (!captured) return [];
+    const victimSide: Player = mover === 'sente' ? 'gote' : 'sente';
+    const out: AbilityEvent[] = [];
+    board.forEach((row, y) => row.forEach((p, x) => {
+      if (p && p.owner === victimSide && p.abilities?.length && isTriggerMatching(p, 'ON_ALLY_TAKEN')) {
+        out.push({ id: generateId(), priority: 3, triggerType: 'ON_ALLY_TAKEN', pieceId: p.id, position: [y, x], owner: victimSide });
+      }
+    }));
+    return out;
+  };
+
+  /** 持ち駒から打ったとき: 打った駒がこの発動タイミングの能力を持っていればイベント */
+  const dropEvents = (board: Board, at: [number, number], player: Player): AbilityEvent[] => {
+    const p = board[at[0]][at[1]];
+    if (!p || p.owner !== player || !p.abilities?.length || !isTriggerMatching(p, 'ON_DROP')) return [];
+    return [{ id: generateId(), priority: 2, triggerType: 'ON_DROP', pieceId: p.id, position: at, owner: player }];
+  };
+
   const processAbilityEventsQueue = async (
     currentBoard: Board,
     eventQueue: AbilityEvent[],
     currentCaptured: typeof state.capturedPieces,
     currentShared: Piece[],
     currentLogs: GameLog[],
-    currentDestroyed: Piece[]
+    currentDestroyed: Piece[],
+    currentDecks: typeof state.customDecks = state.customDecks
   ) => {
     // Sort events: (1) ON_TAKEN (priority 1), (2) ON_MOVE (priority 2), (3) others (priority 3)
     eventQueue.sort((a, b) => {
@@ -789,7 +810,7 @@ export const App: React.FC = () => {
         winner: finalWinner
       }));
 
-      saveHistorySnapshot(boardState, capturedState, state.turn, logsState, state.customDecks, destroyedState);
+      saveHistorySnapshot(boardState, capturedState, state.turn, logsState, currentDecks, destroyedState);
       syncOnlineState(
         boardState,
         state.turn,
@@ -797,7 +818,7 @@ export const App: React.FC = () => {
         finalWinner,
         capturedState,
         sharedState,
-        state.customDecks,
+        currentDecks,
         destroyedState,
         logsState
       );
@@ -830,7 +851,7 @@ export const App: React.FC = () => {
             activeAbilityTargets: [],
             logs: logsState,
           };
-          saveHistorySnapshot(boardState, capturedState, activePlayer, logsState, state.customDecks, destroyedState);
+          saveHistorySnapshot(boardState, capturedState, activePlayer, logsState, currentDecks, destroyedState);
           return nextState;
         });
 
@@ -843,7 +864,7 @@ export const App: React.FC = () => {
           null,
           capturedState,
           sharedState,
-          state.customDecks,
+          currentDecks,
           destroyedState,
           logsState
         );
@@ -862,7 +883,7 @@ export const App: React.FC = () => {
             activeAbilityTargets: [],
             logs: logsState,
           };
-          saveHistorySnapshot(boardState, capturedState, state.turn, logsState, state.customDecks, destroyedState);
+          saveHistorySnapshot(boardState, capturedState, state.turn, logsState, currentDecks, destroyedState);
           return nextState;
         });
 
@@ -873,7 +894,7 @@ export const App: React.FC = () => {
           null,
           capturedState,
           sharedState,
-          state.customDecks,
+          currentDecks,
           destroyedState,
           logsState
         );
@@ -884,7 +905,7 @@ export const App: React.FC = () => {
           sharedState,
           logsState,
           { promotionPending: null },
-          state.customDecks,
+          currentDecks,
           destroyedState,
           true
         );
@@ -1130,6 +1151,7 @@ export const App: React.FC = () => {
       }
     }
 
+    events.push(...allyTakenEvents(res.board, state.turn, !!res.capturedPiece));
     // Process the asynchronous queue!
     await processAbilityEventsQueue(res.board, events, nextCaptured, nextShared, finalLogs, nextDestroyedPieces);
   };
@@ -1953,6 +1975,18 @@ export const App: React.FC = () => {
           if (eff.opponentCapturedPieces) currentCaptured[opponentPlayer] = eff.opponentCapturedPieces;
           currentLogs.push(...eff.logs.map(l => ({ ...l, id: generateId(), timestamp: new Date().toLocaleTimeString() })));
           showAbilityToast(`${activePlayer === 'sente' ? '▲' : '▽'}「${current.word}」《${current.effect_name || '能力'}》`);
+        }
+        // 取られた側の仇討ち
+        for (const ev of allyTakenEvents(currentBoard, activePlayer, tookPiece)) {
+          const avenger = currentBoard[ev.position[0]][ev.position[1]];
+          if (!avenger || avenger.id !== ev.pieceId) continue;
+          const eff = applyAutomatedEffect(currentBoard, ev.position, 'ON_ALLY_TAKEN', opponentPlayer, currentCaptured[opponentPlayer], undefined, undefined, [], currentShared, undefined, undefined, currentCaptured[activePlayer]);
+          if (!eff.triggered) continue;
+          currentBoard = eff.board;
+          currentCaptured[opponentPlayer] = eff.capturedPieces;
+          if (eff.opponentCapturedPieces) currentCaptured[activePlayer] = eff.opponentCapturedPieces;
+          currentLogs.push(...eff.logs.map(l => ({ ...l, id: generateId(), timestamp: new Date().toLocaleTimeString() })));
+          showAbilityToast(`${opponentPlayer === 'sente' ? '▲' : '▽'}「${avenger.word}」《${avenger.effect_name || '能力'}》`);
         }
 
         currentLogs.push(...moveRes.logs.map(l => ({
@@ -3178,7 +3212,12 @@ export const App: React.FC = () => {
         [state.turn]: nextHand,
       };
 
-      finalizeTurn(nextBoard, nextCaptured, nextShared, [...state.logs, newLog], undefined, nextCustomDecks, state.destroyedPieces);
+      const dropped = dropEvents(nextBoard, [y, x], state.turn);
+      if (dropped.length) {
+        void processAbilityEventsQueue(nextBoard, dropped, nextCaptured, nextShared, [...state.logs, newLog], state.destroyedPieces, nextCustomDecks);
+      } else {
+        finalizeTurn(nextBoard, nextCaptured, nextShared, [...state.logs, newLog], undefined, nextCustomDecks, state.destroyedPieces);
+      }
       setSelectedCapturedPiece(null);
       setSelectedSharedPiece(null);
       setSelectedCustomDeckPiece(null);
@@ -3533,6 +3572,7 @@ export const App: React.FC = () => {
           });
         }
 
+        events.push(...allyTakenEvents(res.board, 'gote', !!res.capturedPiece));
         // Process the asynchronous queue!
         await processAbilityEventsQueue(res.board, events, nextCaptured, nextShared, finalLogs, nextDestroyedPieces);
 
@@ -3551,7 +3591,9 @@ export const App: React.FC = () => {
           message: `${chosenMove.piece.word}を持ち駒から配置しました。`,
           type: 'move'
         };
-        finalizeTurn(nextBoard, nextCaptured, state.sharedPieces, [...state.logs, newLog], undefined, state.customDecks, state.destroyedPieces);
+        const dropped = dropEvents(nextBoard, chosenMove.to, 'gote');
+        if (dropped.length) await processAbilityEventsQueue(nextBoard, dropped, nextCaptured, state.sharedPieces, [...state.logs, newLog], state.destroyedPieces);
+        else finalizeTurn(nextBoard, nextCaptured, state.sharedPieces, [...state.logs, newLog], undefined, state.customDecks, state.destroyedPieces);
 
       } else if (chosenMove.type === 'custom_deck_drop' && chosenMove.piece && chosenMove.index !== undefined) {
         const nextBoard = executeDrop(board, chosenMove.piece, chosenMove.to, 'gote');
@@ -3568,15 +3610,20 @@ export const App: React.FC = () => {
           message: `${chosenMove.piece.word}をカスタムデッキから配置しました。`,
           type: 'move'
         };
-        finalizeTurn(
-          nextBoard,
-          state.capturedPieces,
-          state.sharedPieces,
-          [...state.logs, newLog],
-          undefined,
-          nextCustomDecks,
-          state.destroyedPieces
-        );
+        const dropped = dropEvents(nextBoard, chosenMove.to, 'gote');
+        if (dropped.length) {
+          await processAbilityEventsQueue(nextBoard, dropped, state.capturedPieces, state.sharedPieces, [...state.logs, newLog], state.destroyedPieces, nextCustomDecks);
+        } else {
+          finalizeTurn(
+            nextBoard,
+            state.capturedPieces,
+            state.sharedPieces,
+            [...state.logs, newLog],
+            undefined,
+            nextCustomDecks,
+            state.destroyedPieces
+          );
+        }
 
 
       }

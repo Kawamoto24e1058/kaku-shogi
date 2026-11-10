@@ -78,7 +78,7 @@ function gridMoves(grid: string): Set<string> {
 }
 
 const RETIRED = ['TURN_START', 'ON_APPROACH'] as const;
-const EVENTS = ['ON_MOVE', 'ON_CAPTURE', 'ON_PROMOTE', 'ON_TAKEN'] as const;
+const EVENTS = ['ON_MOVE', 'ON_CAPTURE', 'ON_PROMOTE', 'ON_TAKEN', 'ON_DROP', 'ON_ALLY_TAKEN'] as const;
 
 const issues = new Map<string, string[]>();
 const note = (kind: string, detail: string) => { const list = issues.get(kind) ?? []; if (list.length < 5) list.push(detail); issues.set(kind, list); };
@@ -135,7 +135,7 @@ for (const raw of raws) {
   // 5. 勝手に動くのは暴れ馬だけ
   if (isAutonomousPiece(piece) !== (piece.trait?.kind === 'WILD')) note('暴れ馬でないのに勝手に動く扱い（または逆）', `${word}: 性質=${piece.trait?.kind ?? 'なし'} 説明=${piece.description}`);
   // 6. 充填のある能力は、発動した直後にもう一度は発動しない
-  for (const event of ['ON_MOVE', 'ON_CAPTURE', 'ON_PROMOTE'] as const) {
+  for (const event of ['ON_MOVE', 'ON_CAPTURE', 'ON_PROMOTE', 'ON_DROP', 'ON_ALLY_TAKEN'] as const) {
     if (!triggers.has(event)) continue;
     const first = applyAutomatedEffect(setup(piece), [4, 4], event, 'sente', [], [5, 4]);
     if (!first.triggered) continue;

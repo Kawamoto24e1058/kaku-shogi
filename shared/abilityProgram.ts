@@ -4,10 +4,10 @@
 // 強さは部品ごとのコストで見積もり、強すぎる能力には自動で充填手番（クールダウン）や1回限りの制限を付ける。
 // 効果の説明文（rules text）もこのデータから機械的に作るので、説明と実際の動きが食い違わない。
 
-export const PROGRAM_TRIGGERS = ['ON_MOVE', 'TURN_START', 'EVERY_N_TURNS', 'ON_CAPTURE', 'ON_TAKEN', 'ON_APPROACH', 'ON_PROMOTE'] as const;
+export const PROGRAM_TRIGGERS = ['ON_MOVE', 'TURN_START', 'EVERY_N_TURNS', 'ON_CAPTURE', 'ON_TAKEN', 'ON_APPROACH', 'ON_PROMOTE', 'ON_DROP', 'ON_ALLY_TAKEN'] as const;
 export type ProgramTrigger = typeof PROGRAM_TRIGGERS[number];
 /** 実際に使う発動タイミング。残りは古い駒を読み込むときに ON_MOVE へ読み替える（normalizeAbility） */
-export const PLAYER_TRIGGERS = ['ON_MOVE', 'ON_CAPTURE', 'ON_PROMOTE', 'ON_TAKEN'] as const;
+export const PLAYER_TRIGGERS = ['ON_MOVE', 'ON_CAPTURE', 'ON_PROMOTE', 'ON_TAKEN', 'ON_DROP', 'ON_ALLY_TAKEN'] as const;
 
 /**
  * 能力の持ち方。SINGLE = 能力1つ（基本）。RANDOM = 2〜3個の能力から、発動のたびに1つがランダムに選ばれる
@@ -133,6 +133,8 @@ export const TRIGGER_LABELS: Record<ProgramTrigger, string> = {
   ON_TAKEN: '自分が取られたとき',
   ON_APPROACH: '敵駒が隣に来たとき',
   ON_PROMOTE: '成ったとき',
+  ON_DROP: '持ち駒から打ったとき',
+  ON_ALLY_TAKEN: '味方の駒が取られたとき（仇討ち）',
 };
 
 const CONDITION_LABELS: Record<ProgramCondition, string> = {
@@ -307,7 +309,7 @@ function estimatedTargetCount(t: ProgramTarget): number {
 }
 
 const TRIGGER_WEIGHT: Record<ProgramTrigger, number> = {
-  ON_MOVE: 1, TURN_START: 1.3, EVERY_N_TURNS: 1, ON_CAPTURE: 0.8, ON_TAKEN: 0.7, ON_APPROACH: 0.9, ON_PROMOTE: 0.5,
+  ON_MOVE: 1, TURN_START: 1.3, EVERY_N_TURNS: 1, ON_CAPTURE: 0.8, ON_TAKEN: 0.7, ON_APPROACH: 0.9, ON_PROMOTE: 0.5, ON_DROP: 0.7, ON_ALLY_TAKEN: 0.8,
 };
 
 /** 1回の発動の強さ（だいたい「駒1枚を消す」= 5） */
@@ -470,7 +472,7 @@ export const TRAIT_SPECS: Record<TraitKind, TraitSpec> = {
   SLOW: { label: '鈍足', text: '一度動くと、次の自分の手番は休み（2手番に1回しか動けない）', cooldownDelta: -2 },
   COWARD: { label: '臆病', text: '敵が隣に来ると、相手の手番の終わりに自動で1マス逃げる', cooldownDelta: 0 },
   FLYING: { label: '飛行', text: '空を飛ぶので、地形（炎・毒沼・氷・隠し罠）の効果を受けない', cooldownDelta: 0 },
-  TAUNT: { label: '挑発', text: '敵の能力は、届く範囲にこの駒がいれば必ずこの駒を先に狙う（味方の身代わりになる）', cooldownDelta: -1 },
+  TAUNT: { label: '挑発', text: '敵の能力は、届く範囲にこの駒がいれば必ずこの駒を先に狙う（味方の身代わりになる）', cooldownDelta: -2 },
   SPLIT: { label: '分裂', text: '1回だけ、取られると隣の空きマスに分身が残る（本体は普通に取られる）', cooldownDelta: 1 },
   REFLECT: { label: '反射', text: '1回だけ、敵の能力を受けずに跳ね返す（凍結・麻痺・封印・呪いは使った駒に返る）', cooldownDelta: 2 },
   HEAVY: { label: '重量', text: '重すぎて、敵の能力で押す・引く・入れ替えることができない', cooldownDelta: 0 },

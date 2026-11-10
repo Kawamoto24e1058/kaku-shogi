@@ -275,7 +275,7 @@ export interface GameState {
 export interface AbilityEvent {
   id: string;
   priority: number; // 1 = Traps (ON_TAKEN, ON_APPROACH), 2 = Moving piece abilities (ON_MOVE), 3 = Turn start / environmental (TURN_START)
-  triggerType: 'ON_TAKEN' | 'ON_APPROACH' | 'ON_MOVE' | 'TURN_START' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' | 'ON_CAPTURE';
+  triggerType: 'ON_TAKEN' | 'ON_APPROACH' | 'ON_MOVE' | 'TURN_START' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' | 'ON_CAPTURE' | 'ON_DROP' | 'ON_ALLY_TAKEN';
   pieceId: string; // The ID of the piece triggering the event (to check if it's still alive/valid)
   position: [number, number]; // Position of the triggering piece on the board
   owner: Player;

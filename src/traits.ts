@@ -101,8 +101,15 @@ export function applyCaptureTraits(
       const cell = cellsAround(to[0], to[1], 1).find(([cy, cx]) => !next[cy][cx]);
       if (cell) {
         next = next === board ? board.map(r => [...r]) : next;
-        next[cell[0]][cell[1]] = { ...cap, id: `${cap.id}_split`, owner, isPromoted: false, traitUsed: true, coolDownTurnsRemaining: 0, isStealth: false, isRevealed: true };
+        // 盤上の駒 id は一意にする（同じ駒が何度も分裂した場合も重ならないように番号を付ける）
+        const ids = new Set(next.flat().filter(Boolean).map(q => q!.id));
+        let id = `${cap.id}_split`;
+        for (let n = 2; ids.has(id); n++) id = `${cap.id}_split${n}`;
+        next[cell[0]][cell[1]] = { ...cap, id, owner, isPromoted: false, traitUsed: true, coolDownTurnsRemaining: 0, isStealth: false, isRevealed: true };
         logs.push({ player: owner, message: `【分裂】「${cap.word}」は取られる直前に分裂し、分身が残りました！`, type: 'ability' });
+        // 分裂は1回だけ: 取られて持ち駒になった本体も使用済みにする（打ち直してまた分裂しないように）
+        kept.push({ ...cap, traitUsed: true });
+        continue;
       }
     }
     kept.push(cap);

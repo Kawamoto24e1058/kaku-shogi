@@ -356,14 +356,15 @@ export function hasPromotedAutomatedAbility(piece: Piece): boolean {
 
 export function getPieceTrigger(piece: Piece): 'ALWAYS' | 'ON_MOVE' | 'TURN_START' | 'ON_TAKEN' | 'ON_APPROACH' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' {
   const first = piece.abilities?.[0]?.trigger;
-  if (first) return first === 'EVERY_N_TURNS' ? 'TURN_START' : first === 'ON_CAPTURE' ? 'ON_MOVE' : first;
+  // 古い仕組みの判定用。能力プログラムの細かい発動タイミングは isTriggerMatching が abilities から直接見る
+  if (first) return first === 'EVERY_N_TURNS' ? 'TURN_START' : first === 'ON_CAPTURE' || first === 'ON_DROP' || first === 'ON_ALLY_TAKEN' ? 'ON_MOVE' : first;
   if (piece.isPromoted && piece.promoted_effect && piece.promoted_effect.ability_spec) {
     return piece.promoted_effect.ability_spec.activation_trigger;
   }
   return piece.trigger || 'ALWAYS';
 }
 
-type TriggerType = 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' | 'ON_CAPTURE';
+type TriggerType = 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' | 'ON_CAPTURE' | 'ON_DROP' | 'ON_ALLY_TAKEN';
 
 /** 能力の発動条件 (trigger) がイベントに一致するか。「常時 (ALWAYS)」は毎手番の開始時に1回発動として扱う */
 function triggerMatches(trigger: string | undefined, triggerType: TriggerType): boolean {
@@ -2692,7 +2693,7 @@ export function applyAutomatedEffect(...args: Parameters<typeof applyAutomatedEf
 function applyAutomatedEffectUnsafe(
   board: Board,
   position: [number, number],
-  triggerType: 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' | 'ON_CAPTURE',
+  triggerType: TriggerType,
   player: Player,
   capturedPieces: Piece[],
   fromPosition?: [number, number],
@@ -3984,6 +3985,8 @@ export function getAbilityTargets(
   const piece = getBoardPiece(board, { x, y });
 
   if (!piece) return null;
+  // 能力プログラムの対象は自動で決まる（手で選ばせると、古い custom_ability の指定で意図しない選択画面が出る）
+  if (piece.abilities?.length) return null;
 
   // ── 新プラグイン型・遠隔選択ターゲット（RANGE_2 / RANGE_3 + POINT） ──
   if (piece.custom_ability) {

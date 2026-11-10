@@ -239,5 +239,24 @@ for (const op of PROGRAM_OPS) {
   check(dailyKey(new Date('2026-10-22T15:30:00Z')) === '2026-10-23', '今日のお題は日本時間の0時で切り替わる');
 }
 
+// ===== 打ったとき・仇討ち =====
+{
+  const tpl = initializeBoard();
+  const base = tpl[6][0]!;
+  const mkp = (owner: 'sente' | 'gote', id: string, abilities?: AbilityProgram[]): Piece => ({ ...base, id, owner, isPawn: false, word: id, effect_name: id, abilities, range_geometry: { normal_grid: '0000001110012100111000000' }, logic_code: 'normal' } as Piece);
+  const prog = (trigger: string) => normalizeAbilityPrograms([{ trigger, target: { area: 'ADJACENT', who: 'ENEMY', pick: 'NEAREST', count: 1 }, effects: [{ op: 'FREEZE', value: 1 }], cooldown: 2 }])!;
+  const fresh = () => { const b: Board = Array.from({ length: 9 }, () => Array(9).fill(null)); b[8][0] = { ...tpl[8][4]!, id: 'sk' }; b[0][8] = { ...tpl[0][4]!, id: 'gk' }; return b; };
+  const drop = mkp('sente', 'dropper', prog('ON_DROP'));
+  check(drop.abilities?.[0].trigger === 'ON_DROP', '「打ったとき」はそのまま残る（動いた後に読み替えない）');
+  check(isTriggerMatching(drop, 'ON_DROP') && !isTriggerMatching(drop, 'ON_MOVE'), '「打ったとき」の能力は、動いただけでは発動しない');
+  const b = fresh(); b[4][4] = drop; b[3][4] = mkp('gote', 'e');
+  check(!!applyAutomatedEffect(b, [4, 4], 'ON_DROP', 'sente', []).board[3][4]?.isFrozen, '「打ったとき」で隣の敵を凍らせる');
+  const avenger = mkp('sente', 'avenger', prog('ON_ALLY_TAKEN'));
+  check(isTriggerMatching(avenger, 'ON_ALLY_TAKEN') && !isTriggerMatching(avenger, 'ON_TAKEN') && !isTriggerMatching(avenger, 'ON_MOVE'), '「仇討ち」は味方が取られたときだけ（自分が取られた・動いたでは発動しない）');
+  const b2 = fresh(); b2[4][4] = avenger; b2[3][4] = mkp('gote', 'killer');
+  check(!!applyAutomatedEffect(b2, [4, 4], 'ON_ALLY_TAKEN', 'sente', []).board[3][4]?.isFrozen, '「仇討ち」で近くの敵を凍らせる');
+  check(describeAbilities(prog('ON_ALLY_TAKEN')).includes('味方の駒が取られたとき'), '説明文に「味方の駒が取られたとき」と出る');
+}
+
 console.log(failed === 0 ? '\nすべて成功' : `\n${failed} 件失敗`);
 process.exit(failed === 0 ? 0 : 1);

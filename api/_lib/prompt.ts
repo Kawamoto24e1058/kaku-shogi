@@ -44,7 +44,7 @@ ${TRAIT_LIST}
 
 各能力 = { name, trigger, condition, condition_value?, target, effects[], cooldown }
 - name: 2〜6文字の漢字の技名
-- trigger: ON_MOVE=自分が動いた後（基本はこれ） / ON_CAPTURE=敵駒を取ったとき / ON_PROMOTE=成ったとき / ON_TAKEN=自分が取られたとき（罠・置き土産）
+- trigger: ON_MOVE=自分が動いた後（基本はこれ） / ON_CAPTURE=敵駒を取ったとき / ON_PROMOTE=成ったとき / ON_TAKEN=自分が取られたとき（罠・置き土産） / ON_DROP=持ち駒から打ったとき（奇襲・援軍・着地） / ON_ALLY_TAKEN=味方の駒が取られたとき（仇討ち・守護者・怒り）
 - condition（任意）: NONE / IN_ENEMY_CAMP / IN_OWN_CAMP / ENEMIES_NEAR_AT_LEAST(n体) / ALLIES_NEAR_AT_LEAST(n体) / NO_ALLY_NEAR / MY_HAND_AT_LEAST(n枚) / ENEMY_HAND_AT_LEAST(n枚) / PROMOTED=成っていれば / CHANCE(n%)。数値は condition_value
 - target: { area, who, pick, count }
   - area: SELF / ADJACENT=周囲1マス / RADIUS_2=周囲2マス / FRONT_LINE=前方一直線 / LINES_8=8方向の直線 / DIAGONALS / CROSS=縦横 / ROW=横一列 / COLUMN=縦一列 / ALL=盤上すべて / ENEMY_KING_AROUND=敵玉の周り / ATTACKER=自分を取った駒（ON_TAKEN のみ）
@@ -97,7 +97,7 @@ const COMPACT_GUIDE = `「架空将棋」（9x9の将棋）の変則駒を、単
 2. 能力は原則1つ（その特徴を表す主役の技。効果は2つまで）。盤面がはっきり動く効果を中心に。PUSH と STUN の組み合わせは使わない（どの駒も同じになるため）。その単語でしか出ない効果を選ぶ。
 ability_mode は "SINGLE"。くじ・ガチャ・サイコロ・天気のように「当たり外れ」が本質の単語だけ "RANDOM"（能力2〜3個から毎回1つ）。
 能力 = {name(2-6字の漢字), trigger, condition, condition_value?, target:{area,who,pick,count}, effects:[{op,value?,tile?}], cooldown(0-5、99=1ゲーム1回)}
-- trigger: ON_MOVE(動いた後・基本) / ON_CAPTURE(取ったとき) / ON_PROMOTE(成ったとき) / ON_TAKEN(取られたとき)
+- trigger: ON_MOVE(動いた後・基本) / ON_CAPTURE(取ったとき) / ON_PROMOTE(成ったとき) / ON_TAKEN(取られたとき) / ON_DROP(打ったとき) / ON_ALLY_TAKEN(味方が取られたとき=仇討ち)
 - condition: NONE / IN_ENEMY_CAMP / ENEMIES_NEAR_AT_LEAST / NO_ALLY_NEAR / PROMOTED / CHANCE(%)
 - area: SELF / ADJACENT / RADIUS_2 / FRONT_LINE / LINES_8 / CROSS / ROW / COLUMN / ALL / ATTACKER(ON_TAKENのみ)。who: ENEMY/ALLY/ANY/EMPTY。pick: ALL/NEAREST/STRONGEST/WEAKEST/RANDOM
 - op: ${OP_NAMES}。TILE は tile=${TILE_KINDS.join('/')}

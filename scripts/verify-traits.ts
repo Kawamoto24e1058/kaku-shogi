@@ -173,6 +173,14 @@ const caster = (op: string, area?: string, value?: number) => mk('sente', 'caste
   const res = executeMove(b, [4, 4], [3, 4], 'sente', false);
   const clone = res.board.flat().find(p => p?.id === 'slime_split');
   check(!!res.capturedPiece && !!clone && clone.owner === 'gote' && clone.traitUsed === true, '分裂: 本体は取られ、隣に分身が残る');
+  check(res.capturedPiece?.traitUsed === true, '分裂は1回だけ: 持ち駒になった本体も使用済み（打ち直しても再び分裂しない）');
+  const b2 = withKings(empty());
+  b2[4][4] = mk('sente', 'attacker2');
+  b2[3][4] = mk('gote', 'slime', { trait: { kind: 'SPLIT' } });
+  b2[6][6] = mk('gote', 'slime_split');
+  const res2 = executeMove(b2, [4, 4], [3, 4], 'sente', false);
+  const ids = res2.board.flat().filter(Boolean).map(p => p!.id);
+  check(new Set(ids).size === ids.length, '分裂の分身の id は、盤上の駒と重ならない');
 }
 
 {

@@ -8,7 +8,7 @@ import type { AbilityProgram, ProgramEffect, ProgramTarget, TileKind } from '../
 import { NAMED_AREAS } from '../shared/abilityProgram';
 import { applyCoreActionEffect, getCellLabel, queueTilePlacement } from './gameLogic';
 
-export type ProgramTriggerEvent = 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' | 'ON_CAPTURE';
+export type ProgramTriggerEvent = 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' | 'ON_CAPTURE' | 'ON_DROP' | 'ON_ALLY_TAKEN';
 
 type Log = Omit<GameLog, 'id' | 'timestamp'>;
 
