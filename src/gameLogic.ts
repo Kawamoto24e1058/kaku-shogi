@@ -2642,8 +2642,10 @@ export function interpretAbilitySpec(
   return { board: nextBoard, capturedPieces: nextCaptured, opponentCapturedPieces, graveyard: nextGraveyard, logs, triggered };
 }
 
-function isAutonomousPiece(p: Piece | null): boolean {
+export function isAutonomousPiece(p: Piece | null): boolean {
   if (!p) return false;
+  // 能力プログラム・性質を持つ新しい駒は、性質「暴れ馬」のときだけ勝手に動く（説明文の言葉や古い指定では判定しない）
+  if (p.abilities?.length || p.trait) return p.trait?.kind === 'WILD';
   if (p.isAutonomous === true || p.custom_ability?.isAutonomous === true) return true;
   const logic = getPieceLogicCode(p);
   const desc = getPieceDescription(p);

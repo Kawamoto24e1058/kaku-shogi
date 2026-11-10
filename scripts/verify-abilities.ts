@@ -77,10 +77,12 @@ const blaze = archetypePiece('blaze');
 check('移動時能力は手番開始時に発動しない', !applyAutomatedEffect(boardWith(blaze), [4, 4], 'TURN_START', 'sente', []).triggered);
 check('移動時能力は取られた時/死亡時に発動しない', !isTriggerMatching(blaze, 'ON_TAKEN') && !isTriggerMatching(blaze, 'ON_DEATH'));
 const fortress = archetypePiece('fortress');
-check('手番開始時能力は移動時に発動しない', !applyAutomatedEffect(boardWith(fortress), [4, 4], 'ON_MOVE', 'sente', []).triggered);
+// 手番の開始時の能力は廃止し「動いたとき」に読み替える（気づかないうちに発動するのを防ぐ）
+check('手番開始時の能力は、動いたときに発動する（読み替え）', applyAutomatedEffect(boardWith(fortress), [4, 4], 'ON_MOVE', 'sente', []).triggered);
+check('手番開始時の能力は、手番の開始時には発動しない', !applyAutomatedEffect(boardWith(fortress), [4, 4], 'TURN_START', 'sente', []).triggered);
 const always = archetypePiece('blaze');
 always.custom_ability = { ...always.custom_ability!, triggers: ['ALWAYS'] };
-check('常時(ALWAYS)は手番開始時のみ発動', isTriggerMatching(always, 'TURN_START') && !isTriggerMatching(always, 'ON_MOVE'));
+check('常時(ALWAYS)は手番の開始時に勝手に発動しない', !isTriggerMatching(always, 'TURN_START'));
 
 // 成った後は覚醒後の能力で動く
 const promoted = archetypePiece('blaze', { isPromoted: true });
