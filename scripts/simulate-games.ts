@@ -6,10 +6,11 @@
 import { readFileSync } from 'node:fs';
 import type { Board, Piece, Player, TileState } from '../src/types';
 import { normalizeAbilityPrograms, describeAbilities, abilityPower } from '../shared/abilityProgram';
+import { chooseWildMove, endOfTurnTraits, fickleTarget, markMoved, traitKind } from '../src/traits';
 
 const {
   initializeBoard, executeMove, executeDrop, applyAutomatedEffect, isTriggerMatching, drainTilePlacements,
-  applyTileEffects, createEmptyTileBoard, BOARD_SIZE,
+  applyTileEffects, createEmptyTileBoard, BOARD_SIZE, getValidMoves,
 } = await import('../src/gameLogic');
 const { chooseCpuMove } = await import('../src/cpuAi');
 const { tickAbilityCooldowns } = await import('../src/abilityEngine');
@@ -155,10 +156,11 @@ function playGame(senteEntries: PoolEntry[], goteEntries: PoolEntry[]): GameResu
       if (!move) break;
       if (move.type === 'move' && move.from) {
         const piece = board[move.from[0]][move.from[1]]!;
+        move.to = fickleTarget(piece, move.to, getValidMoves(move.from[0], move.from[1], board), board, rand);
         const zone = turn === 'sente' ? move.to[0] <= 2 : move.to[0] >= 6;
         const promote = zone && !piece.isKing && !piece.isPromoted;
         const res = executeMove(board, move.from, move.to, turn, promote, undefined, true, false, hands);
-        board = res.board;
+        board = markMoved(res.board, move.to);
         const captured = res.capturedPieces?.length ? res.capturedPieces : res.capturedPiece ? [res.capturedPiece] : [];
         for (const cap of captured) {
           if (cap.isKing) return { winner: turn, plies: ply, reason: 'king-captured', maxPieces, extraActionChain, abilityTriggers, ...res0 };
@@ -189,6 +191,25 @@ function playGame(senteEntries: PoolEntry[], goteEntries: PoolEntry[]): GameResu
       if (!kingAlive(board, opp(turn))) return { winner: turn, plies: ply, reason: 'king-gone', maxPieces, extraActionChain, abilityTriggers, ...res0 };
       if (!kingAlive(board, turn)) return { winner: opp(turn), plies: ply, reason: 'own-king-gone', maxPieces, extraActionChain, abilityTriggers, ...res0 };
     }
+
+    // 性質: 暴れ馬は手番の終わりに勝手に動き（動いた後・取ったときの能力も発動）、ワープ癖・寿命・鈍足・臆病を処理する
+    for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) {
+      const p = board[y][x];
+      if (!p || p.owner !== turn || traitKind(p) !== 'WILD') continue;
+      const to = chooseWildMove(board, [y, x], getValidMoves(y, x, board), rand);
+      if (!to) continue;
+      const res = executeMove(board, [y, x], to, turn, false, undefined, true, false, hands);
+      board = res.board;
+      const captured = res.capturedPieces?.length ? res.capturedPieces : res.capturedPiece ? [res.capturedPiece] : [];
+      for (const cap of captured) {
+        if (cap.isKing) return { winner: turn, plies: ply, reason: 'king-captured-wild', maxPieces, extraActionChain, abilityTriggers, ...res0 };
+        if (!board.some(r => r.some(c => c?.id === cap.id))) hands[turn].push({ ...cap, owner: turn, isPromoted: false, coolDownTurnsRemaining: 0, isRevealed: true });
+      }
+      const landed = board[to[0]][to[1]];
+      if (landed && landed.id === p.id && isTriggerMatching(landed, 'ON_MOVE')) runEffect(to, 'ON_MOVE', turn, [y, x]);
+      if (!kingAlive(board, opp(turn))) return { winner: turn, plies: ply, reason: 'king-gone-wild', maxPieces, extraActionChain, abilityTriggers, ...res0 };
+    }
+    board = endOfTurnTraits(board, turn, rand).board;
 
     // 地形と手番終了の処理
     for (const { y, x, tile } of drainTilePlacements()) tileBoard[y][x] = tile;

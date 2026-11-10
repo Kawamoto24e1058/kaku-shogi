@@ -1,4 +1,4 @@
-import type { AbilityProgram, PieceAppearance } from '../shared/abilityProgram';
+import type { PieceTrait, AbilityProgram, PieceAppearance } from '../shared/abilityProgram';
 import type { SupportedAction } from '../shared/abilityCatalog';
 
 export type Player = 'sente' | 'gote';
@@ -143,6 +143,13 @@ export interface PieceData {
   abilities?: AbilityProgram[];
   /** 能力の持ち方。RANDOM なら発動のたびに abilities から1つがランダムに選ばれる（無ければ SINGLE） */
   ability_mode?: 'SINGLE' | 'RANDOM';
+  /** 性質（ずっと働く動き方の特徴。暴れ馬・不死身など。shared/abilityProgram.ts の TRAIT_SPECS） */
+  trait?: PieceTrait;
+  /** 性質の状態（対局中に変わる）: 不死身を使ったか / 寿命の残り手番 / 鈍足の休み / 成長の段階 */
+  traitUsed?: boolean;
+  traitLife?: number;
+  traitRest?: number;
+  traitLevel?: number;
   /** abilities から機械的に作った効果の説明 */
   rules_text?: string;
   /** 駒の見た目（色・紋章・オーラ） */

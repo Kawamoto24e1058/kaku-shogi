@@ -41,6 +41,7 @@ import {
 } from './onlineStore';
 import { openXShare, dailyShareUrl } from './share';
 import { dailyKey, dailyLabel, dailyWords } from '../shared/challenge';
+import { canCommand, chooseWildMove, commandBlockReason, endOfTurnTraits, fickleTarget, markMoved, traitKind } from './traits';
 
 /** 画面全体を揺らす演出。激しすぎるという意見を受けて止めている（戻すなら true） */
 const SCREEN_SHAKE_ENABLED = false;
@@ -978,13 +979,14 @@ export const App: React.FC = () => {
     return false;
   };
 
+  // 勝手に動く駒: 性質「暴れ馬」と、古い形式の駒が明示的に持つ指定だけ。
+  // 以前は説明文に「気まぐれ」「暴れ馬」などの言葉があるだけで操作できなくなっていた（謎の動きの原因）
   const isAutoNormalMover = (p: Piece | null): boolean => {
     if (!p) return false;
+    if (traitKind(p) === 'WILD') return true;
+    if (p.abilities?.length || p.trait) return false;
     if (p.isAutonomous === true || p.custom_ability?.isAutonomous === true) return true;
-    const logicCode = getPieceLogicCode(p);
-    const desc = p.description || '';
-    return (p.trigger === 'ALWAYS' && (logicCode.includes('runaway') || desc.includes('操作不能'))) ||
-           desc.includes('勝手に動く') || desc.includes('暴れ馬') || desc.includes('指示を聞かない') || desc.includes('気まぐれ');
+    return p.trigger === 'ALWAYS' && getPieceLogicCode(p).includes('runaway');
   };
 
   const isAutonomous = (p: Piece | null): boolean => {
@@ -1002,9 +1004,20 @@ export const App: React.FC = () => {
     x: number,
     promote: boolean
   ) => {
+    // 気まぐれ: 指示とは別のマスへ動いてしまうことがある
+    const movingPiece = state.board[sy]?.[sx];
+    if (movingPiece) {
+      const [fy, fx] = fickleTarget(movingPiece, [y, x], getValidMoves(sy, sx, state.board), state.board);
+      if (fy !== y || fx !== x) {
+        showAbilityToast(`「${movingPiece.word}」は気まぐれで別のマスへ`);
+        y = fy; x = fx;
+        promote = promote || isPromotionEligible(movingPiece, sy, y, state.turn);
+      }
+    }
     let res;
     try {
       res = executeMove(state.board, [sy, sx], [y, x], state.turn, promote, playerNames, vsAiMode, true, state.capturedPieces);
+      res = { ...res, board: markMoved(res.board, [y, x]) };
       setPlayerMoves(prev => ({ ...prev, [state.turn]: prev[state.turn] + 1 }));
     } catch (err) {
       console.error("Failed to execute move:", err);
@@ -1861,8 +1874,10 @@ export const App: React.FC = () => {
       if (!piece || piece.owner !== activePlayer || !isAutoNormalMover(piece)) continue;
 
       const valid = getValidMoves(sy, sx, currentBoard);
-      if (valid.length > 0) {
-        const [ty, tx] = valid[Math.floor(Math.random() * valid.length)];
+      const wildTarget = traitKind(piece) === 'WILD' ? chooseWildMove(currentBoard, [sy, sx], valid) : null;
+      if (valid.length > 0 && (traitKind(piece) !== 'WILD' || wildTarget)) {
+        // 暴れ馬は敵に向かう（取れるなら取る）。古い形式の駒は従来どおりランダム
+        const [ty, tx] = wildTarget ?? valid[Math.floor(Math.random() * valid.length)];
         const promote = isPromotionEligible(piece, sy, ty, activePlayer);
         
         const moveRes = executeMove(currentBoard, [sy, sx], [ty, tx], activePlayer, promote, playerNames, vsAiMode, false, currentCaptured);
@@ -1923,6 +1938,22 @@ export const App: React.FC = () => {
           type: 'ability'
         });
 
+        // 勝手に動いた後も「動いた後」「取ったとき」の能力は発動する（暴れ馬＋蹴散らす、のような組み合わせのため）
+        const landed = currentBoard[ty][tx];
+        const opponentPlayer: Player = activePlayer === 'sente' ? 'gote' : 'sente';
+        const tookPiece = !!(moveRes.capturedPiece || moveRes.capturedPieces?.length);
+        for (const trigger of ['ON_MOVE', ...(tookPiece ? ['ON_CAPTURE' as const] : [])] as const) {
+          const current = currentBoard[ty][tx];
+          if (!landed || !current || current.id !== landed.id || !current.abilities?.length || !isTriggerMatching(current, trigger)) continue;
+          const eff = applyAutomatedEffect(currentBoard, [ty, tx], trigger, activePlayer, currentCaptured[activePlayer], [sy, sx], undefined, [], currentShared, undefined, undefined, currentCaptured[opponentPlayer]);
+          if (!eff.triggered) continue;
+          currentBoard = eff.board;
+          currentCaptured[activePlayer] = eff.capturedPieces;
+          if (eff.opponentCapturedPieces) currentCaptured[opponentPlayer] = eff.opponentCapturedPieces;
+          currentLogs.push(...eff.logs.map(l => ({ ...l, id: generateId(), timestamp: new Date().toLocaleTimeString() })));
+          showAbilityToast(`${activePlayer === 'sente' ? '▲' : '▽'}「${current.word}」《${current.effect_name || '能力'}》`);
+        }
+
         currentLogs.push(...moveRes.logs.map(l => ({
           ...l,
           id: generateId(),
@@ -1942,6 +1973,13 @@ export const App: React.FC = () => {
           }
         }
       }
+    }
+
+    // 手番の終わりの性質（ワープ癖・寿命・鈍足・臆病）
+    if (!gameOver) {
+      const traitRes = endOfTurnTraits(currentBoard, activePlayer);
+      currentBoard = traitRes.board;
+      currentLogs.push(...traitRes.logs.map(l => ({ ...l, id: generateId(), timestamp: new Date().toLocaleTimeString() })));
     }
 
     // Check game over conditions after autonomous moves
@@ -2006,6 +2044,8 @@ export const App: React.FC = () => {
             updated.cool_down_turns = 0;
             updated.coolDownTurnsRemaining = 0;
             updated.cooldownTurnsRemaining = 0;
+            // 暴れ馬など勝手に動く駒も、能力の充填は進める（進めないと一度使った能力が二度と使えない）
+            updated.abilityCooldowns = tickAbilityCooldowns(updated).abilityCooldowns;
           } else {
             const currentCD = updated.coolDownTurnsRemaining ?? updated.cooldownTurnsRemaining ?? 0;
             if (currentCD > 0 && currentCD !== 99) {
@@ -3176,6 +3216,7 @@ export const App: React.FC = () => {
       } else {
         if (piece && piece.owner === state.turn) {
           if (isAutonomous(piece)) return;
+          if (!canCommand(piece)) { showAbilityToast(commandBlockReason(piece) ?? 'この駒は今は動かせません'); return; }
           setState(prev => ({ ...prev, selectedCell: [y, x], activeAbilityMode: false, activeAbilityTargets: [] }));
           setValidMoves(getValidMoves(y, x, state.board));
         } else {
@@ -3186,6 +3227,7 @@ export const App: React.FC = () => {
     } else {
       if (piece && piece.owner === state.turn) {
         if (isAutonomous(piece)) return;
+        if (!canCommand(piece)) { showAbilityToast(commandBlockReason(piece) ?? 'この駒は今は動かせません'); return; }
         setState(prev => ({ ...prev, selectedCell: [y, x], activeAbilityMode: false, activeAbilityTargets: [] }));
         setValidMoves(getValidMoves(y, x, state.board));
       }
@@ -3398,11 +3440,18 @@ export const App: React.FC = () => {
         }
 
         const movingPiece = board[chosenMove.from[0]][chosenMove.from[1]]!;
+        // 気まぐれ: CPU の駒も指示とは別のマスへ動くことがある
+        const fickleTo = fickleTarget(movingPiece, chosenMove.to, getValidMoves(chosenMove.from[0], chosenMove.from[1], board), board);
+        if (fickleTo[0] !== chosenMove.to[0] || fickleTo[1] !== chosenMove.to[1]) {
+          showAbilityToast(`「${movingPiece.word}」は気まぐれで別のマスへ`);
+          chosenMove.to = fickleTo;
+        }
         const promote = isPromotionEligible(movingPiece, chosenMove.from[0], chosenMove.to[0], 'gote');
 
         let res;
         try {
           res = executeMove(board, chosenMove.from, chosenMove.to, 'gote', promote, playerNames, vsAiMode, false, state.capturedPieces);
+          res = { ...res, board: markMoved(res.board, chosenMove.to) };
         } catch (err) {
           console.error("AI failed to execute move:", err);
           handlePassTurn();
@@ -3641,7 +3690,7 @@ export const App: React.FC = () => {
             <button type="button" className="mobile-peek-close" onClick={() => setInspectedPiece(null)} aria-label="閉じる">×</button>
           </div>
           <div className="mobile-peek-body">
-            {inspectedPiece.abilities?.length
+            {inspectedPiece.abilities?.length || inspectedPiece.trait
               ? <ProgramAbilityList piece={inspectedPiece} />
               : <p style={{ fontSize: '12px', lineHeight: 1.7, whiteSpace: 'pre-line', margin: 0 }}>{getPieceDescription(inspectedPiece) || '特殊能力はありません。'}</p>}
           </div>

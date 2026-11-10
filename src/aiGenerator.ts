@@ -3,7 +3,7 @@ import { AREA_SHAPES, normalizeActions } from '../shared/abilityCatalog';
 import { buildOfflinePiece, pickArchetype } from './offlineGenerator';
 import { wordKey } from '../shared/wordKey';
 import { containsNgWord, pieceHasNgText } from '../shared/moderation';
-import { normalizeAbilityPrograms, normalizeAbilityMode, describeAbilities, normalizeAppearance } from '../shared/abilityProgram';
+import { normalizeAbilityPrograms, normalizeAbilityMode, describeAbilities, normalizeAppearance, normalizeTrait, describeTrait, applyTraitBalance } from '../shared/abilityProgram';
 import { normalizeFusionWord } from '../shared/challenge';
 import { extractPartialPiece, type PartialPiece } from '../shared/partialPiece';
 
@@ -890,13 +890,25 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
 
   // ─── 能力プログラム（v2）: 検証・強さの自動調整・説明文の生成 ─────────────
   // 使える部品が1つも無ければ消し、従来の ability_spec / custom_ability で動かす
+  // 性質: trait 項目のほか、AIが abilities の中に {kind: "TRAIT", trait: ...} として書いた場合も拾う
+  const rawAbilities: unknown[] = Array.isArray(parsed.abilities) ? parsed.abilities : parsed.abilities ? [parsed.abilities] : [];
+  const traitInAbilities = rawAbilities.find(a => a && typeof a === 'object' && String((a as Record<string, unknown>).kind ?? '').toUpperCase() === 'TRAIT') as Record<string, unknown> | undefined;
+  const trait = normalizeTrait(parsed.trait) ?? normalizeTrait(traitInAbilities?.trait ?? traitInAbilities?.trait_kind);
+  if (trait) parsed.trait = trait;
+  else delete parsed.trait;
   const requestedMode = normalizeAbilityMode(parsed.ability_mode);
-  const programs = normalizeAbilityPrograms(parsed.abilities, requestedMode);
+  const triggerAbilities = rawAbilities.filter(a => a !== traitInAbilities);
+  const programs = triggerAbilities.length ? normalizeAbilityPrograms(triggerAbilities, requestedMode) : null;
   if (programs) {
     const mode = requestedMode === 'RANDOM' && programs.length > 1 ? 'RANDOM' : 'SINGLE';
-    parsed.abilities = programs;
+    parsed.abilities = applyTraitBalance(programs, trait);
     parsed.ability_mode = mode;
-    parsed.rules_text = describeAbilities(programs, mode);
+    parsed.rules_text = [trait ? describeTrait(trait) : '', describeAbilities(parsed.abilities, mode)].filter(Boolean).join('\n');
+  } else if (trait) {
+    // 性質だけの駒（発動の能力なし）
+    delete parsed.abilities;
+    delete parsed.ability_mode;
+    parsed.rules_text = describeTrait(trait);
   } else {
     delete parsed.abilities;
     delete parsed.ability_mode;

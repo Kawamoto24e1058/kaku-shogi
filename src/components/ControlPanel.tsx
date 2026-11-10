@@ -387,7 +387,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 </div>
               );
             }
-            const hasPrograms = !!(displayPiece as Piece).abilities?.length;
+            const hasPrograms = !!(!!(displayPiece as Piece).abilities?.length) || !!displayPiece?.trait;
             const hasCustomAbility = !hasPrograms && !!(displayPiece as Piece).custom_ability;
             return (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>

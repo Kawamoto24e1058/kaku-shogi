@@ -4,6 +4,7 @@
 // ※ 能力効果のシミュレーションは行わず、通常の移動・捕獲のみで盤面を予測する。
 import type { Board, Piece, Player } from './types';
 import { BOARD_SIZE, getValidMoves, getValidDropCells, isKingInCheck, getPieceTrigger, getPieceLogicCode } from './gameLogic';
+import { canCommand } from './traits';
 
 export type CpuMove =
   | { type: 'move'; from: [number, number]; to: [number, number]; piece?: undefined; index?: undefined }
@@ -96,6 +97,8 @@ export function chooseCpuMove(
   const scored: { move: CpuMove; score: number }[] = [];
 
   for (const [y, x, piece] of piecesOf(board, me)) {
+    // 暴れ馬・休み中の鈍足は操作できない（勝手に動く分は手番の終わりに処理される）
+    if (!canCommand(piece)) continue;
     for (const [ty, tx] of getValidMoves(y, x, board)) {
       const target = board[ty][tx];
       if (target && target.owner === me) continue;

@@ -2,7 +2,7 @@
 // enum でエンジンが実行できる値だけに制限する（能力は shared/abilityProgram.ts の部品）。
 import { TRAJECTORIES, VISUAL_THEMES } from '../../shared/abilityCatalog.js';
 import {
-  PROGRAM_TRIGGERS, PROGRAM_CONDITIONS, PROGRAM_OPS, TARGET_WHO, TARGET_PICKS, TILE_KINDS, AURAS,
+  PROGRAM_TRIGGERS, PROGRAM_CONDITIONS, PROGRAM_OPS, TARGET_WHO, TARGET_PICKS, TILE_KINDS, AURAS, TRAIT_KINDS,
 } from '../../shared/abilityProgram.js';
 
 const str = (description?: string) => ({ type: 'STRING', ...(description ? { description } : {}) });
@@ -80,6 +80,7 @@ const PIECE_SCHEMA = {
       required: ['normal_grid', 'promoted_grid'],
     },
     ability_mode: { type: 'STRING', enum: ['SINGLE', 'RANDOM'] },
+    trait: { type: 'OBJECT', nullable: true, properties: { kind: enumOf(TRAIT_KINDS), value: { type: 'INTEGER' } } },
     abilities: { type: 'ARRAY', items: abilityProgram, description: '原則1個。ability_mode が RANDOM のときだけ2〜3個' },
     appearance,
     visual_effect: visualEffect,
