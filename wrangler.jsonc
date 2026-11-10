@@ -18,8 +18,11 @@
   "ai": { "binding": "AI" },
   "triggers": { "crons": ["30 23 * * *"] },
   "observability": { "enabled": true },
-  // 公開して問題ない値だけ。SUPABASE_SERVER_TOKEN はシークレット（npx wrangler secret put SUPABASE_SERVER_TOKEN）
+  // 公開して問題ない値だけ。SUPABASE_SERVER_TOKEN・FALLBACK_LLM_API_KEY はシークレット（npx wrangler secret put ...）
   "vars": {
+    // 予備の無料AI（Groq）。キーはシークレット FALLBACK_LLM_API_KEY。モデルはカンマ区切りで上から順に試す
+    "FALLBACK_LLM_BASE_URL": "https://api.groq.com/openai/v1",
+    "FALLBACK_LLM_MODEL": "qwen/qwen3.8-27b,openai/gpt-oss-120b,openai/gpt-oss-20b",
     "SUPABASE_URL": "https://ahwfldxicjvrosgvryxn.supabase.co",
     "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_vci3NpSwK1cqDzptRvmSIg_BtaaQEUC"
   }
