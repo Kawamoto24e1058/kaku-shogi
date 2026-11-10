@@ -156,7 +156,7 @@ export interface GeneratedPiece {
 }
 
 const API_ENDPOINT = '/api/generate-piece';
-const GENERATE_TIMEOUT_MS = 35_000;
+const GENERATE_TIMEOUT_MS = 60_000;
 
 /** 駒作成画面を開いた時点でサーバー関数を起こしておき、最初の生成のコールドスタートを隠す */
 export function warmUpGenerator(): void {
@@ -230,7 +230,9 @@ async function readGenerateStream(res: Response, onPartial: (partial: PartialPie
       } catch {
         continue;
       }
-      if (message.type === 'reset') {
+      if (message.type === 'wait') {
+        onPartial({ wait_seconds: Number((message as { seconds?: number }).seconds) || 10 });
+      } else if (message.type === 'reset') {
         text = '';
         complete = false;
       } else if (message.type === 'partial' && message.piece) {
