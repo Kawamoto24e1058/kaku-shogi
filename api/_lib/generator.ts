@@ -374,10 +374,18 @@ export function configuredProviders(): Provider[] {
     }
   }
 
-  const fb = { baseUrl: process.env.FALLBACK_LLM_BASE_URL, apiKey: process.env.FALLBACK_LLM_API_KEY, model: process.env.FALLBACK_LLM_MODEL };
-  if (fb.baseUrl && fb.apiKey && fb.model) {
-    const config = fb as OpenAICompatibleConfig;
-    providers.push({ name: `fallback:${config.model}`, run: (w, d = Infinity, t, r, refs) => callOpenAICompatible(config, w, d, t, refs, r) });
+  // 予備の無料AI（OpenAI 互換。例: Groq）。FALLBACK_LLM_MODEL はカンマ区切りで複数書け、上から順に試す
+  // （無料のモデルは提供終了・名前の変更があるので、1つが使えなくても次へ進めるように）
+  const fbBase = process.env.FALLBACK_LLM_BASE_URL;
+  const fbKey = process.env.FALLBACK_LLM_API_KEY;
+  const fbModels = (process.env.FALLBACK_LLM_MODEL || '').split(',').map(m => m.trim()).filter(Boolean);
+  if (fbBase && fbKey) {
+    for (const model of fbModels) {
+      // 考える過程（reasoning）が長いと遅く枠も減るので、駒生成では最小にする（Groq の指定方法）
+      const extraBody = /qwen/i.test(model) ? { reasoning_effort: 'none' } : /gpt-oss/i.test(model) ? { reasoning_effort: 'low' } : undefined;
+      const config: OpenAICompatibleConfig = { baseUrl: fbBase, apiKey: fbKey, model, extraBody };
+      providers.push({ name: `fallback:${model}`, run: (w, d = Infinity, t, r, refs) => callOpenAICompatible(config, w, d, t, refs, r) });
+    }
   }
 
   const geminiKey = process.env.GEMINI_API_KEY;

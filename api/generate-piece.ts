@@ -7,8 +7,8 @@
 // キャッシュ済みの駒は GET + CDN キャッシュで返し、回数制限はメモリ上で数える。
 // どれも使えない場合はエラーを返し（ブラウザ側で簡易生成に切り替わる）、単語を待ち行列に積む。
 // 待ち行列は worker/index.ts の Cron Trigger（1日1回）がAI生成して共有キャッシュに登録する。
-import { createHash } from 'node:crypto';
-import { generatePiece, isQuotaExhausted, NoProviderError, type Json, type OnRawStream } from './_lib/generator.js';
+import { createHash, timingSafeEqual } from 'node:crypto';
+import { configuredProviders, generatePiece, isQuotaExhausted, NoProviderError, type Json, type OnRawStream } from './_lib/generator.js';
 import { consumeSharedQuota, enqueueWord, findSimilarPiece, getCachedPiece, saveCachedPiece, storeConfigured } from './_lib/pieceCache.js';
 import { wordKey } from '../shared/wordKey.js';
 import { containsNgWord, pieceHasNgText, setExtraNgWords } from '../shared/moderation.js';
@@ -71,6 +71,15 @@ function memoryRateLimit(key: string, limit: number, windowMs: number): boolean 
   }
   bucket.count += 1;
   return bucket.count <= limit;
+}
+
+/** 予備AIの動作確認（x-kaku-test-provider: fallback と、サーバー用トークンの一致が必要） */
+function isProviderTest(request: Request, mode = 'fallback'): boolean {
+  if (request.headers.get('x-kaku-test-provider') !== mode) return false;
+  const token = process.env.SUPABASE_SERVER_TOKEN || '';
+  const given = Buffer.from(request.headers.get('x-kaku-test-token') || '');
+  const expected = Buffer.from(token);
+  return token.length > 0 && given.length === expected.length && timingSafeEqual(given, expected);
 }
 
 const hashId = (value: string) => createHash('sha256').update(`kaku-shogi:${value}`).digest('hex').slice(0, 32);
@@ -282,6 +291,14 @@ function streamGeneratePiece(request: Request, waitUntil?: (task: Promise<unknow
 
 async function handleRequest(request: Request, onPartial?: OnPartial, onRaw?: OnRawStream): Promise<Response> {
   const startedAt = Date.now();
+  // 運営者の動作確認用: 予備AIで使えるモデルの一覧（サーバー用トークンが必要）
+  if (request.method === 'POST' && isProviderTest(request, 'models')) {
+    const res = await fetch(`${(process.env.FALLBACK_LLM_BASE_URL || '').replace(/\/$/, '')}/models`, {
+      headers: { Authorization: `Bearer ${process.env.FALLBACK_LLM_API_KEY || ''}` },
+    });
+    const data = await res.json().catch(() => ({})) as { data?: { id: string; active?: boolean; context_window?: number }[] };
+    return json(res.status, { models: (data.data ?? []).map(m => m.id).sort() });
+  }
   if (request.method === 'GET') {
     const k = new URL(request.url).searchParams.get('k');
     if (!k) {
@@ -304,6 +321,19 @@ async function handleRequest(request: Request, onPartial?: OnPartial, onRaw?: On
   if (containsNgWord(word)) return json(400, { error: 'その単語は使えません。別の単語を入力してください。', blocked: true });
 
   const key = wordKey(word);
+  // 運営者の動作確認用: 予備のAIだけで生成する（共有キャッシュは読まず、保存もしない）。
+  // サーバー用トークンを知っている人だけが使える
+  if (isProviderTest(request)) {
+    const reference = await lookupReferences([word]).then(refs => refs[0]).catch(() => null);
+    const providers = configuredProviders().filter(p => p.name.startsWith('fallback:'));
+    try {
+      const { piece, provider } = await generatePiece(word, providers, startedAt + AI_BUDGET_MS,
+        onPartial ? partialRelay(onPartial) : undefined, onRaw, reference);
+      return json(200, { piece: { ...piece, word }, source: 'ai', provider });
+    } catch (err) {
+      return json(502, { error: (err as Error).message.slice(0, 300) });
+    }
+  }
   // 元ネタの参考情報（Wikipedia）は、キャッシュ確認・回数制限と並行して調べておく
   const reference = inFlight.has(key) ? undefined : lookupReferences([word]).then(refs => refs[0]).catch(() => null);
   // 同じ単語を生成中・生成直後なら、その結果を使う（回数制限も消費しない）

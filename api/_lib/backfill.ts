@@ -1,6 +1,6 @@
 // 共有キャッシュのバックフィル（worker/index.ts の Cron Trigger と scripts/backfill.ts で共用）
 // 1. 利用者がAI生成できなかった単語（generation_queue）を要求回数の多い順に
-// 2. 余った枠で事前生成用の単語（shared/seedWords.ts の SEED_WORDS → PREGEN_WORDS）を
+// 2. 古い仕様の駒の作り直し（事前生成リストの作り置きは PREGEN=on のときだけ）
 // AI生成して共有キャッシュに登録する。1回の呼び出しで batch 語をまとめて生成するので、
 // 1日の「回数」上限に対して何倍もの単語を登録できる。無料枠の上限に達したら静かに終了する。
 import { configuredProviders, generatePieces } from './generator.js';
@@ -62,11 +62,14 @@ export async function runBackfill({ limit, batch, intervalMs, deadline = Infinit
       if (!todo.some(t => t.key === stale.key) && !containsNgWord(stale.word)) todo.push({ key: stale.key, word: stale.word || stale.key });
     }
   }
-  // 3. 事前生成リストのうち、まだ駒が無い単語
-  for (const [key, word] of pending.slice(dailyAndQueue.length)) {
-    if (todo.length >= limit) break;
-    if (todo.some(t => t.key === key) || containsNgWord(word) || await getCachedPiece(key)) continue;
-    todo.push({ key, word });
+  // 事前生成リスト（誰も入れていない言葉）の作り置きはしない。プレイヤーが入れた言葉をその場で作る方針のため
+  // （PREGEN=on で以前の動きに戻せる）
+  if (process.env.PREGEN === 'on') {
+    for (const [key, word] of pending.slice(dailyAndQueue.length)) {
+      if (todo.length >= limit) break;
+      if (todo.some(t => t.key === key) || containsNgWord(word) || await getCachedPiece(key)) continue;
+      todo.push({ key, word });
+    }
   }
 
   let generated = 0;
