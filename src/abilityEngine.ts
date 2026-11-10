@@ -154,6 +154,11 @@ function resolveTargets(board: Board, target: ProgramTarget, origin: Position, p
     case 'RANDOM': ordered = ordered.map(c => ({ c, r: Math.random() })).sort((a, b) => a.r - b.r).map(o => o.c); break;
     default: break;
   }
+  // 性質「挑発」: 敵の能力は、届く範囲にいる挑発の駒を先に狙う
+  if (target.pick !== 'ALL' && target.area !== 'SELF') {
+    const taunts = ordered.filter(c => { const p = board[c.y][c.x]; return !!p && p.owner !== player && p.trait?.kind === 'TAUNT'; });
+    if (taunts.length) ordered = [...taunts, ...ordered.filter(c => !taunts.includes(c))];
+  }
   if (target.pick !== 'ALL') ordered = ordered.slice(0, target.count);
   return ordered.map(pos => ({ pos, id: board[pos.y][pos.x]?.id ?? null }));
 }
@@ -204,6 +209,8 @@ interface RunState {
   graveyard: Piece[];
   opponentCaptured: Piece[];
   reAction: boolean;
+  /** 性質「反射」でこの発動を跳ね返した駒（同じ発動の残りの効果も受けない） */
+  reflected?: Set<string>;
 }
 
 /** 既存の applyCoreActionEffect を1回呼ぶ。効果が出たかを返す */
@@ -237,10 +244,44 @@ function log(state: RunState, message: string, type: Log['type'] = 'ability') {
   state.logs.push({ player: state.player, message: `【${state.name}】${message}`, type });
 }
 
-/** 敵の能力から守られているか（防護中）。守られていればログを残して true */
-function guarded(state: RunState, victim: Piece, pos: Position): boolean {
-  if (victim.owner !== state.player && victim.hasAbsoluteGuard) {
+/** 性質「反射」で使った駒に返す効果 */
+const REFLECTED: Record<string, (value: number) => Partial<Piece>> = {
+  FREEZE: v => ({ isFrozen: true, frozenDuration: v }),
+  STUN: v => ({ stunTurnsRemaining: v }),
+  SILENCE: v => ({ isSilenced: true, silenceDuration: v }),
+  DOOM: v => ({ deathCountdown: v }),
+};
+
+/**
+ * 敵の能力から守られているか。守られていればログを残して true
+ *   - 防護中（GUARD）
+ *   - 性質「重量」: 押す・引く・入れ替えを受けない
+ *   - 性質「反射」: 1回だけ受けずに跳ね返す
+ */
+function guarded(state: RunState, victim: Piece, pos: Position, op?: string, value = 1): boolean {
+  if (victim.owner === state.player) return false;
+  if (victim.hasAbsoluteGuard) {
     log(state, `${victim.word} (${getCellLabel(pos.y, pos.x)}) は防護中のため効果を受けませんでした。`);
+    return true;
+  }
+  const trait = victim.trait?.kind;
+  if (trait === 'HEAVY' && (op === 'PUSH' || op === 'PULL' || op === 'SWAP')) {
+    log(state, `${victim.word} (${getCellLabel(pos.y, pos.x)}) は重すぎてびくともしません！`);
+    return true;
+  }
+  if (state.reflected?.has(victim.id)) return true;
+  if (trait === 'REFLECT' && !victim.traitUsed) {
+    (state.reflected ??= new Set()).add(victim.id);
+    state.board[pos.y][pos.x] = { ...victim, traitUsed: true };
+    const back = op ? REFLECTED[op] : undefined;
+    const self = state.selfPos;
+    const me = self ? state.board[self.y][self.x] : null;
+    if (back && self && me && !me.isKing && me.owner === state.player) {
+      state.board[self.y][self.x] = { ...me, ...back(value) };
+      log(state, `${victim.word} が能力を跳ね返した！ ${me.word} が自分の能力を受けました！`);
+    } else {
+      log(state, `${victim.word} (${getCellLabel(pos.y, pos.x)}) が能力を跳ね返しました！`);
+    }
     return true;
   }
   return false;
@@ -280,12 +321,12 @@ function applyEffect(state: RunState, effect: ProgramEffect, target: ResolvedTar
     case 'DESTROY':
     case 'CAPTURE':
     case 'TRANSFORM_PAWN':
-      if (!victim || (enemyVictim && guarded(state, victim, pos))) return false;
+      if (!victim || (enemyVictim && guarded(state, victim, pos, effect.op, value))) return false;
       return core(state, effect.op, pos, { allowAllies: !enemyVictim });
 
     case 'PUSH':
     case 'PULL': {
-      if (!victim || victim.isKing || isObstacle(victim) || (enemyVictim && guarded(state, victim, pos))) return false;
+      if (!victim || victim.isKing || isObstacle(victim) || (enemyVictim && guarded(state, victim, pos, effect.op, value))) return false;
       const center = state.selfPos ?? state.origin;
       const dy = Math.sign(pos.y - center.y);
       const dx = Math.sign(pos.x - center.x);
@@ -298,7 +339,7 @@ function applyEffect(state: RunState, effect: ProgramEffect, target: ResolvedTar
 
     case 'SWAP': {
       const self = state.selfPos;
-      if (!self || !victim || victim.isKing || isObstacle(victim) || (enemyVictim && guarded(state, victim, pos))) return false;
+      if (!self || !victim || victim.isKing || isObstacle(victim) || (enemyVictim && guarded(state, victim, pos, effect.op, value))) return false;
       board[pos.y][pos.x] = board[self.y][self.x];
       board[self.y][self.x] = victim;
       state.selfPos = pos;
@@ -318,32 +359,32 @@ function applyEffect(state: RunState, effect: ProgramEffect, target: ResolvedTar
 
     // 玉将は凍結・麻痺しない（動けない玉はすぐ取られ、数手で決着してしまう。自動対局で5〜7手の決着が出た）
     case 'FREEZE':
-      if (!victim || victim.isKing || isObstacle(victim) || (enemyVictim && guarded(state, victim, pos))) return false;
+      if (!victim || victim.isKing || isObstacle(victim) || (enemyVictim && guarded(state, victim, pos, effect.op, value))) return false;
       setVictim({ isFrozen: true, frozenDuration: value });
       log(state, `${label} を${value}手番凍結させました！`);
       return true;
 
     case 'STUN':
-      if (!victim || victim.isKing || isObstacle(victim) || (enemyVictim && guarded(state, victim, pos))) return false;
+      if (!victim || victim.isKing || isObstacle(victim) || (enemyVictim && guarded(state, victim, pos, effect.op, value))) return false;
       setVictim({ stunTurnsRemaining: Math.max(victim.stunTurnsRemaining ?? 0, value) });
       log(state, `${label} を${value}手番麻痺させました！`);
       return true;
 
     case 'SILENCE':
-      if (!victim || victim.isKing || isObstacle(victim) || (enemyVictim && guarded(state, victim, pos))) return false;
+      if (!victim || victim.isKing || isObstacle(victim) || (enemyVictim && guarded(state, victim, pos, effect.op, value))) return false;
       setVictim({ isSilenced: true, silenceDuration: value });
       log(state, `${label} の能力を${value}手番封じました！`);
       return true;
 
     case 'CONTROL':
-      if (!victim || !enemyVictim || victim.isKing || isObstacle(victim) || guarded(state, victim, pos)) return false;
+      if (!victim || !enemyVictim || victim.isKing || isObstacle(victim) || guarded(state, victim, pos, effect.op, value)) return false;
       // 手番終了ごとに1減り、0で元の持ち主に戻る。今の手番の終わりの分を足す
       setVictim({ isMindControlled: true, originalPlayer: victim.owner, owner: state.player, isStealth: false, controlDuration: value + 1 });
       log(state, `${label} を${value}手番のあいだ寝返らせました！`);
       return true;
 
     case 'DOOM':
-      if (!victim || victim.isKing || isObstacle(victim) || (enemyVictim && guarded(state, victim, pos))) return false;
+      if (!victim || victim.isKing || isObstacle(victim) || (enemyVictim && guarded(state, victim, pos, effect.op, value))) return false;
       setVictim({ deathCountdown: value });
       log(state, `${label} に${value}手番後に消滅する呪いをかけました！`);
       return true;

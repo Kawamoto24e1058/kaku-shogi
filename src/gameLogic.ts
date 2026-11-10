@@ -192,7 +192,9 @@ export function applyTileEffects(
       const tile = nextTileBoard[r][c];
       if (!tile) continue;
 
-      const p = getBoardPiece(nextBoard, { x: c, y: r });
+      const onTile = getBoardPiece(nextBoard, { x: c, y: r });
+      // 性質「飛行」の駒は、地面の地形（炎・毒沼・氷・隠し罠）の効果を受けない（時限爆弾の爆発は受ける）
+      const p = onTile?.trait?.kind === 'FLYING' ? null : onTile;
       if (tile.effectType === 'FIRE_ZONE') {
         if (p && !p.isKing && p.owner !== tile.ownerPlayer) {
           setBoardPiece(nextBoard, { x: c, y: r }, null);
@@ -414,6 +416,8 @@ export function isStealthPiece(p: any): boolean {
   if (!p) return false;
   if (p.isStealth === false) return false;
   if (p.isStealth === true) return true;
+  // 能力プログラム・性質を持つ新しい駒は、説明文の言葉（透明・潜伏など）では隠れない。隠れるのは能力・性質で姿を消したときだけ
+  if (p.abilities?.length || p.trait) return false;
   const logic = (p.logic_code || (p.promoted_effect?.logic_code) || '').toLowerCase();
   const desc = ((p.isPromoted && p.promoted_effect ? p.promoted_effect.description : p.description) || '').toLowerCase();
   const word = p.word || '';

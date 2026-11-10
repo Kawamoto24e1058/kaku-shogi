@@ -1,8 +1,9 @@
 // 性質（shared/abilityProgram.ts の TRAIT_SPECS）の動き。
 // 対人・CPU・オンライン・自動対局（scripts/simulate-games.ts）で同じ動きになるよう、盤面を受け取って返す関数だけにしている。
 //   - 動かす前: canCommand（暴れ馬・休み中の鈍足は操作できない）/ fickleTarget（気まぐれ）
-//   - 動かした後: markMoved（鈍足の休み）/ applyCaptureTraits（不死身・成長。gameLogic の executeMove から呼ぶ）
-//   - 手番の終わり: chooseWildMove（暴れ馬の行き先）/ endOfTurnTraits（ワープ癖・寿命・鈍足・臆病）
+//   - 動かした後: markMoved（鈍足の休み）/ applyCaptureTraits（不死身・分裂・成長。gameLogic の executeMove から呼ぶ）
+//   - 手番の終わり: chooseWildMove（暴れ馬の行き先）/ endOfTurnTraits（ワープ癖・寿命・鈍足・臆病・透明）
+//   - 能力を受けるとき: 挑発・反射・重量は src/abilityEngine.ts、飛行は gameLogic の applyTileEffects
 import type { Board, GameLog, Piece, Player } from './types';
 import { TRAIT_SPECS, type TraitKind } from '../shared/abilityProgram';
 
@@ -94,6 +95,16 @@ export function applyCaptureTraits(
         continue;
       }
     }
+    // 分裂: 1回だけ、取られた場所の隣の空きマスに分身が残る（本体は普通に取られる）
+    if (traitKind(cap) === 'SPLIT' && !cap.traitUsed && !cap.isKing) {
+      const owner = opponent(player);
+      const cell = cellsAround(to[0], to[1], 1).find(([cy, cx]) => !next[cy][cx]);
+      if (cell) {
+        next = next === board ? board.map(r => [...r]) : next;
+        next[cell[0]][cell[1]] = { ...cap, id: `${cap.id}_split`, owner, isPromoted: false, traitUsed: true, coolDownTurnsRemaining: 0, isStealth: false, isRevealed: true };
+        logs.push({ player: owner, message: `【分裂】「${cap.word}」は取られる直前に分裂し、分身が残りました！`, type: 'ability' });
+      }
+    }
     kept.push(cap);
   }
   // 成長: 取るたびに移動範囲が広がる（2段階まで）
@@ -133,6 +144,7 @@ function findHomeCell(board: Board, owner: Player): [number, number] | null {
  *   - ワープ癖（player の駒）: 周囲2マスの空きマスへ瞬間移動
  *   - 寿命（player の駒）: 残りを1減らし、0で消える
  *   - 鈍足（player の駒）: 休みを1減らす
+ *   - 透明（player の駒）: 隣に敵がいなければ姿を消す
  *   - 臆病（相手の駒）: player の駒が隣にいれば、1マス逃げる
  */
 export function endOfTurnTraits(board: Board, player: Player, random: () => number = Math.random): { board: Board; logs: Omit<GameLog, 'id' | 'timestamp'>[] } {
@@ -156,6 +168,12 @@ export function endOfTurnTraits(board: Board, player: Player, random: () => numb
         next[y][x] = { ...p, traitLife: life };
       } else if (kind === 'SLOW' && (p.traitRest ?? 0) > 0) {
         next[y][x] = { ...p, traitRest: (p.traitRest ?? 0) - 1 };
+      } else if (kind === 'INVISIBLE') {
+        const enemyNear = cellsAround(y, x, 1).some(([cy, cx]) => { const q = next[cy][cx]; return !!q && q.owner !== player && !isObstacle(q); });
+        if (!enemyNear && !p.isStealth) {
+          next[y][x] = { ...p, isStealth: true, isRevealed: false };
+          logs.push({ player, message: `【透明】「${p.word}」が姿を消しました。`, type: 'ability' });
+        }
       } else if (kind === 'WARP') {
         const empties = cellsAround(y, x, 2).filter(([cy, cx]) => !next[cy][cx]);
         if (empties.length) {

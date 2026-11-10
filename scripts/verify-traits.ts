@@ -4,7 +4,7 @@ import { normalizeTrait, applyTraitBalance, describeTrait, normalizeAbilityProgr
 import { canCommand, chooseWildMove, endOfTurnTraits, fickleTarget, markMoved } from '../src/traits';
 
 (globalThis as { localStorage?: unknown }).localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
-const { initializeBoard, executeMove } = await import('../src/gameLogic');
+const { initializeBoard, executeMove, applyAutomatedEffect, applyTileEffects, createEmptyTileBoard, isStealthPiece } = await import('../src/gameLogic');
 
 let failed = 0;
 const check = (ok: boolean, label: string, detail = '') => {
@@ -111,6 +111,81 @@ const withKings = (b: Board) => { b[8][0] = { ...template[8][4]!, id: 'sk' }; b[
   const grown = res.board[3][4]!;
   const cells = (grown.range_geometry?.normal_grid ?? '').split('').filter(c => c === '1').length;
   check(grown.traitLevel === 1 && cells >= 8, '成長は敵を取ると移動範囲が広がる', `動けるマス ${cells}`);
+}
+
+// ===== 追加の性質 =====
+const program = (op: string, area = 'RADIUS_2', value = 2) => normalizeAbilityPrograms([{ trigger: 'ON_MOVE', target: { area, who: 'ENEMY', pick: 'NEAREST', count: 1 }, effects: [{ op, value }], cooldown: 2 }])!;
+const caster = (op: string, area?: string, value?: number) => mk('sente', 'caster', { abilities: program(op, area, value) });
+
+{
+  const b = withKings(empty());
+  b[4][4] = caster('FREEZE');
+  b[3][4] = mk('gote', 'near');
+  b[2][6] = mk('gote', 'taunt', { trait: { kind: 'TAUNT' } });
+  const res = applyAutomatedEffect(b, [4, 4], 'ON_MOVE', 'sente', []);
+  check(!!res.board[2][6]?.isFrozen && !res.board[3][4]?.isFrozen, '挑発: 近くの敵より先に、挑発の駒が狙われる');
+}
+
+{
+  const b = withKings(empty());
+  b[4][4] = caster('FREEZE');
+  b[3][4] = mk('gote', 'mirror', { trait: { kind: 'REFLECT' } });
+  const res = applyAutomatedEffect(b, [4, 4], 'ON_MOVE', 'sente', []);
+  check(!res.board[3][4]?.isFrozen && !!res.board[4][4]?.isFrozen && res.board[3][4]?.traitUsed === true, '反射: 凍結を跳ね返し、使った駒が凍る');
+  const b2 = res.board.map(r => [...r]);
+  b2[4][4] = caster('FREEZE');
+  const res2 = applyAutomatedEffect(b2, [4, 4], 'ON_MOVE', 'sente', []);
+  check(!!res2.board[3][4]?.isFrozen, '反射は1回だけ（2回目は効く）');
+  const b3 = withKings(empty());
+  b3[4][4] = mk('sente', 'caster2', { abilities: normalizeAbilityPrograms([{ trigger: 'ON_MOVE', target: { area: 'ADJACENT', who: 'ENEMY', pick: 'NEAREST', count: 1 }, effects: [{ op: 'STUN', value: 1 }, { op: 'DESTROY' }], cooldown: 3 }])! });
+  b3[3][4] = mk('gote', 'mirror', { trait: { kind: 'REFLECT' } });
+  const res3 = applyAutomatedEffect(b3, [4, 4], 'ON_MOVE', 'sente', []);
+  check(!!res3.board[3][4], '反射: 同じ発動の残りの効果（消滅）も受けない');
+}
+
+{
+  const b = withKings(empty());
+  b[4][4] = caster('PUSH', 'ADJACENT', 2);
+  b[3][4] = mk('gote', 'heavy', { trait: { kind: 'HEAVY' } });
+  const res = applyAutomatedEffect(b, [4, 4], 'ON_MOVE', 'sente', []);
+  check(res.board[3][4]?.id === 'heavy', '重量: 押し出されない');
+  const b2 = withKings(empty());
+  b2[4][4] = caster('FREEZE', 'ADJACENT');
+  b2[3][4] = mk('gote', 'heavy', { trait: { kind: 'HEAVY' } });
+  check(!!applyAutomatedEffect(b2, [4, 4], 'ON_MOVE', 'sente', []).board[3][4]?.isFrozen, '重量でも、凍結などは普通に受ける');
+}
+
+{
+  const b = withKings(empty());
+  b[4][4] = mk('gote', 'bird', { trait: { kind: 'FLYING' } });
+  b[4][6] = mk('gote', 'walker');
+  const tiles = createEmptyTileBoard();
+  tiles[4][4] = { effectType: 'FIRE_ZONE', ownerPlayer: 'sente', duration: 3 } as never;
+  tiles[4][6] = { effectType: 'FIRE_ZONE', ownerPlayer: 'sente', duration: 3 } as never;
+  const res = applyTileEffects(b, tiles, 'sente', []);
+  check(!!res.board[4][4] && !res.board[4][6], '飛行: 炎上マスの上でも燃えない（飛行でない駒は燃える）');
+}
+
+{
+  const b = withKings(empty());
+  b[4][4] = mk('sente', 'attacker');
+  b[3][4] = mk('gote', 'slime', { trait: { kind: 'SPLIT' } });
+  const res = executeMove(b, [4, 4], [3, 4], 'sente', false);
+  const clone = res.board.flat().find(p => p?.id === 'slime_split');
+  check(!!res.capturedPiece && !!clone && clone.owner === 'gote' && clone.traitUsed === true, '分裂: 本体は取られ、隣に分身が残る');
+}
+
+{
+  let b = withKings(empty());
+  b[4][4] = mk('sente', 'ghost', { trait: { kind: 'INVISIBLE' } });
+  b = endOfTurnTraits(b, 'sente').board;
+  check(!!b[4][4]?.isStealth && isStealthPiece(b[4][4]), '透明: 敵が隣にいなければ姿を消す');
+  let b2 = withKings(empty());
+  b2[4][4] = mk('sente', 'ghost', { trait: { kind: 'INVISIBLE' } });
+  b2[3][4] = mk('gote', 'watcher');
+  b2 = endOfTurnTraits(b2, 'sente').board;
+  check(!b2[4][4]?.isStealth, '透明: 敵が隣にいると姿を消せない');
+  check(!isStealthPiece(mk('sente', 'x', { description: '透明なステルス', abilities: program('FREEZE') })), '説明文に「透明」とあるだけの駒は隠れない');
 }
 
 console.log(failed ? `\n${failed} 件失敗` : '\nすべて成功');

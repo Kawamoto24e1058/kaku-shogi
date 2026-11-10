@@ -438,7 +438,7 @@ export function describeAbilities(list: AbilityProgram[], mode: AbilityMode = 'S
 }
 
 // ===== 性質（ずっと働く、駒の動き方そのものの特徴。能力の一種として、発動の能力と組み合わせて持てる） =====
-export const TRAIT_KINDS = ['WILD', 'FICKLE', 'WARP', 'UNDYING', 'GROWTH', 'LIFESPAN', 'SLOW', 'COWARD'] as const;
+export const TRAIT_KINDS = ['WILD', 'FICKLE', 'WARP', 'UNDYING', 'GROWTH', 'LIFESPAN', 'SLOW', 'COWARD', 'FLYING', 'TAUNT', 'SPLIT', 'REFLECT', 'HEAVY', 'INVISIBLE'] as const;
 export type TraitKind = typeof TRAIT_KINDS[number];
 
 export interface PieceTrait {
@@ -469,6 +469,12 @@ export const TRAIT_SPECS: Record<TraitKind, TraitSpec> = {
   LIFESPAN: { label: '寿命', text: '盤上に出てから自分の手番{n}回で消える', value: [3, 8, 5], cooldownDelta: -2 },
   SLOW: { label: '鈍足', text: '一度動くと、次の自分の手番は休み（2手番に1回しか動けない）', cooldownDelta: -2 },
   COWARD: { label: '臆病', text: '敵が隣に来ると、相手の手番の終わりに自動で1マス逃げる', cooldownDelta: 0 },
+  FLYING: { label: '飛行', text: '空を飛ぶので、地形（炎・毒沼・氷・隠し罠）の効果を受けない', cooldownDelta: 0 },
+  TAUNT: { label: '挑発', text: '敵の能力は、届く範囲にこの駒がいれば必ずこの駒を先に狙う（味方の身代わりになる）', cooldownDelta: -1 },
+  SPLIT: { label: '分裂', text: '1回だけ、取られると隣の空きマスに分身が残る（本体は普通に取られる）', cooldownDelta: 1 },
+  REFLECT: { label: '反射', text: '1回だけ、敵の能力を受けずに跳ね返す（凍結・麻痺・封印・呪いは使った駒に返る）', cooldownDelta: 2 },
+  HEAVY: { label: '重量', text: '重すぎて、敵の能力で押す・引く・入れ替えることができない', cooldownDelta: 0 },
+  INVISIBLE: { label: '透明', text: '自分の手番の終わりに、隣に敵がいなければ姿を消す（相手からは見えない。取ったり取られたりすると姿を現す）', cooldownDelta: 1 },
 };
 
 /** AI の出力（trait: { kind, value } / "WILD" / 日本語の名前）を読む。性質なしなら null */
