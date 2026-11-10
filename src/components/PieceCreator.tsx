@@ -476,7 +476,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
                   ⚠ 不適切な内容を報告
                 </button>
               )}
-              {piece.abilities?.length ? <div style={{ margin: '8px 0 44px' }}><ProgramAbilityList piece={piece as Piece} /></div> : null}
+              {piece.abilities?.length || piece.trait ? <div style={{ margin: '8px 0 44px' }}><ProgramAbilityList piece={piece as Piece} /></div> : null}
               <button
                 onClick={() => openXShare(`「${piece.word}」から能力駒《${piece.effect_name}》が生まれた！\n${piece.ability_genre || ''}`)}
                 style={{

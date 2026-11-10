@@ -436,3 +436,66 @@ export function describeAbilities(list: AbilityProgram[], mode: AbilityMode = 'S
   if (mode === 'RANDOM' && list.length > 1) return ['発動のたびに、次のうち1つがランダムに選ばれる（選ばれた能力の充填中は、どれも使えない）', ...lines].join('\n');
   return lines.join('\n');
 }
+
+// ===== 性質（ずっと働く、駒の動き方そのものの特徴。能力の一種として、発動の能力と組み合わせて持てる） =====
+export const TRAIT_KINDS = ['WILD', 'FICKLE', 'WARP', 'UNDYING', 'GROWTH', 'LIFESPAN', 'SLOW', 'COWARD'] as const;
+export type TraitKind = typeof TRAIT_KINDS[number];
+
+export interface PieceTrait {
+  kind: TraitKind;
+  /** 寿命の手番数など（性質によって使わない） */
+  value?: number;
+}
+
+interface TraitSpec {
+  label: string;
+  /** 説明（{n} は value） */
+  text: string;
+  /** value の範囲と既定値 [最小, 最大, 既定] */
+  value?: [number, number, number];
+  /**
+   * 発動の能力の充填手番に足す数。弱点になる性質（操作できない・寿命など）は短くし、
+   * 得をする性質（不死身・成長）は長くして釣り合いを取る
+   */
+  cooldownDelta: number;
+}
+
+export const TRAIT_SPECS: Record<TraitKind, TraitSpec> = {
+  WILD: { label: '暴れ馬', text: '操作できない。自分の手番の終わりに、敵に向かって勝手に動く（取れる敵がいれば取りにいく）', cooldownDelta: -2 },
+  FICKLE: { label: '気まぐれ', text: '動かすと、3回に1回くらい指示とは別のマスへ動いてしまう', cooldownDelta: -1 },
+  WARP: { label: 'ワープ癖', text: '自分の手番の終わりに、周囲2マスの空きマスへ勝手に瞬間移動する', cooldownDelta: 0 },
+  UNDYING: { label: '不死身', text: '1回だけ、取られても自陣の空きマスによみがえる', cooldownDelta: 2 },
+  GROWTH: { label: '成長', text: '敵を取るたびに移動範囲が広がる（2段階まで）', cooldownDelta: 1 },
+  LIFESPAN: { label: '寿命', text: '盤上に出てから自分の手番{n}回で消える', value: [3, 8, 5], cooldownDelta: -2 },
+  SLOW: { label: '鈍足', text: '一度動くと、次の自分の手番は休み（2手番に1回しか動けない）', cooldownDelta: -2 },
+  COWARD: { label: '臆病', text: '敵が隣に来ると、相手の手番の終わりに自動で1マス逃げる', cooldownDelta: 0 },
+};
+
+/** AI の出力（trait: { kind, value } / "WILD" / 日本語の名前）を読む。性質なしなら null */
+export function normalizeTrait(raw: unknown): PieceTrait | null {
+  if (!raw) return null;
+  const obj = (typeof raw === 'object' ? raw : { kind: raw }) as Record<string, unknown>;
+  const name = String(obj.kind ?? obj.type ?? '').trim();
+  const kind = (TRAIT_KINDS as readonly string[]).includes(name.toUpperCase())
+    ? name.toUpperCase() as TraitKind
+    : TRAIT_KINDS.find(k => TRAIT_SPECS[k].label === name);
+  if (!kind) return null;
+  const spec = TRAIT_SPECS[kind];
+  const trait: PieceTrait = { kind };
+  if (spec.value) trait.value = clamp(asInt(obj.value, spec.value[2]), spec.value[0], spec.value[1]);
+  return trait;
+}
+
+/** 性質の説明（能力一覧・説明文用） */
+export function describeTrait(trait: PieceTrait): string {
+  const spec = TRAIT_SPECS[trait.kind];
+  return `【性質：${spec.label}】${spec.text.replace('{n}', String(trait.value ?? spec.value?.[2] ?? ''))}`;
+}
+
+/** 性質に合わせて、発動の能力の充填手番を調整する（1ゲーム1回の能力はそのまま） */
+export function applyTraitBalance(abilities: AbilityProgram[], trait: PieceTrait | null): AbilityProgram[] {
+  if (!trait) return abilities;
+  const delta = TRAIT_SPECS[trait.kind].cooldownDelta;
+  if (!delta) return abilities;
+  return abilities.map(a => (a.cooldown >= 99 ? a : { ...a, cooldown: Math.max(0, Math.min(8, a.cooldown + delta)) }));
+}

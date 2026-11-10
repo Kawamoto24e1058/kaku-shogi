@@ -1,6 +1,7 @@
 import type { Board, Piece, Player, GameLog, AbilityEvent, AbilitySpec, CustomAbility, Position, TileEffectType, TileState, ActivationType } from './types';
 import { decrementCacheUses } from './aiGenerator';
 import { programTriggerMatches, runAbilityPrograms } from './abilityEngine';
+import { applyCaptureTraits } from './traits';
 
 export const BOARD_SIZE = 9;
 
@@ -1393,7 +1394,36 @@ function pushPiece(
   return nextBoard;
 }
 
+/**
+ * 駒を動かす（取る・能力の連鎖を含む）。性質のうち、取ったとき・取られたときに働くもの（不死身・成長）を
+ * ここで当てはめるので、対人・CPU・オンライン・自動対局のどこから動かしても同じ結果になる
+ */
 export function executeMove(
+  board: Board,
+  from: [number, number],
+  to: [number, number],
+  player: Player,
+  promote: boolean = false,
+  playerNames?: { sente: string; gote: string },
+  vsAiMode?: boolean,
+  isManual: boolean = false,
+  capturedPieces?: { sente: Piece[]; gote: Piece[] }
+): MoveResult {
+  const res = executeMoveCore(board, from, to, player, promote, playerNames, vsAiMode, isManual, capturedPieces);
+  const captured = res.capturedPieces?.length ? res.capturedPieces : res.capturedPiece ? [res.capturedPiece] : [];
+  if (!captured.length) return res;
+  const traits = applyCaptureTraits(res.board, captured, to, player);
+  if (traits.board === res.board && traits.captured.length === captured.length) return res;
+  return {
+    ...res,
+    board: traits.board,
+    capturedPiece: res.capturedPiece && traits.captured.includes(res.capturedPiece) ? res.capturedPiece : traits.captured[0] ?? null,
+    capturedPieces: res.capturedPieces ? traits.captured : res.capturedPieces,
+    logs: [...res.logs, ...traits.logs],
+  };
+}
+
+function executeMoveCore(
   board: Board,
   from: [number, number],
   to: [number, number],
