@@ -1,6 +1,6 @@
 import type { PieceData } from './types';
 import { AREA_SHAPES, normalizeActions } from '../shared/abilityCatalog';
-import { buildOfflinePiece } from './offlineGenerator';
+import { buildOfflinePiece, pickArchetype } from './offlineGenerator';
 import { wordKey } from '../shared/wordKey';
 import { containsNgWord, pieceHasNgText } from '../shared/moderation';
 import { normalizeAbilityPrograms, normalizeAbilityMode, describeAbilities, normalizeAppearance } from '../shared/abilityProgram';
@@ -141,10 +141,10 @@ export async function clearAllCustomPieceCache(): Promise<number> {
  * 説明文と実際の効果が一致する、エンジンで動作確認済みの能力型から組み立てる。
  * 簡易生成の結果はキャッシュしない（後でAI生成が使えるようになったときに上書きを妨げないため）。
  */
-export function generateOfflinePiece(word: string): PieceData {
+export function generateOfflinePiece(word: string, reference?: string | null): PieceData {
   const cached = getFromCache(word);
   if (cached) return cached;
-  return sanitizePieceData(buildOfflinePiece(word), word);
+  return sanitizePieceData(buildOfflinePiece(word, pickArchetype(word, reference), reference), word);
 }
 
 export type PieceSource = 'cache' | 'ai' | 'similar' | 'offline' | 'blocked';
@@ -297,7 +297,9 @@ export async function generatePieceWithSource(word: string, onPartial?: (partial
     }
     if (body?.blocked) throw new BlockedWordError(String(body.error ?? 'その単語は使えません。'));
     const notice = (typeof body?.error === 'string' && body.error) || `AI生成サーバーが応答しませんでした (${status})`;
-    return { piece: generateOfflinePiece(trimmed), source: 'offline', notice };
+    // サーバーが調べた参考情報（Wikipedia の要約）があれば、単語の意味に合う仮の駒にする
+    const reference = typeof body?.reference === 'string' ? body.reference : null;
+    return { piece: generateOfflinePiece(trimmed, reference), source: 'offline', notice };
   } catch (error) {
     if (error instanceof BlockedWordError) throw error;
     console.error('[generate-piece] request failed:', error);

@@ -168,6 +168,24 @@ export type OnText = (textSoFar: string) => void;
  */
 export type OnRawStream = (stream: ReadableStream<Uint8Array>) => void;
 
+/**
+ * AIの出力ストリームを二つに分け、片方はそのままブラウザへ（onRaw）、もう片方をサーバーで最後に一度だけ読む。
+ * どちらも JavaScript で塊ごとに触らないので、Workers の無料プランの CPU 時間に収まる。
+ * サーバー側を tee の枝から直接 Response.text() で読むと大きな単位でまとめて読まれ、ブラウザ側まで数秒止まるため、
+ * IdentityTransformStream を挟んで届いた分ずつ流れるようにしている
+ */
+async function relayAndReadSSE(stream: ReadableStream<Uint8Array>, onRaw: OnRawStream): Promise<string> {
+  const [toClient, toServer] = stream.tee();
+  onRaw(toClient);
+  const Identity = (globalThis as { IdentityTransformStream?: new () => TransformStream<Uint8Array, Uint8Array> }).IdentityTransformStream;
+  if (!Identity) return textFromSSE(await new Response(toServer).text());
+  const relay = new Identity();
+  const piping = toServer.pipeTo(relay.writable).catch(() => undefined);
+  const body = await new Response(relay.readable).text();
+  await piping;
+  return textFromSSE(body);
+}
+
 /** SSE の全文から、AIが書いた文章をつなげて取り出す（OpenAI 互換・Workers AI 独自のどちらの形にも対応） */
 export function textFromSSE(sse: string): string {
   // 1行ごとに全体を JSON.parse すると（数百行ある）CPU 時間がかかるので、文字の部分だけを取り出して読む
@@ -185,7 +203,7 @@ export function textFromSSE(sse: string): string {
 
 /** OpenAI 互換の chat/completions を呼ぶ。JSONモードに非対応のモデルなら(400)、指定なしで再試行する。
  * onText があれば stream: true で受け取り、届いた分を順に渡す（生成中の駒を少しずつ見せるため） */
-async function callOpenAICompatible(config: OpenAICompatibleConfig, words: string[], deadline: number, onText?: OnText, references?: (string | null)[]): Promise<Json[]> {
+async function callOpenAICompatible(config: OpenAICompatibleConfig, words: string[], deadline: number, onText?: OnText, references?: (string | null)[], onRaw?: OnRawStream): Promise<Json[]> {
   const call = async (jsonMode: boolean) => {
     const body = JSON.stringify({
       model: config.model,
@@ -193,12 +211,14 @@ async function callOpenAICompatible(config: OpenAICompatibleConfig, words: strin
       ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
       temperature: 0.9,
       max_tokens: OUTPUT_TOKENS_PER_PIECE * words.length,
-      ...(onText ? { stream: true } : {}),
+      ...(onText || onRaw ? { stream: true } : {}),
       ...(config.extraBody || {}),
     });
     const url = `${config.baseUrl.replace(/\/$/, '')}/chat/completions`;
     const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}`, ...(config.extraHeaders || {}) };
-    const text = onText
+    const text = onRaw
+      ? await relayFromFetch(url, { method: 'POST', headers, body }, callTimeout(words, deadline), onRaw)
+      : onText
       ? await streamText(url, { method: 'POST', headers, body }, callTimeout(words, deadline), onText)
       : ((await fetchJson(url, { method: 'POST', headers, body }, callTimeout(words, deadline)) as { choices?: { message?: { content?: string } }[] })
         .choices?.[0]?.message?.content || '');
@@ -210,6 +230,22 @@ async function callOpenAICompatible(config: OpenAICompatibleConfig, words: strin
   } catch (err) {
     if (err instanceof ProviderError && err.status === 400) return call(false);
     throw err;
+  }
+}
+
+/** fetch の応答（SSE）を、ブラウザへそのまま流しつつサーバーでも読む（relayAndReadSSE） */
+async function relayFromFetch(url: string, init: RequestInit, timeoutMs: number, onRaw: OnRawStream): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    if (!res.ok || !res.body) {
+      const detail = await res.text().catch(() => '');
+      throw new ProviderError(`${new URL(url).host} returned ${res.status}: ${detail.slice(0, 300)}`, res.status);
+    }
+    return await relayAndReadSSE(res.body, onRaw);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -301,20 +337,7 @@ async function callWorkersAIBinding(binding: WorkersAIBinding, model: string, wo
       }
       if (result instanceof ReadableStream) {
         const stream = result as ReadableStream<Uint8Array>;
-        if (onRaw) {
-          // 片方はそのままブラウザへ流し、もう片方はサーバーで検証・保存用に読む。どちらも JavaScript で塊ごとに触らない。
-          // サーバー側を tee の枝から直接 Response.text() で読むと、大きな単位でまとめて読まれてブラウザ側まで
-          // 数秒止まるため、IdentityTransformStream を挟んで届いた分ずつ流れるようにしている
-          const [toClient, toServer] = stream.tee();
-          onRaw(toClient);
-          const Identity = (globalThis as { IdentityTransformStream?: new () => TransformStream<Uint8Array, Uint8Array> }).IdentityTransformStream;
-          if (!Identity) return textFromSSE(await new Response(toServer).text());
-          const relay = new Identity();
-          const piping = toServer.pipeTo(relay.writable).catch(() => undefined);
-          const body = await new Response(relay.readable).text();
-          await piping;
-          return textFromSSE(body);
-        }
+        if (onRaw) return relayAndReadSSE(stream, onRaw);
         return textFromSSE(await new Response(stream).text());
       }
       return bindingText(result);
@@ -347,14 +370,14 @@ export function configuredProviders(): Provider[] {
     const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/ai/v1`;
     for (const model of [WORKERS_AI_MODEL, WORKERS_AI_FALLBACK_MODEL].filter((m, i, all) => m && all.indexOf(m) === i)) {
       const extraBody = WORKERS_AI_THINKING ? undefined : { chat_template_kwargs: { enable_thinking: false } };
-      providers.push({ name: `workers-ai:${model}`, run: (w, d = Infinity, t, _r, refs) => callOpenAICompatible({ baseUrl, apiKey: cfToken, model, extraBody, extraHeaders: WORKERS_AI_AFFINITY }, w, d, t, refs) });
+      providers.push({ name: `workers-ai:${model}`, run: (w, d = Infinity, t, r, refs) => callOpenAICompatible({ baseUrl, apiKey: cfToken, model, extraBody, extraHeaders: WORKERS_AI_AFFINITY }, w, d, t, refs, r) });
     }
   }
 
   const fb = { baseUrl: process.env.FALLBACK_LLM_BASE_URL, apiKey: process.env.FALLBACK_LLM_API_KEY, model: process.env.FALLBACK_LLM_MODEL };
   if (fb.baseUrl && fb.apiKey && fb.model) {
     const config = fb as OpenAICompatibleConfig;
-    providers.push({ name: `fallback:${config.model}`, run: (w, d = Infinity, t, _r, refs) => callOpenAICompatible(config, w, d, t, refs) });
+    providers.push({ name: `fallback:${config.model}`, run: (w, d = Infinity, t, r, refs) => callOpenAICompatible(config, w, d, t, refs, r) });
   }
 
   const geminiKey = process.env.GEMINI_API_KEY;
@@ -389,9 +412,14 @@ function isTransient(err: unknown): boolean {
  */
 const exhaustedUntil = new Map<string, number>();
 
+/** 無料枠を使い切ったことによる失敗か（呼び出し側で「今日の枠が終わった」と案内するため） */
+export function isQuotaExhausted(err: unknown): boolean {
+  return isDailyQuotaError(err);
+}
+
 function isDailyQuotaError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : '';
-  return /daily free allocation|neurons|4006|quota/i.test(message) && (!(err instanceof ProviderError) || [429, 403, 400].includes(err.status ?? 0));
+  return /free allocation|neurons|4006|quota/i.test(message) && (!(err instanceof ProviderError) || [429, 403, 400].includes(err.status ?? 0));
 }
 
 function nextUtcMidnight(): number {
