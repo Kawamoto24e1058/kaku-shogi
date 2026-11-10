@@ -216,9 +216,43 @@ function matchArchetype(word: string): Archetype | null {
   return best ? best.a : null;
 }
 
-/** キーワード辞書で能力型を選ぶ。該当しなければ単語から決まる疑似ランダムで選ぶ（同じ単語なら毎回同じ型） */
-export function pickArchetype(word: string): Archetype {
-  return matchArchetype(word) ?? ARCHETYPES[hashWord(word) % ARCHETYPES.length];
+/**
+ * 参考情報（Wikipedia の要約）に出てくる言葉から能力型を選ぶ。単語そのものより弱い手がかりなので、
+ * 一致したキーワードの数と長さで点数を付け、いちばん多く当てはまる型を選ぶ
+ */
+const REFERENCE_KEYWORDS: Record<string, string[]> = {
+  swarm: ['集団', 'グループ', 'ファン', 'チーム', 'バンド', 'アイドル', '群れ', '組織'],
+  gamble: ['お笑い', '芸人', 'コント', 'ギャグ', '漫才', 'タレント', '遊び', 'ゲーム'],
+  rush: ['競走馬', '競馬', 'レース', '鉄道', '列車', '自動車', '陸上', 'スポーツ'],
+  beast: ['動物', '哺乳類', '鳥類', '魚類', '昆虫', '爬虫類'],
+  blade: ['武将', '戦国', '軍人', '格闘', 'プロレス', 'ボクシング', '剣士', '戦争'],
+  blessing: ['神話', '女神', '宗教', '医師', '食品', '料理', '菓子', '飲料'],
+  shadow: ['忍者', '怪談', '妖怪', 'ホラー', '都市伝説'],
+  thunder: ['電子', 'コンピュータ', 'ソフトウェア', 'インターネット', '動画', '配信'],
+  thief: ['企業', '経済', '金融', '商品', 'ブランド'],
+  fortress: ['建築', '建物', '防衛', '要塞'],
+  gravity: ['天体', '天文', '物理'],
+  time: ['時代', '歴史上'],
+};
+
+function matchArchetypeInReference(reference: string): Archetype | null {
+  let best: { a: Archetype; score: number } | null = null;
+  for (const a of ARCHETYPES) {
+    const words = [...a.keywords, ...(REFERENCE_KEYWORDS[a.key] ?? [])];
+    const score = words.reduce((sum, kw) => sum + (reference.includes(kw) ? kw.length : 0), 0);
+    if (score > 0 && (!best || score > best.score)) best = { a, score };
+  }
+  return best ? best.a : null;
+}
+
+/**
+ * キーワード辞書で能力型を選ぶ。単語そのもの → 参考情報（Wikipedia の要約）の順に探し、
+ * どちらにも無ければ単語から決まる疑似ランダムで選ぶ（同じ単語なら毎回同じ型）
+ */
+export function pickArchetype(word: string, reference?: string | null): Archetype {
+  return matchArchetype(word)
+    ?? (reference ? matchArchetypeInReference(reference) : null)
+    ?? ARCHETYPES[hashWord(word) % ARCHETYPES.length];
 }
 
 export const OFFLINE_ARCHETYPES: readonly Archetype[] = ARCHETYPES;
@@ -229,7 +263,11 @@ const TRIGGER_TEXT: Record<string, string> = {
   ON_TAKEN: '自身が敵に取られた瞬間（自動発動）',
 };
 
-export function buildOfflinePiece(word: string, archetype: Archetype = pickArchetype(word)): PieceData {
+/**
+ * reference: 単語の参考情報（Wikipedia の要約）。あれば能力型の選び方と説明に使う。
+ * AIが使えないとき（その日の無料枠を使い切ったときなど）の仮の駒で、AI版ができると置き換わる
+ */
+export function buildOfflinePiece(word: string, archetype: Archetype = pickArchetype(word), reference?: string | null): PieceData {
   const a = archetype;
   const name = a.names[hashWord(word) % a.names.length];
   const limitText = a.oncePerGame
@@ -283,8 +321,11 @@ export function buildOfflinePiece(word: string, archetype: Archetype = pickArche
       visual_effect: visual,
     },
     logic_code: 'normal',
-    deep_search_analysis: matchArchetype(word) === a
-      ? `「${word}」を「${a.category}」系の言葉と判定し、その性質に合う能力型を割り当てました（簡易生成）。`
-      : `「${word}」に合うキーワードが見つからなかったため、能力型を自動で割り当てました（簡易生成）。`,
+    deep_search_analysis: `${matchArchetype(word) === a
+      ? `「${word}」を「${a.category}」系の言葉と判断しました。`
+      : reference && matchArchetypeInReference(reference) === a
+        ? `「${word}」を参考情報（${[...reference].slice(0, 40).join('')}…）から「${a.category}」系と判断しました。`
+        : `「${word}」に合う型が見つからなかったため、仮の能力型を割り当てました。`
+    }AIが使えなかったための仮の駒です（AI版は後で自動で作られます）。`,
   };
 }

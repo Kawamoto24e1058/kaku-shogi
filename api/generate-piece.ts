@@ -8,7 +8,7 @@
 // どれも使えない場合はエラーを返し（ブラウザ側で簡易生成に切り替わる）、単語を待ち行列に積む。
 // 待ち行列は worker/index.ts の Cron Trigger（1日1回）がAI生成して共有キャッシュに登録する。
 import { createHash } from 'node:crypto';
-import { generatePiece, NoProviderError, type Json, type OnRawStream } from './_lib/generator.js';
+import { generatePiece, isQuotaExhausted, NoProviderError, type Json, type OnRawStream } from './_lib/generator.js';
 import { consumeSharedQuota, enqueueWord, findSimilarPiece, getCachedPiece, saveCachedPiece, storeConfigured } from './_lib/pieceCache.js';
 import { wordKey } from '../shared/wordKey.js';
 import { containsNgWord, pieceHasNgText, setExtraNgWords } from '../shared/moderation.js';
@@ -168,10 +168,12 @@ function generateShared(key: string, word: string, deadline: number, onPartial?:
 
 /**
  * AI生成できなかったときの代替。単語を待ち行列に積み（後でバックフィルがAI版を作る）、
- * 近い単語のAI駒があればそれを流用して返す。無ければエラーを返し、ブラウザ側の簡易生成に任せる。
+ * 近い単語のAI駒があればそれを流用して返す。無ければエラーと一緒に参考情報（Wikipedia の要約）を返し、
+ * ブラウザ側の簡易生成が単語の意味に合う能力型を選べるようにする。
  */
-async function fallbackResponse(key: string, word: string, status: number, reason: string): Promise<Response> {
+async function fallbackResponse(key: string, word: string, status: number, reason: string, reference?: Promise<string | null>): Promise<Response> {
   const queued = storeConfigured();
+  const ref = reference ? await reference.catch(() => null) : null;
   if (queued) {
     try {
       await enqueueWord(key, word);
@@ -187,7 +189,11 @@ async function fallbackResponse(key: string, word: string, status: number, reaso
       console.warn('[generate-piece] fallback lookup failed:', err);
     }
   }
-  return json(status, { error: `${reason}、簡易生成で作成しました。${queued ? '「' + word + '」のAI版は後で登録されます。' : ''}`, queued });
+  return json(status, {
+    error: `${reason}、仮の駒（簡易生成）で作成しました。${queued ? '「' + word + '」のAI版は後で自動で登録されます。' : ''}`,
+    queued,
+    ...(ref ? { reference: ref } : {}),
+  });
 }
 
 /**
@@ -319,11 +325,11 @@ async function handleRequest(request: Request, onPartial?: OnPartial, onRaw?: On
   }
 
   // 緊急スイッチ: AI生成を止めている間は、キャッシュ・近い単語・簡易生成だけで動かす
-  if (!featureFlags().aiGeneration) return fallbackResponse(key, word, 503, '現在AI生成を一時停止しているため');
+  if (!featureFlags().aiGeneration) return fallbackResponse(key, word, 503, '現在AI生成を一時停止しているため', reference);
 
   const quota = await consumeQuota(request);
-  if (quota === 'ip') return fallbackResponse(key, word, 429, 'AI生成の回数制限に達したため');
-  if (quota === 'global') return fallbackResponse(key, word, 429, '本日のAI生成枠が混雑しているため');
+  if (quota === 'ip') return fallbackResponse(key, word, 429, 'AI生成の回数制限に達したため', reference);
+  if (quota === 'global') return fallbackResponse(key, word, 429, '本日のAI生成枠が混雑しているため', reference);
 
   try {
     const { piece } = await generateShared(key, word, startedAt + AI_BUDGET_MS, onPartial, onRaw, reference);
@@ -336,7 +342,7 @@ async function handleRequest(request: Request, onPartial?: OnPartial, onRaw?: On
       return json(503, { error: 'AI生成サーバーが未設定のため、簡易生成で作成しました。' });
     }
     console.error('[generate-piece] all providers failed:', (err as Error).message);
-    return fallbackResponse(key, word, 502, 'AIが混雑しているため');
+    return fallbackResponse(key, word, 502, isQuotaExhausted(err) ? '本日の無料AI枠を使い切ったため' : 'AIが混雑しているため', reference);
   }
 }
 
