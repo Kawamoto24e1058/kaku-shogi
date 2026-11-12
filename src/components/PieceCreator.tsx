@@ -19,14 +19,6 @@ const MiniRange: React.FC<{ grid: string; color: string }> = ({ grid, color }) =
   </div>
 );
 
-const SCAN_STAGES = [
-  '深層概念マトリクス結合中...',
-  '主観的意図をマッピング中...',
-  'ゲームマスター論理コード構築中...',
-  '物理ルール干渉パラメータを算出中...',
-  '概念空間へデプロイ中...'
-];
-
 interface PieceCreatorProps {
   player: Player;
   onPiecesReady: (pieces: Piece[]) => void;
@@ -58,7 +50,6 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
   const [pendingWords, setPendingWords] = useState<{ key: string; word: string; preview?: PartialPiece }[]>([]);
   const loading = pendingWords.length > 0;
   const [createdPieces, setCreatedPieces] = useState<Piece[]>([]);
-  const [stageIdx, setStageIdx] = useState(0);
   const [notice, setNotice] = useState('');
 
   const maxPieces = 3; 
@@ -75,7 +66,6 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
       ? 'CPU（思考エンジン）'
       : `${rightRole === 'sente' ? '▲' : '▽'} ${playerNames[rightRole] || 'プレイヤー2'}${rightRole === 'sente' ? ' (Player 1)' : ' (Player 2)'}`;
 
-  const playerName = leftLabel;
 
   const slotsUsed = createdPieces.length + pendingWords.length;
 
@@ -83,13 +73,6 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
     warmUpGenerator();
   }, []);
 
-  // 生成中の演出テキストを一定間隔で切り替える（setState はタイマー内でのみ行う）
-  useEffect(() => {
-    if (!loading) return;
-    const statusInterval = setInterval(() => setStageIdx(i => i + 1), 900);
-    return () => clearInterval(statusInterval);
-  }, [loading]);
-  const scanStatus = SCAN_STAGES[stageIdx % SCAN_STAGES.length];
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -188,181 +171,55 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
     }
   };
 
+  const remaining = maxPieces - createdPieces.length;
+  const opponentStatus = onlineMode
+    ? (onlineOpponentReady ? '準備できました' : '駒を作っています')
+    : setupSubPhase === 'sente_create' ? '順番待ち' : '準備できました';
+
   return (
     <div style={{ width: '100%', boxSizing: 'border-box', maxWidth: '1000px', margin: '0 auto', padding: '16px', zIndex: 10, position: 'relative' }}>
-      
-      {/* Matchmaking & Faction Readiness Dashboard */}
-      <div 
-        className="cyber-panel" 
-        style={{ 
-          padding: '24px', 
-          marginBottom: '24px', 
-          background: 'rgba(255, 255, 255, 0.75)',
-          border: '1px solid rgba(139, 92, 26, 0.15)',
-          borderRadius: '16px',
-          fontFamily: 'var(--font-cyber)',
-          boxShadow: '0 8px 24px rgba(139, 92, 26, 0.04)'
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', borderBottom: '1px solid rgba(139, 92, 26, 0.08)', paddingBottom: '12px', marginBottom: '12px' }}>
-          <div style={{ fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
-            <span>対局接続方式:</span>
-            <span style={{
-              fontSize: '11px',
-              color: 'var(--color-matsuba)',
-              background: 'rgba(47, 82, 51, 0.05)',
-              border: '0.5px solid var(--color-matsuba)',
-              padding: '2px 10px',
-              borderRadius: '9999px',
-              fontWeight: 'bold'
-            }}>
-              {onlineMode ? '遠隔対局（オンライン複数デバイス接続）' : vsAiMode ? '一人対局（AI対局モード）' : '二人対局（対面パス＆プレイ接続）'}
-            </span>
-          </div>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <button
-              onClick={handleResetCache}
-              disabled={resettingCache}
-              style={{
-                fontSize: '10.5px',
-                fontWeight: 'bold',
-                color: '#991b1b',
-                background: '#fef2f2',
-                border: '1px solid #fca5a5',
-                borderRadius: '6px',
-                padding: '4px 10px',
-                cursor: resettingCache ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s'
-              }}
-              title="この端末に保存された駒データのキャッシュを消去します"
-            >
-              {resettingCache ? '消去中...' : '端末キャッシュを消去'}
-            </button>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-              {onlineMode ? '※お互いのデバイスから同時に駒の作成が可能です' : !vsAiMode && '※1台のデバイスを交互に操作して対戦します'}
-            </div>
-          </div>
+
+      {/* 相手がいる対局だけ、相手の状況を1行で（CPU対戦では出さない） */}
+      {(onlineMode || !vsAiMode) && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '12px', padding: '10px 14px', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '12px', fontSize: '13px' }}>
+          <span style={{ fontWeight: 700 }}>{onlineMode ? 'オンライン対戦' : '1台で交代しながら対戦'}</span>
+          <span style={{ color: 'var(--text-secondary)' }}>
+            {rightLabel}：<strong style={{ color: opponentStatus === '準備できました' ? 'var(--color-matsuba)' : 'var(--color-gold)' }}>{opponentStatus}</strong>
+          </span>
         </div>
+      )}
 
-        <div className="piece-creator-status-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-          {/* Left: Your Status */}
-          <div style={{ background: 'rgba(139, 92, 26, 0.02)', padding: '12px 16px', borderRadius: '12px', borderLeft: `4px solid ${leftRole === 'sente' ? 'var(--color-shinku)' : 'var(--color-gold)'}` }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>あなたの構築ステータス</div>
-            <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>{leftLabel}</span>
-              <span style={{ color: (onlineMode ? onlineSelfReady : createdPieces.length === maxPieces) ? 'var(--color-matsuba)' : 'var(--color-gold)' }}>
-                {(onlineMode ? onlineSelfReady : createdPieces.length === maxPieces) ? '準備完了' : `構築中 (${createdPieces.length}/${maxPieces})`}
-              </span>
-            </div>
-          </div>
-
-          {/* Right: Opponent Status */}
-          <div style={{ background: 'rgba(139, 92, 26, 0.02)', padding: '12px 16px', borderRadius: '12px', borderLeft: `4px solid ${rightRole === 'sente' ? 'var(--color-shinku)' : 'var(--color-gold)'}` }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>対戦相手の準備状況</div>
-            <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>{rightLabel}</span>
-              <span style={{ 
-                color: onlineMode ? (onlineOpponentReady ? 'var(--color-matsuba)' : 'var(--color-gold)') : (vsAiMode ? 'var(--color-gold)' : (setupSubPhase === 'sente_create' ? 'var(--color-gold)' : 'var(--color-matsuba)'))
-              }}>
-                {onlineMode 
-                  ? (onlineOpponentReady ? '準備完了' : '未完了 (構築中)')
-                  : vsAiMode 
-                    ? 'AI自動待機' 
-                    : setupSubPhase === 'sente_create' 
-                      ? '未完了 (順番待ち)' 
-                      : '準備完了'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Informative message for player handoff */}
-        {onlineMode ? (
-          <div style={{ 
-            marginTop: '16px', 
-            fontSize: '11px', 
-            color: onlineSelfReady ? 'var(--color-matsuba)' : 'var(--color-gold)',
-            background: onlineSelfReady ? 'rgba(47, 82, 51, 0.03)' : 'rgba(212, 175, 55, 0.03)',
-            border: `1px solid ${onlineSelfReady ? 'rgba(47, 82, 51, 0.15)' : 'rgba(212, 175, 55, 0.15)'}`,
-            padding: '10px 14px',
-            borderRadius: '9999px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}>
-            <span>
-              {onlineSelfReady 
-                ? '対戦相手の構築完了を待っています。両者の準備が完了すると自動で対局へ進みます。' 
-                : '3枚のカスタム駒を作成し、完了したら下のボタンをクリックして確定させてください。'}
-            </span>
-          </div>
-        ) : !vsAiMode && (
-          <div style={{ 
-            marginTop: '16px', 
-            fontSize: '11px', 
-            color: 'var(--color-gold)',
-            background: 'rgba(212, 175, 55, 0.02)',
-            border: '1px solid rgba(212, 175, 55, 0.12)',
-            padding: '10px 16px',
-            borderRadius: '12px',
-          }}>
-            <div>
-              {setupSubPhase === 'sente_create' 
-                ? `${playerNames.sente || 'プレイヤー1'} が3枚のカスタム駒を作り終えると、${playerNames.gote || 'プレイヤー2'} の構築フェーズに切り替わります。` 
-                : `${playerNames.sente || 'プレイヤー1'} は準備完了しています！ ${playerNames.gote || 'プレイヤー2'} は残り駒を構築して進んでください。`}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="cyber-panel" style={{ padding: '30px', marginBottom: '30px', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
-        <h2 className="cyber-title" style={{ fontSize: '20px', marginBottom: '15px', color: 'var(--text-primary)', borderBottom: 'none' }}>
-          {playerName} のカスタム能力駒生成
+      <div className="cyber-panel" style={{ padding: '20px', marginBottom: '20px', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
+        <h2 className="cyber-title" style={{ fontSize: '20px', marginBottom: '6px', color: 'var(--text-primary)', borderBottom: 'none' }}>
+          {presetWords?.length ? '今日のお題の駒を作っています' : `好きな言葉で、駒を${maxPieces}枚作ろう`}
         </h2>
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '20px', fontSize: '13px' }}>
-          戦場に召喚するオリジナルのカスタム駒を <strong>{maxPieces}枚</strong> 作成してください。好きな単語から、AIが<strong>その言葉らしい特殊能力</strong>を持つ駒を作ります。
+        {!onlineMode && !vsAiMode && (
+          <p style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-shinku)', marginBottom: '6px' }}>いまは {leftLabel} の番です</p>
+        )}
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '14px', fontSize: '13px' }}>
+          言葉に合った動きと能力の駒を、AIが作ります。
         </p>
 
-        <div style={{
-          background: notice ? 'rgba(212, 175, 55, 0.03)' : 'rgba(47, 82, 51, 0.03)',
-          border: `1px solid ${notice ? 'rgba(212, 175, 55, 0.15)' : 'rgba(47, 82, 51, 0.15)'}`,
-          borderRadius: '12px',
-          padding: '12px 16px',
-          marginBottom: '20px',
-          fontSize: '12px',
-          color: notice ? 'var(--color-gold)' : 'var(--color-matsuba)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '4px'
-        }}>
-          {notice ? (
-            <div>{notice}</div>
-          ) : (
-            <div>
-              <strong>AI駆動生成モード：</strong> 入力された単語の特徴を生成AIが解釈し、オリジナルの特殊能力を生成します。
-            </div>
-          )}
-          <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
-            ※入力した単語は能力生成のため外部のAIサービス（Cloudflare Workers AI など）に送信され、生成結果は他のプレイヤーとも共有されます。個人情報や他人を傷つける言葉は入力しないでください。
+        {notice && (
+          <div role="status" style={{ marginBottom: '12px', padding: '10px 12px', borderRadius: '10px', background: 'rgba(212, 175, 55, 0.08)', border: '1px solid rgba(212, 175, 55, 0.3)', fontSize: '12px', color: 'var(--text-primary)' }}>
+            {notice}
           </div>
-        </div>
+        )}
 
         {presetWords?.length ? (
-          <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '12px', background: 'rgba(217, 119, 6, 0.08)', border: '1px solid rgba(217, 119, 6, 0.25)', fontSize: '13px', lineHeight: 1.7 }}>
-            📅 <strong>今日のお題</strong>：{presetWords.map(w => `「${w}」`).join('')}
-            <br />全員が同じ3枚で戦います。できるだけ少ない手数でCPUに勝とう！
+          <div style={{ marginBottom: '12px', padding: '10px 12px', borderRadius: '10px', background: 'rgba(217, 119, 6, 0.08)', border: '1px solid rgba(217, 119, 6, 0.25)', fontSize: '13px', lineHeight: 1.7 }}>
+            📅 {presetWords.join('・')}（全員同じ3枚。少ない手数で勝つほど上位）
           </div>
         ) : null}
 
         {!presetWords?.length && (!onlineMode || !onlineSelfReady) && slotsUsed < maxPieces && (
-          <>
-          <form onSubmit={handleGenerate} className="piece-creator-form" style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+          <form onSubmit={handleGenerate} className="piece-creator-form" style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
             <input
               type="text"
               value={word}
               onChange={(e) => setWord(e.target.value)}
-              placeholder="単語を入力（例：忍者、満員電車）"
+              placeholder="例：忍者、満員電車、二度寝"
+              aria-label="駒にする言葉"
               className="cyber-input"
               style={{ flex: 1 }}
               maxLength={24}
@@ -374,74 +231,25 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
               disabled={!word.trim()}
               style={{ flexShrink: 0 }}
             >
-              概念をコンパイルする
+              作る
             </button>
           </form>
-          </>
         )}
 
-        {/* Dynamic Compile Status Card */}
-        <div style={{
-          width: '100%',
-          border: '1px solid rgba(139, 92, 26, 0.15)',
-          background: 'rgba(139, 92, 26, 0.01)',
-          padding: '24px',
-          borderRadius: '12px',
-          textAlign: 'center',
-          fontFamily: 'var(--font-cyber)',
-          minHeight: '100px',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'all 0.3s ease',
-          marginBottom: '20px'
-        }}>
-          {!loading && createdPieces.length === 0 ? (
-            <p style={{ fontSize: '13px', color: 'var(--text-muted)', letterSpacing: '0.05em' }}>
-              戦場に召喚するオリジナルのカスタム駒の「概念」を入力してください。
-            </p>
-          ) : loading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-              <p style={{ fontSize: '10px', fontFamily: 'monospace', color: 'var(--color-gold)', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
-                Dynamic Runtime Compile...
-              </p>
-              <p style={{ fontSize: '14px', color: 'var(--text-primary)', letterSpacing: '0.15em' }}>
-                {pendingWords.map(p => `「${p.word}」`).join('')} の本質を編纂中…
-              </p>
-              {slotsUsed < maxPieces && (
-                <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>待っている間に次の単語も入力できます</p>
-              )}
-              <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>初めての言葉はAIが一から考えるため、5〜15秒ほどかかります（できた部分から表示します）</p>
-              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                ({scanStatus})
-              </p>
-              <div style={{ width: '256px', height: '1px', background: 'rgba(139, 92, 26, 0.1)', overflow: 'hidden', position: 'relative', marginTop: '4px' }}>
-                <div style={{
-                  position: 'absolute',
-                  top: 0,
-                  bottom: 0,
-                  background: 'var(--color-gold)',
-                  width: '33.3%',
-                  animation: 'shogi-loading 1.5s infinite ease-in-out'
-                }}></div>
-              </div>
-            </div>
-          ) : (
-            <div>
-              <p style={{ fontSize: '10px', fontFamily: 'monospace', color: 'var(--color-gold)', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '4px' }}>
-                Dynamic Runtime Compile...
-              </p>
-              <p style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: 'bold', letterSpacing: '0.15em' }}>
-                ダイナミック・コンパイル完了！ ({createdPieces.length} / {maxPieces})
-              </p>
-            </div>
-          )}
-        </div>
+        {loading && (
+          <p role="status" style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '6px 0' }}>
+            {pendingWords.map(p => `「${p.word}」`).join('')}を作っています…（初めての言葉は5〜15秒）
+            {slotsUsed < maxPieces && ' 待っている間に次の言葉も入れられます'}
+          </p>
+        )}
+
+        <p style={{ fontSize: '10.5px', color: 'var(--text-muted)', lineHeight: 1.6, marginTop: '6px' }}>
+          入力した言葉はAI（Cloudflare Workers AI など）に送られ、できた駒はほかの人とも共有されます。個人情報や人を傷つける言葉は入れないでください。
+        </p>
       </div>
 
       <h3 className="cyber-title" style={{ fontSize: '16px', marginBottom: '15px', color: 'var(--text-primary)', borderBottom: 'none' }}>
-        構築されたデッキ ({createdPieces.length} / {maxPieces})
+        作った駒（{createdPieces.length} / {maxPieces}）
       </h3>
 
       <div className="piece-creator-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px', marginBottom: '30px' }}>
@@ -535,22 +343,38 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
         {Array.from({ length: Math.max(0, maxPieces - slotsUsed) }).map((_, i) => (
           <div key={i} className="cyber-panel" style={{ padding: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 'min(340px, 18vh)', borderStyle: 'dashed', borderColor: 'var(--text-muted)', background: 'transparent', borderRadius: '16px' }}>
             <p style={{ color: 'var(--text-muted)', fontSize: '12px', fontFamily: 'var(--font-cyber)' }}>
-              空きスロット
+              {slotsUsed + i + 1}枚目
             </p>
           </div>
         ))}
       </div>
 
-      <div style={{ textAlign: 'center' }}>
+      {/* 次にすること（画面の下に固定。3枚そろうと押せる） */}
+      <div style={{ position: 'sticky', bottom: 0, zIndex: 20, padding: '12px 0 16px', background: 'linear-gradient(to top, var(--color-washi) 70%, rgba(247, 245, 240, 0))', textAlign: 'center' }}>
+        <p style={{ fontSize: '13px', fontWeight: 700, marginBottom: '6px', color: remaining > 0 ? 'var(--color-shinku)' : 'var(--color-matsuba)' }}>
+          {onlineMode && onlineSelfReady ? '相手の準備を待っています…（そろうと自動で始まります）' : remaining > 0 ? `あと${remaining}枚` : `${maxPieces}枚そろいました`}
+        </p>
         <button
           className={`cyber-btn ${createdPieces.length !== maxPieces ? 'cyber-btn-disabled' : 'cyber-btn-purple'}`}
           onClick={handleSubmit}
           disabled={createdPieces.length !== maxPieces || (onlineMode && onlineSelfReady)}
-          style={{ padding: '15px 48px', fontSize: '15px' }}
+          style={{ padding: '15px 48px', fontSize: '15px', width: '100%', maxWidth: '420px' }}
         >
-          {onlineMode && onlineSelfReady ? '対戦相手の構築を待っています…' : 'この本質で盤面へ'}
+          {onlineMode ? 'この3枚で準備完了' : !vsAiMode && setupSubPhase === 'sente_create' ? 'この3枚で決定（次の人へ）' : 'この3枚で対局する'}
         </button>
       </div>
+
+      <p style={{ textAlign: 'center', marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)' }}>
+        駒の表示がおかしいとき：
+        <button
+          type="button"
+          onClick={handleResetCache}
+          disabled={resettingCache}
+          style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text-muted)', textDecoration: 'underline', cursor: resettingCache ? 'not-allowed' : 'pointer', fontSize: '11px' }}
+        >
+          {resettingCache ? '消去中…' : 'この端末に保存した駒を消す'}
+        </button>
+      </p>
     </div>
   );
 };

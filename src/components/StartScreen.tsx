@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { dailyKey, dailyLabel, dailyWords } from '../../shared/challenge';
+import { dailyKey, dailyWords } from '../../shared/challenge';
 import { getDailyBest } from '../dailyRecord';
 import { readInviteRoomCode, readDailyParam, clearInviteParam, openXShare, roomInviteUrl } from '../share';
 import * as THREE from 'three';
@@ -537,7 +537,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   }, []);
 
   return (
-    <main className="min-h-screen text-neutral-800 font-sans flex flex-col items-center justify-center p-6 selection:bg-amber-100 w-full relative">
+    <main className="min-h-screen text-neutral-800 font-sans flex flex-col items-center justify-center p-4 md:p-6 selection:bg-amber-100 w-full relative">
       {/* Background Sakura Shower */}
       <SakuraShower />
 
@@ -556,7 +556,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
       />
 
       {/* Header */}
-      <header className="w-full max-w-3xl flex justify-between items-center border-b border-amber-900/10 pb-4 mb-6 md:mb-10 z-10">
+      <header className="w-full max-w-3xl flex justify-between items-center border-b border-amber-900/10 pb-3 mb-4 md:mb-10 z-10">
         <h1 className="font-serif text-lg tracking-[0.2em] font-bold text-amber-950">架空将棋</h1>
         <div className="flex items-center gap-3">
           <button
@@ -565,19 +565,18 @@ export const StartScreen: React.FC<StartScreenProps> = ({
             className="flex items-center gap-1.5 px-3 py-1 bg-amber-100/80 hover:bg-amber-200/80 border border-amber-900/20 text-amber-950 rounded-full text-xs font-bold transition-all cursor-pointer shadow-xs"
           >
             <span className="w-4 h-4 rounded-full bg-amber-800 text-white flex items-center justify-center text-[10px]">?</span>
-            規則・遊び方
+            遊び方
           </button>
           <span className="text-xs font-mono tracking-widest text-amber-900/70 font-semibold">v3.0.0</span>
         </div>
       </header>
 
       {/* Main card */}
-      <div className="w-full max-w-3xl bg-white/85 border border-amber-900/15 p-6 md:p-10 rounded-3xl shadow-xl shadow-amber-950/10 backdrop-blur-md relative z-10 animate-fade-in flex flex-col items-center justify-center">
+      <div className="w-full max-w-3xl bg-white/85 border border-amber-900/15 p-4 md:p-10 rounded-3xl shadow-xl shadow-amber-950/10 backdrop-blur-md relative z-10 animate-fade-in flex flex-col items-center justify-center">
         
         {currentStep !== 'title' && (
-          <div className="text-center mb-8">
-            <h2 className="font-serif text-2xl md:text-3xl tracking-[0.25em] font-black text-amber-950 mb-2">対局モード選択</h2>
-            <p className="text-xs tracking-widest font-bold text-amber-900 font-serif">言葉から能力を創造し、九×九の戦場をハックせよ</p>
+          <div className="text-center mb-4">
+            <h2 className="font-serif text-2xl md:text-3xl tracking-[0.25em] font-black text-amber-950">誰と遊ぶ？</h2>
           </div>
         )}
 
@@ -585,7 +584,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
           <div className="relative flex flex-col items-center justify-center w-full max-w-xl mx-auto select-none animate-[fadeIn_0.5s_ease-out]">
             
             {/* 3D Rotating Shogi Piece Canvas with Backlight */}
-            <div className="relative w-72 h-72 flex items-center justify-center mb-2 mx-auto">
+            <div className="relative w-44 h-44 md:w-72 md:h-72 flex items-center justify-center mb-1 mx-auto">
               <div className="absolute inset-0 bg-gradient-to-tr from-amber-500/20 to-transparent blur-3xl rounded-full animate-pulse"></div>
               <div className="w-full h-full z-10 pointer-events-none flex items-center justify-center">
                 <Koma3D />
@@ -593,21 +592,27 @@ export const StartScreen: React.FC<StartScreenProps> = ({
             </div>
 
             {/* Title Header */}
-            <div className="relative text-center mb-8 w-full">
+            <div className="relative text-center mb-4 md:mb-6 w-full">
               <div className="absolute inset-x-0 sm:-inset-x-10 top-1/2 -translate-y-1/2 h-12 bg-amber-400/20 blur-2xl rounded-full"></div>
-              <h2 className="relative z-10 text-4xl md:text-5xl font-serif font-black tracking-[0.25em] text-amber-950 drop-shadow-xs">
-                AI駆動・架空将棋
+              <h2 className="relative z-10 text-3xl md:text-5xl font-serif font-black tracking-[0.25em] text-amber-950 drop-shadow-xs">
+                架空将棋
               </h2>
-              <p className="text-xs font-serif font-bold text-amber-900 tracking-[0.2em] mt-4 bg-amber-100/70 px-4 py-2 rounded-full backdrop-blur-xs inline-block border border-amber-900/15">
-                言葉から能力を創造し、九×九の戦場をハックせよ
-              </p>
+              {/* 遊び方の流れを1行で */}
+              <ol className="relative z-10 mt-3 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-2 text-[12px] md:text-sm font-bold text-amber-950">
+                <li className="bg-amber-100/80 border border-amber-900/15 rounded-full px-2.5 py-1">言葉を入れる</li>
+                <li aria-hidden="true" className="text-amber-900/60">→</li>
+                <li className="bg-amber-100/80 border border-amber-900/15 rounded-full px-2.5 py-1">駒になる</li>
+                <li aria-hidden="true" className="text-amber-900/60">→</li>
+                <li className="bg-amber-100/80 border border-amber-900/15 rounded-full px-2.5 py-1">将棋で戦う</li>
+              </ol>
             </div>
 
             {/* Input & Action Card */}
-            <div className="w-full bg-white/90 backdrop-blur-md p-8 rounded-2xl border border-amber-900/20 shadow-xl flex flex-col items-center gap-6 transition-all duration-300">
-              <span className="text-xs tracking-[0.3em] font-extrabold text-amber-950 uppercase">先手名乗り（あなたの名前）</span>
+            <div className="w-full bg-white/90 backdrop-blur-md p-5 md:p-8 rounded-2xl border border-amber-900/20 shadow-xl flex flex-col items-center gap-3 md:gap-4 transition-all duration-300">
+              <label htmlFor="player-name" className="text-xs tracking-[0.2em] font-extrabold text-amber-950">あなたの名前（なくても遊べます）</label>
               
               <input 
+                id="player-name"
                 type="text" 
                 maxLength={16}
                 value={playerNames.sente}
@@ -624,7 +629,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 onClick={() => setCurrentStep('mode_select')}
                 className="button-shine-effect w-full max-w-xs bg-gradient-to-r from-amber-800 to-amber-950 hover:from-amber-700 hover:to-amber-900 text-white font-extrabold tracking-[0.3em] pl-[0.3em] py-4 rounded-xl border border-amber-950/50 shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 outline-none cursor-pointer text-base"
               >
-                戦場へ出陣する
+                はじめる
               </button>
 
               <p className="text-[11px] text-stone-500 font-bold tracking-wider">
@@ -644,11 +649,11 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 onClick={() => setCurrentStep('title')} 
                 className="text-xs font-bold tracking-widest text-amber-900 hover:text-amber-700 transition-colors cursor-pointer bg-amber-100/50 hover:bg-amber-100 px-3 py-1.5 rounded-lg border border-amber-900/10"
               >
-                ← 名乗り入力へ戻る
+                ← 戻る
               </button>
 
               <span className="text-xs font-bold text-amber-950 tracking-wider bg-amber-200/60 px-3 py-1 rounded-full border border-amber-900/20">
-                名乗り: {playerNames.sente || '先手'}
+                {playerNames.sente || '名無しの棋士'}
               </span>
             </div>
 
@@ -658,125 +663,58 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               </div>
             )}
 
-            {/* 今日のお題（毎日変わる共通の3枚でCPUに挑戦。Xでのシェア用） */}
-            <button
-              type="button"
-              onClick={onStartDaily}
-              className="w-full text-left rounded-2xl border-2 border-amber-600 bg-gradient-to-r from-amber-100 to-orange-50 px-5 py-4 shadow-md hover:shadow-lg transition-all cursor-pointer"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-base font-extrabold text-amber-950">📅 今日のお題（{dailyLabel()}）</div>
-                  <div className="text-sm font-bold text-amber-900 mt-1 break-words">
-                    {dailyWords().map(w => `「${w}」`).join('')}
-                  </div>
-                  <div className="text-xs text-stone-600 mt-1">
-                    全員同じ3枚でCPUに挑戦。少ない手数で勝つほど上位！
-                    {todayBest !== null && <span className="font-bold text-amber-800">（自己ベスト {todayBest}手）</span>}
-                  </div>
-                </div>
-                <span className="shrink-0 text-sm font-extrabold text-white bg-amber-800 rounded-full px-4 py-2">挑戦</span>
-              </div>
-            </button>
-
-            {/* 3 Main Mode Selection Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full items-stretch">
-              
-              {/* Option 1: AI Battle */}
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedTab('ai');
-                  onSetVsAiMode(true);
-                  onSetOnlineMode(false);
-                }}
-                className={`group rounded-2xl p-6 text-center transition-all duration-300 border-2 outline-none flex flex-col items-center justify-between min-h-[160px] cursor-pointer shadow-md ${
-                  selectedTab === 'ai' && !onlineMode
-                    ? 'bg-amber-50 border-amber-700 ring-2 ring-amber-600/30 shadow-lg -translate-y-1'
-                    : 'bg-white/90 border-stone-200 hover:border-amber-400 hover:bg-amber-50/40 opacity-90 hover:opacity-100'
-                }`}
-              >
-                <div className="text-3xl mb-1">🤖</div>
-                <div>
-                  <div className="text-lg tracking-wider font-extrabold text-stone-900 mb-1">AI対戦</div>
-                  <div className="text-[11px] font-bold text-amber-900/80 leading-snug">CPUと1人ですぐ遊ぶ</div>
-                </div>
-                <div className={`mt-3 text-xs font-bold px-4 py-1 rounded-full border transition-all ${
-                  selectedTab === 'ai' && !onlineMode ? 'bg-amber-800 text-white border-amber-900' : 'bg-stone-100 text-stone-600 border-stone-200'
-                }`}>
-                  選択中
-                </div>
-              </button>
-
-              {/* Option 2: Random Online Battle */}
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedTab('random');
-                  onSetVsAiMode(false);
-                  onSetOnlineMode(true);
-                }}
-                className={`group rounded-2xl p-6 text-center transition-all duration-300 border-2 outline-none flex flex-col items-center justify-between min-h-[160px] cursor-pointer shadow-md ${
-                  selectedTab === 'random'
-                    ? 'bg-amber-50 border-amber-700 ring-2 ring-amber-600/30 shadow-lg -translate-y-1'
-                    : 'bg-white/90 border-stone-200 hover:border-amber-400 hover:bg-amber-50/40 opacity-90 hover:opacity-100'
-                }`}
-              >
-                <div className="text-3xl mb-1">⚡</div>
-                <div>
-                  <div className="text-lg tracking-wider font-extrabold text-stone-900 mb-1">ランダム対戦</div>
-                  <div className="text-[11px] font-bold text-amber-900/80 leading-snug">全国の対戦相手と即座に自動マッチ</div>
-                </div>
-                <div className={`mt-3 text-xs font-bold px-4 py-1 rounded-full border transition-all ${
-                  selectedTab === 'random' ? 'bg-amber-800 text-white border-amber-900' : 'bg-stone-100 text-stone-600 border-stone-200'
-                }`}>
-                  選択中
-                </div>
-              </button>
-
-              {/* Option 3: Custom Room Battle */}
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedTab('custom');
-                  onSetVsAiMode(false);
-                  onSetOnlineMode(true);
-                }}
-                className={`group rounded-2xl p-6 text-center transition-all duration-300 border-2 outline-none flex flex-col items-center justify-between min-h-[160px] cursor-pointer shadow-md ${
-                  selectedTab === 'custom'
-                    ? 'bg-amber-50 border-amber-700 ring-2 ring-amber-600/30 shadow-lg -translate-y-1'
-                    : 'bg-white/90 border-stone-200 hover:border-amber-400 hover:bg-amber-50/40 opacity-90 hover:opacity-100'
-                }`}
-              >
-                <div className="text-3xl mb-1">🔑</div>
-                <div>
-                  <div className="text-lg tracking-wider font-extrabold text-stone-900 mb-1">カスタム対戦</div>
-                  <div className="text-[11px] font-bold text-amber-900/80 leading-snug">部屋コード（合言葉）で友達と対局</div>
-                </div>
-                <div className={`mt-3 text-xs font-bold px-4 py-1 rounded-full border transition-all ${
-                  selectedTab === 'custom' ? 'bg-amber-800 text-white border-amber-900' : 'bg-stone-100 text-stone-600 border-stone-200'
-                }`}>
-                  選択中
-                </div>
-              </button>
-
+            {/* 遊び方の選択（選んだものにだけ印。すぐ下に開始ボタン） */}
+            <div role="radiogroup" aria-label="対戦相手" className="grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-3 w-full">
+              {([
+                { key: 'ai', icon: '🤖', title: 'CPUと対戦', desc: 'ひとりですぐ遊ぶ', online: false },
+                { key: 'random', icon: '⚡', title: 'ランダム対戦', desc: 'オンラインの誰かと', online: true },
+                { key: 'custom', icon: '🔑', title: '友達と対戦', desc: '合言葉で部屋に集まる', online: true },
+              ] as const).map(mode => {
+                const active = mode.key === 'ai' ? selectedTab === 'ai' && !onlineMode : selectedTab === mode.key;
+                return (
+                  <button
+                    key={mode.key}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => {
+                      setSelectedTab(mode.key);
+                      onSetVsAiMode(!mode.online);
+                      onSetOnlineMode(mode.online);
+                    }}
+                    className={`flex items-center gap-3 rounded-xl px-4 py-3 text-left border-2 transition-all outline-none cursor-pointer ${
+                      active ? 'bg-amber-50 border-amber-700 shadow-md' : 'bg-white/90 border-stone-200 hover:border-amber-400'
+                    }`}
+                  >
+                    <span className="text-2xl" aria-hidden="true">{mode.icon}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-base font-extrabold text-stone-900">{mode.title}</span>
+                      <span className="block text-[11px] font-bold text-amber-900/80">{mode.desc}</span>
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className={`w-5 h-5 shrink-0 rounded-full border-2 flex items-center justify-center ${active ? 'border-amber-800 bg-amber-800' : 'border-stone-300'}`}
+                    >
+                      {active && <span className="w-2 h-2 rounded-full bg-white" />}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
             {/* Dynamic Details / Status Container */}
-            <div className="w-full bg-stone-50/90 border-2 border-amber-900/20 rounded-2xl p-6 shadow-inner transition-all">
+            <div className="w-full bg-stone-50/90 border border-amber-900/15 rounded-2xl p-4 md:p-6 transition-all">
               
               {/* Tab 1: AI Battle */}
               {selectedTab === 'ai' && (
                 <div className="flex flex-col items-center text-center gap-4 animate-[fadeIn_0.3s_ease-out]">
-                  <p className="text-sm font-bold text-stone-800 leading-relaxed max-w-lg">
-                    CPU（思考エンジン）と対峙します。入力した言葉から創造された「カスタム駒」の能力を駆使して挑戦してください。
-                  </p>
+                  <p className="text-sm font-bold text-stone-700">次の画面で、好きな言葉から駒を3枚作ります</p>
                   <button
                     type="button"
                     onClick={onStartGame}
                     className="w-full max-w-md py-4 bg-gradient-to-r from-amber-800 to-amber-950 hover:from-amber-700 hover:to-amber-900 text-white rounded-xl text-base tracking-[0.3em] font-extrabold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all outline-none cursor-pointer border border-amber-950/50 mt-2"
                   >
-                    AI対戦を開始する
+                    駒を作りに進む
                   </button>
                 </div>
               )}
@@ -787,9 +725,9 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                   {isConnectingHandshake ? (
                     <div className="space-y-3 py-2">
                       <div className="text-base font-extrabold text-amber-900 animate-pulse">
-                        🤝 対戦相手が見つかりました！通信確立中...
+                        🤝 相手が見つかりました。つないでいます…
                       </div>
-                      <p className="text-xs font-bold text-stone-600">双方の接続同期を確認しています。間もなく対局が開始します。</p>
+
                       <div className="flex gap-2 justify-center">
                         <span className="w-2.5 h-2.5 rounded-full bg-amber-800 animate-ping"></span>
                         <span className="w-2.5 h-2.5 rounded-full bg-amber-800 animate-ping [animation-delay:0.2s]"></span>
@@ -800,28 +738,26 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                     <div className="space-y-4 py-2 w-full max-w-md">
                       <div className="text-sm font-extrabold text-amber-950 flex items-center justify-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-amber-600 animate-ping"></span>
-                        対戦相手を自動探索中...
+                        対戦相手を探しています…
                       </div>
-                      <p className="text-xs font-bold text-stone-600">対戦相手が合流するまでお待ちください。</p>
+
                       <button
                         type="button"
                         onClick={onCancelMatchmaking}
                         className="w-full py-2.5 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs tracking-widest font-bold transition-all cursor-pointer shadow-md"
                       >
-                        マッチング探索をキャンセル
+                        やめる
                       </button>
                     </div>
                   ) : (
                     <div className="space-y-4 w-full max-w-md">
-                      <p className="text-sm font-bold text-stone-800 leading-relaxed">
-                        全国のオンライン待機中プレイヤーと自動マッチングして、直ちにリアルタイム同期対局を開始します。
-                      </p>
+                      <p className="text-sm font-bold text-stone-700">オンラインで待っている人と自動で組み合わせます</p>
                       <button
                         type="button"
                         onClick={onRandomMatch}
                         className="w-full py-4 bg-gradient-to-r from-amber-800 to-amber-950 hover:from-amber-700 hover:to-amber-900 text-white rounded-xl text-base tracking-[0.3em] font-extrabold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all outline-none cursor-pointer border border-amber-950/50"
                       >
-                        ⚡ ランダム対戦を開始
+                        相手を探す
                       </button>
                     </div>
                   )}
@@ -840,19 +776,19 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                   {isConnectingHandshake ? (
                     <div className="space-y-3 py-2">
                       <div className="text-base font-extrabold text-amber-900 animate-pulse">
-                        🤝 対戦相手が入室しました！通信確立中...
+                        🤝 相手が入りました。つないでいます…
                       </div>
-                      <p className="text-xs font-bold text-stone-600">双方の同期を確認しています。</p>
+
                     </div>
                   ) : isWaitingForOpponent ? (
                     <div className="space-y-4 py-2 w-full max-w-md bg-white p-6 rounded-xl border border-amber-900/20 shadow-sm">
                       <div className="text-xs text-stone-600 font-bold tracking-widest">
-                        友達に以下の「6桁部屋コード」を共有してください
+                        この合言葉（6桁）を友達に送ってください
                       </div>
                       <div className="text-3xl font-extrabold tracking-[0.3em] text-amber-900 font-mono py-2 bg-amber-50 rounded-lg border border-amber-900/10">
                         {roomCode}
                       </div>
-                      <p className="text-[11px] text-stone-500 font-bold">相手が入室すると自動的に同期対局へ進みます。</p>
+                      <p className="text-[11px] text-stone-500 font-bold">友達が入ると、自動で始まります</p>
                       <div className="flex gap-2">
                         <button
                           type="button"
@@ -882,51 +818,56 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                         onClick={onCancelMatchmaking}
                         className="w-full py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs tracking-widest font-bold transition-all cursor-pointer"
                       >
-                        部屋待機をキャンセル
+                        やめる
                       </button>
                     </div>
                   ) : (
-                    <div className="w-full max-w-md space-y-6">
-                      {/* Create Room */}
-                      <div className="bg-white p-4 rounded-xl border border-stone-200 flex flex-col md:flex-row items-center justify-between gap-3 shadow-sm">
-                        <div className="text-left">
-                          <div className="text-xs font-extrabold text-stone-900">部屋を作成する</div>
-                          <div className="text-[10px] font-bold text-stone-500">新しい対局室を作り部屋コードを発行</div>
+                    <div className="w-full max-w-md flex flex-col gap-3 text-left">
+                      {/* 自分が部屋を作る */}
+                      <div className="bg-white rounded-xl border border-stone-200 shadow-sm flex flex-col gap-2" style={{ padding: '12px 14px' }}>
+                        <div>
+                          <div className="text-sm font-extrabold text-stone-900">自分が部屋を作る</div>
+                          <div className="text-[11px] font-bold text-stone-500">合言葉ができるので、友達に送る</div>
                         </div>
                         <button
                           type="button"
                           onClick={onCreateRoom}
-                          className="w-full md:w-auto px-5 py-2.5 bg-amber-800 hover:bg-amber-900 text-white rounded-lg text-xs font-extrabold tracking-widest transition-all cursor-pointer"
+                          className="w-full bg-amber-800 hover:bg-amber-900 text-white rounded-lg text-sm font-extrabold tracking-widest transition-all cursor-pointer"
+                          style={{ padding: '10px' }}
                         >
                           部屋を作る
                         </button>
                       </div>
 
-                      {/* Join Room */}
-                      <div className="bg-white p-4 rounded-xl border border-stone-200 flex flex-col md:flex-row items-center justify-between gap-3 shadow-sm">
-                        <div className="text-left">
-                          <div className="text-xs font-extrabold text-stone-900">部屋コードで入室</div>
-                          <div className="text-[10px] font-bold text-stone-500">6桁の部屋コードを入力して参戦</div>
+                      {/* 友達の部屋に入る */}
+                      <div className="bg-white rounded-xl border border-stone-200 shadow-sm flex flex-col gap-2" style={{ padding: '12px 14px' }}>
+                        <div>
+                          <div className="text-sm font-extrabold text-stone-900">友達の部屋に入る</div>
+                          <div className="text-[11px] font-bold text-stone-500">届いた6桁の合言葉を入力</div>
                         </div>
-                        <div className="flex gap-2 w-full md:w-auto">
+                        <div className="flex gap-2">
                           <input
                             type="text"
-                            placeholder="6桁コード"
+                            inputMode="numeric"
+                            aria-label="6桁の合言葉"
+                            placeholder="6桁の数字"
                             value={inputCode}
                             onChange={(e) => setInputCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
-                            className="bg-stone-50 border border-stone-300 text-sm font-bold px-3 py-2 text-center text-stone-900 tracking-widest outline-none w-28 rounded-lg font-mono focus:border-amber-600"
+                            className="flex-1 min-w-0 bg-stone-50 border border-stone-300 text-base font-bold text-center text-stone-900 tracking-widest outline-none rounded-lg font-mono focus:border-amber-600"
+                            style={{ padding: '8px' }}
                           />
                           <button
                             type="button"
                             disabled={inputCode.length !== 6}
                             onClick={() => onJoinRoom(inputCode)}
-                            className={`text-xs font-extrabold tracking-widest px-4 py-2 rounded-lg border transition-all ${
+                            className={`text-sm font-extrabold tracking-widest rounded-lg border transition-all ${
                               inputCode.length === 6
                                 ? "bg-amber-800 hover:bg-amber-900 text-white border-amber-900 cursor-pointer shadow-sm"
                                 : "bg-stone-100 text-stone-400 border-stone-200 cursor-not-allowed"
                             }`}
+                            style={{ padding: '8px 20px' }}
                           >
-                            入室
+                            入る
                           </button>
                         </div>
                       </div>
@@ -943,6 +884,24 @@ export const StartScreen: React.FC<StartScreenProps> = ({
 
             </div>
 
+            {/* 今日のお題（毎日変わる共通の3枚でCPUに挑戦。Xでのシェア用）。メインの流れの下に小さく */}
+            <button
+              type="button"
+              onClick={onStartDaily}
+              className="w-full text-left rounded-xl border border-amber-600/60 bg-amber-50/90 px-4 py-3 hover:bg-amber-100 transition-all cursor-pointer"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-stone-600">📅 今日のお題（全員同じ3枚でCPUに挑戦）</div>
+                  <div className="text-sm font-extrabold text-amber-950 mt-0.5 break-words">
+                    {dailyWords().join('・')}
+                    {todayBest !== null && <span className="ml-2 text-xs font-bold text-amber-800">自己ベスト {todayBest}手</span>}
+                  </div>
+                </div>
+                <span className="shrink-0 text-sm font-extrabold text-amber-800">挑戦 ›</span>
+              </div>
+            </button>
+
           </div>
         )}
 
@@ -953,7 +912,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
         <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease-out]">
           <div className="bg-white border-2 border-amber-900/30 rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl relative space-y-6">
             <div className="flex justify-between items-center border-b border-stone-200 pb-3">
-              <h3 className="font-serif text-lg font-black text-amber-950 tracking-wider">規則・遊戯心得</h3>
+              <h3 className="font-serif text-lg font-black text-amber-950 tracking-wider">遊び方</h3>
               <button
                 type="button"
                 onClick={() => setShowRuleModal(false)}
@@ -963,21 +922,18 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               </button>
             </div>
 
-            <div className="space-y-4 text-xs font-bold text-stone-800 leading-relaxed">
-              <div className="bg-amber-50 p-3.5 rounded-xl border border-amber-900/10">
-                <span className="text-amber-900 font-extrabold block mb-1">一、 【言葉からの駒能力創造】</span>
-                あなたが入力した任意の言葉から、独自の足回りと自動能力を宿した『カスタム駒』が戦術手札に生成されます。
-              </div>
-
-              <div className="bg-amber-50 p-3.5 rounded-xl border border-amber-900/10">
-                <span className="text-amber-900 font-extrabold block mb-1">二、 【召喚と全自動能力執行】</span>
-                カスタム駒は自陣の空きマスへ手札から打ち出せます。次手番以降に移動させることで、大技が自動執行されます。
-              </div>
-
-              <div className="bg-amber-50 p-3.5 rounded-xl border border-amber-900/10">
-                <span className="text-amber-900 font-extrabold block mb-1">三、 【切札と風化】</span>
-                強大すぎる能力は1ゲーム1回限定の切り札となり、使用後は前後左右1マスの充填状態へと変化します。
-              </div>
+            <div className="space-y-3 text-xs font-bold text-stone-800 leading-relaxed">
+              {[
+                ['① 言葉から駒を作る', '好きな言葉を3つ入れると、AIがその言葉らしい「動き方」と「能力」を持つ駒を作ります。'],
+                ['② 持ち駒から打つ', '作った駒は持ち駒として始まります。自分の陣地の空いているマスに打って使います。'],
+                ['③ 能力は条件で自動発動', '「動いた後」「敵を取ったとき」など、駒ごとに決まったタイミングで自動で発動します。範囲に相手がいなければ発動しません。強い能力は、使った後しばらく使えません。'],
+                ['④ 勝ち方', 'ふつうの将棋と同じく、相手の玉を取れば勝ちです。'],
+              ].map(([title, body]) => (
+                <div key={title} className="bg-amber-50 p-3 rounded-xl border border-amber-900/10">
+                  <span className="text-amber-900 font-extrabold block mb-1">{title}</span>
+                  {body}
+                </div>
+              ))}
             </div>
 
             <div className="pt-2 text-center">
@@ -986,7 +942,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 onClick={() => setShowRuleModal(false)}
                 className="w-full py-3 bg-amber-900 hover:bg-amber-950 text-white font-extrabold text-xs tracking-widest rounded-xl transition-all cursor-pointer shadow-md"
               >
-                理解した（閉じる）
+                閉じる
               </button>
             </div>
           </div>
