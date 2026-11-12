@@ -13,6 +13,7 @@
     "verify:programs": "tsx scripts/verify-programs.ts",
     "verify:traits": "tsx scripts/verify-traits.ts",
     "audit:abilities": "tsx scripts/audit-abilities.ts",
+    "verify:rules": "tsx scripts/verify-rules.ts",
     "simulate": "tsx scripts/simulate-games.ts",
     "try:generate": "tsx scripts/try-generate.ts",
     "bench:models": "tsx scripts/bench-models.ts",

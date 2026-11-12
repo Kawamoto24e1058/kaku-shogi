@@ -56,9 +56,9 @@ export interface MoveExtraSpec {
   score: (range: number) => number;
 }
 export const MOVE_EXTRA_SPECS: Record<MoveExtraKind, MoveExtraSpec> = {
-  SLIDE_DIAGONAL: { label: '斜めに滑る', text: '斜め4方向へ最大{n}マスまで進める（駒があればそこで止まる）', fits: '忍び・すり抜ける・ずる賢い・角', range: [2, 4, 3], score: r => 2.2 * (r - 1) },
-  SLIDE_ORTHOGONAL: { label: '縦横に滑る', text: '縦横4方向へ最大{n}マスまで進める（駒があればそこで止まる）', fits: '車・まっすぐ・力強い・飛車', range: [2, 4, 3], score: r => 3 * (r - 1) },
-  SLIDE_FORWARD: { label: '前へ滑る', text: '前へ最大{n}マスまで進める（香車のように。駒があればそこで止まる）', fits: '新幹線・矢・弾丸・一直線', range: [2, 6, 4], score: r => 0.3 * (r - 1) },
+  SLIDE_DIAGONAL: { label: '斜めに滑る', text: '斜め4方向へ最大{n}マスまで進める（駒があればそこで止まる。成ると+1マス）', fits: '忍び・すり抜ける・ずる賢い・角', range: [2, 4, 3], score: r => 2.2 * (r - 1) },
+  SLIDE_ORTHOGONAL: { label: '縦横に滑る', text: '縦横4方向へ最大{n}マスまで進める（駒があればそこで止まる。成ると+1マス）', fits: '車・まっすぐ・力強い・飛車', range: [2, 4, 3], score: r => 3 * (r - 1) },
+  SLIDE_FORWARD: { label: '前へ滑る', text: '前へ最大{n}マスまで進める（香車のように。駒があればそこで止まる。成ると+1マス）', fits: '新幹線・矢・弾丸・一直線', range: [2, 6, 4], score: r => 0.3 * (r - 1) },
   RANDOM_WARP: { label: '気まぐれワープ', text: '動くたびに変わる、周囲{n}マス以内の空きマス2か所へ飛べる', fits: '幽霊・猫・気まぐれ・神出鬼没', range: [2, 4, 3], score: r => 0.6 * r },
   EDGE_WRAP: { label: '端から端へ', text: '盤の左右の端を越えると、反対側の端に出られる', fits: '地球・ループ・異次元・回り込む', score: () => 0 },
   ALLY_HOP: { label: '仲間のもとへ', text: '{n}マス以内にいる味方の隣の空きマスへ駆けつけられる', fits: '犬・仲間思い・ヒーロー・群れ', range: [2, 4, 3], score: r => 1 + 0.8 * r },

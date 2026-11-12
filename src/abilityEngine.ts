@@ -144,6 +144,8 @@ function resolveTargets(board: Board, target: ProgramTarget, origin: Position, p
     if (target.area === 'SELF') return true;
     if (target.who === 'EMPTY') return !p;
     if (!p || isObstacle(p) || p.id === selfId) return false;
+    // 姿を消している敵は、狙って選ぶ能力（最も近い・最も強い など）の対象にならない。「すべて」に効く能力は受ける
+    if (p.owner !== player && p.isStealth && !p.isRevealed && target.pick !== 'ALL') return false;
     if (target.who === 'ENEMY') return p.owner !== player;
     if (target.who === 'ALLY') return p.owner === player;
     return true;

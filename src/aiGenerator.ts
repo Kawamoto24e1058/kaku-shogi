@@ -23,7 +23,7 @@ const memoryCache = new Map<string, PieceData>();
 // バージョン管理されたワンタイムキャッシュクリーンアップ（v4にアップデートして古いキャッシュを全消去）
 try {
   if (typeof window !== 'undefined' && window.localStorage) {
-    const CURRENT_VERSION = 'v14'; // v14: 移動の特徴（滑る・ワープなど）と総合力への組み込み（古い駒の端末キャッシュを捨てる）
+    const CURRENT_VERSION = 'v15'; // v15: ルールの組み合わせの整理（封印・成り・透明・地形）と説明文の範囲の書き方（古い駒の端末キャッシュを捨てる）
     const activeVersion = localStorage.getItem('shogi_cache_version');
     if (activeVersion !== CURRENT_VERSION) {
       localStorage.removeItem('shogi_piece_cache');

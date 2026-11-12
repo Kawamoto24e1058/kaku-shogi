@@ -161,7 +161,7 @@ export const OP_SPECS: Record<ProgramOp, OpSpec> = {
   TELEPORT: { value: null, cost: 2, label: 'そのマスへ自分が瞬間移動する' },
   FREEZE: { value: [1, 3, 1], cost: 1.5, perValue: 1, label: '手番凍結させる' },
   STUN: { value: [1, 3, 1], cost: 1.2, perValue: 0.8, label: '手番麻痺させる' },
-  SILENCE: { value: [1, 4, 2], cost: 0.8, perValue: 0.5, label: '手番能力を封じる' },
+  SILENCE: { value: [1, 4, 2], cost: 0.8, perValue: 0.5, label: '手番、能力と移動の特徴を封じる' },
   CONTROL: { value: [1, 2, 1], cost: 4, perValue: 1.5, label: '手番寝返らせる' },
   DOOM: { value: [2, 5, 3], cost: 4.5, perValue: -0.5, label: '手番後に消滅する呪いをかける' },
   TRANSFORM_PAWN: { value: null, cost: 3.5, label: '歩兵に変える' },
@@ -205,16 +205,16 @@ const CONDITION_LABELS: Record<ProgramCondition, string> = {
 
 const AREA_LABELS: Record<NamedArea, string> = {
   SELF: '自分',
-  ADJACENT: '周囲1マス',
-  RADIUS_2: '周囲2マス',
-  FRONT_LINE: '前方一直線',
-  LINES_8: '8方向の直線上',
-  DIAGONALS: '斜めの直線上',
-  CROSS: '縦横の直線上',
+  ADJACENT: '周囲1マス（まわり8マス）',
+  RADIUS_2: '周囲2マス（自分を中心に5×5）',
+  FRONT_LINE: '前方一直線（最初にぶつかる駒まで）',
+  LINES_8: '8方向の直線上（それぞれ最初にぶつかる駒まで）',
+  DIAGONALS: '斜めの直線上（それぞれ最初にぶつかる駒まで）',
+  CROSS: '縦横の直線上（それぞれ最初にぶつかる駒まで）',
   ROW: '同じ横一列',
   COLUMN: '同じ縦一列',
   ALL: '盤上すべて',
-  ENEMY_KING_AROUND: '敵玉の周囲1マス',
+  ENEMY_KING_AROUND: '敵玉のまわり8マス',
   ATTACKER: '自分を取った駒',
 };
 
@@ -553,12 +553,12 @@ export const TRAIT_SPECS: Record<TraitKind, TraitSpec> = {
   LIFESPAN: { label: '寿命', text: '盤上に出てから自分の手番{n}回で消える', value: [4, 10, 7], cooldownDelta: -2, power: -2 },
   SLOW: { label: '鈍足', text: '一度動くと、次の自分の手番は休み（2手番に1回しか動けない）', cooldownDelta: -2, power: 2 },
   COWARD: { label: '臆病', text: '敵が隣に来ると、相手の手番の終わりに自動で1マス逃げる', cooldownDelta: 0, power: -2 },
-  FLYING: { label: '飛行', text: '空を飛ぶので、地形（炎・毒沼・氷・隠し罠）の効果を受けない', cooldownDelta: 0, power: 2 },
+  FLYING: { label: '飛行', text: '空を飛ぶので、害のある地形（炎・毒沼・氷・隠し罠・封印陣・跳ね床）の効果を受けない（聖域の守りは受けられる）', cooldownDelta: 0, power: 2 },
   TAUNT: { label: '挑発', text: '敵の能力は、届く範囲にこの駒がいれば必ずこの駒を先に狙う（味方の身代わりになる）', cooldownDelta: -2, power: -1 },
   SPLIT: { label: '分裂', text: '1回だけ、取られると隣の空きマスに分身が残る（本体は普通に取られる。分身は能力を持たない）', cooldownDelta: 1, power: 3.5 },
   REFLECT: { label: '反射', text: '1回だけ、敵の能力を受けずに跳ね返す（凍結・麻痺・封印・呪いは使った駒に返る）', cooldownDelta: 2, power: 2 },
-  HEAVY: { label: '重量', text: '重すぎて、敵の能力で押す・引く・入れ替えることができない', cooldownDelta: 0, power: -2 },
-  INVISIBLE: { label: '透明', text: '自分の手番の終わりに、隣に敵がいなければ姿を消す（相手からは見えない。取ったり取られたりすると姿を現す）', cooldownDelta: 1, power: 0 },
+  HEAVY: { label: '重量', text: '重すぎて、敵の能力で押す・引く・入れ替えることができず、跳ね床でも弾かれない', cooldownDelta: 0, power: -2 },
+  INVISIBLE: { label: '透明', text: '自分の手番の終わりに、隣に敵がいなければ姿を消す。消えている間は相手から見えず、敵の能力にも狙われない（盤上すべてに効く能力などは受ける）。取ったり取られたりすると姿を現す', cooldownDelta: 1, power: 1 },
 };
 
 /** AI の出力（trait: { kind, value } / "WILD" / 日本語の名前）を読む。性質なしなら null */
