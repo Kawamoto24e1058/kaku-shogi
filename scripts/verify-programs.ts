@@ -10,7 +10,7 @@ import type { Board, Piece } from '../src/types';
 import { normalizeFusionWord, dailyWords, dailyKey } from '../shared/challenge';
 import { judgeGame, endgameNotice, JUDGE_PLY } from '../shared/endgame';
 import { MOVE_STYLE_SPECS, describeMoveExtra } from '../shared/moveStyles';
-import { pieceStrength, fitToBudget, BUDGET_LIMIT, BUDGET_FLOOR } from '../shared/pieceBudget';
+import { pieceStrength, fitToBudget, BUDGET_LIMIT } from '../shared/pieceBudget';
 import { sanitizePieceData } from '../src/aiGenerator';
 
 const template = initializeBoard();
@@ -360,7 +360,9 @@ for (const op of PROGRAM_OPS) {
   const st = pieceStrength(strongTrait);
   check(st.total <= BUDGET_LIMIT, '能力＋得な性質＋広い移動の駒は、総合力の上限以内に削られる', `移動${st.move} 能力${st.ability.toFixed(1)} 性質${st.trait} → ${st.total}`);
   const weak = sanitizePieceData(raw({ move_style: 'HEAVY', trait: { kind: 'LIFESPAN' } }), '試');
-  check(pieceStrength(weak).total >= BUDGET_FLOOR, '弱点の性質＋狭い移動の駒は、下限まで移動が足される', `${weak.range_geometry.normal_grid} → ${pieceStrength(weak).total}`);
+  const weakCells = [...weak.range_geometry.normal_grid].filter(c => c === '1').length;
+  const weakFar = [...weak.range_geometry.normal_grid].some((c, i) => c === '1' && Math.max(Math.abs(Math.floor(i / 5) - 2), Math.abs((i % 5) - 2)) === 2);
+  check(weakCells > 3 && weakCells <= 6 && !weakFar, '弱点の性質＋狭い移動の駒は、周囲1マスを3マスまで足して底上げ（2マス先は足さない＝重い動きは残る）', `${weak.range_geometry.normal_grid} → ${pieceStrength(weak).total}`);
   const plain = { range_geometry: { normal_grid: MOVE_STYLE_SPECS.BALANCED.grid } };
   check(fitToBudget(plain) === plain, '上限と下限の間の駒は変えない');
 }
