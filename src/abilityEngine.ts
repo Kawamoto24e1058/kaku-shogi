@@ -3,9 +3,9 @@
 // 状態異常の持続（凍結・麻痺・封印・洗脳・死の宣告・防護）は既存の手番終了処理（App.tsx）がそのまま減らすので、
 // ここでは駒の状態を書き換えるだけにする。消滅・捕獲・分身・壁などは既存の applyCoreActionEffect に任せ、
 // 墓地送り・道連れ・死亡時能力などの既存ルールとの整合を保つ。
-import type { Board, GameLog, Piece, Player, Position } from './types';
+import type { Board, GameLog, Piece, Player, Position, TileEffectType } from './types';
 import type { AbilityProgram, ProgramEffect, ProgramTarget, TileKind } from '../shared/abilityProgram';
-import { NAMED_AREAS } from '../shared/abilityProgram';
+import { NAMED_AREAS, TILE_LABELS } from '../shared/abilityProgram';
 import { applyCoreActionEffect, getCellLabel, queueTilePlacement } from './gameLogic';
 
 export type ProgramTriggerEvent = 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' | 'ON_CAPTURE' | 'ON_DROP' | 'ON_ALLY_TAKEN';
@@ -192,8 +192,9 @@ function conditionHolds(a: AbilityProgram, board: Board, origin: Position, piece
   }
 }
 
-const TILE_TYPES: Record<TileKind, 'FIRE_ZONE' | 'POISON_MUD' | 'ICE_FLOOR' | 'TIME_BOMB' | 'STEALTH_TRAP'> = {
+const TILE_TYPES: Record<TileKind, TileEffectType> = {
   FIRE: 'FIRE_ZONE', POISON: 'POISON_MUD', ICE: 'ICE_FLOOR', BOMB: 'TIME_BOMB', TRAP: 'STEALTH_TRAP',
+  HOLY: 'SANCTUARY', SEAL: 'SEAL_ZONE', SPRING: 'SPRING_FLOOR',
 };
 
 interface RunState {
@@ -447,7 +448,10 @@ function applyEffect(state: RunState, effect: ProgramEffect, target: ResolvedTar
 
     case 'TILE': {
       // 敵のいるマス・空きマス・自分自身のマス（足元に残す）に置ける。味方の駒がいるマスには置かない
-      if (victim && !enemyVictim && victim.id !== state.piece.id) return false;
+      // （聖域だけは味方を守る地形なので、味方の足元に置ける。敵の足元には置かない）
+      const holy = effect.tile === 'HOLY';
+      if (victim && !enemyVictim && victim.id !== state.piece.id && !holy) return false;
+      if (holy && enemyVictim) return false;
       // 敵玉の周りに罠などを敷き詰めると玉が逃げられなくなる（自動対局で罠が勝率82%）
       if (isNextToEnemyKing(board, pos, state.player)) return false;
       const kind = effect.tile ?? 'FIRE';
@@ -457,7 +461,7 @@ function applyEffect(state: RunState, effect: ProgramEffect, target: ResolvedTar
         ownerPlayer: state.player,
         isStealth: kind === 'TRAP',
       });
-      log(state, `${getCellLabel(pos.y, pos.x)} に地形効果を置きました！`);
+      log(state, `${getCellLabel(pos.y, pos.x)} に${TILE_LABELS[kind]}を置きました！`);
       return true;
     }
 

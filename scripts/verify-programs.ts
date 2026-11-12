@@ -3,7 +3,7 @@
 // 1. すべての効果の部品が、ゲームエンジン上で実際に盤面・持ち駒を変えるか
 // 2. 条件・充填手番・防護・取られたときの発動・強さの自動調整が想定どおりか
 (globalThis as { localStorage?: unknown }).localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
-import { initializeBoard, applyAutomatedEffect, drainTilePlacements, isTriggerMatching, BOARD_SIZE } from '../src/gameLogic';
+import { initializeBoard, applyAutomatedEffect, drainTilePlacements, isTriggerMatching, BOARD_SIZE, applyTileEffects, createEmptyTileBoard } from '../src/gameLogic';
 import { tickAbilityCooldowns } from '../src/abilityEngine';
 import { PROGRAM_OPS, normalizeAbilityPrograms, describeAbilities, type AbilityProgram, type ProgramOp } from '../shared/abilityProgram';
 import type { Board, Piece } from '../src/types';
@@ -256,6 +256,32 @@ for (const op of PROGRAM_OPS) {
   const b2 = fresh(); b2[4][4] = avenger; b2[3][4] = mkp('gote', 'killer');
   check(!!applyAutomatedEffect(b2, [4, 4], 'ON_ALLY_TAKEN', 'sente', []).board[3][4]?.isFrozen, '「仇討ち」で近くの敵を凍らせる');
   check(describeAbilities(prog('ON_ALLY_TAKEN')).includes('味方の駒が取られたとき'), '説明文に「味方の駒が取られたとき」と出る');
+}
+
+// ===== 設置型の地形（聖域・封印陣・跳ね床） =====
+{
+  const tpl = initializeBoard();
+  const base = tpl[6][0]!;
+  const mkp = (owner: 'sente' | 'gote', id: string): Piece => ({ ...base, id, owner, isPawn: false, word: id } as Piece);
+  const fresh = () => { const b: Board = Array.from({ length: 9 }, () => Array(9).fill(null)); b[8][0] = { ...tpl[8][4]!, id: 'sk' }; b[0][8] = { ...tpl[0][4]!, id: 'gk' }; return b; };
+  const tiles = createEmptyTileBoard();
+  const b = fresh();
+  b[5][2] = mkp('sente', 'ally'); tiles[5][2] = { effectType: 'SANCTUARY', ownerPlayer: 'sente', duration: 3 };
+  b[4][4] = mkp('gote', 'sealed'); tiles[4][4] = { effectType: 'SEAL_ZONE', ownerPlayer: 'sente', duration: 3 };
+  b[5][6] = mkp('gote', 'bounced'); tiles[5][6] = { effectType: 'SPRING_FLOOR', ownerPlayer: 'sente', duration: 3 };
+  b[6][7] = mkp('gote', 'enemyOnHoly'); tiles[6][7] = { effectType: 'SANCTUARY', ownerPlayer: 'sente', duration: 3 };
+  const r = applyTileEffects(b, tiles, 'sente', []);
+  check(!!r.board[5][2]?.hasAbsoluteGuard, '聖域: 置いた側の駒は守られる');
+  check(!r.board[6][7]?.hasAbsoluteGuard, '聖域: 相手の駒が乗っても守られない');
+  check(!!r.board[4][4]?.isSilenced, '封印陣: 乗った敵の能力を封じる');
+  check(!r.board[5][6] && r.board[3][6]?.id === 'bounced', '跳ね床: 乗った敵を自陣の方向へ2マス弾き飛ばす', `→ ${r.board.flat().findIndex(p => p?.id === 'bounced')}`);
+  const b2 = fresh(); const t2 = createEmptyTileBoard();
+  b2[5][6] = mkp('gote', 'blocked'); b2[4][6] = mkp('gote', 'wall'); t2[5][6] = { effectType: 'SPRING_FLOOR', ownerPlayer: 'sente', duration: 3 };
+  check(applyTileEffects(b2, t2, 'sente', []).board[5][6]?.id === 'blocked', '跳ね床: すぐ後ろに駒がいれば動かない（駒を消したり重ねたりしない）');
+  const holy = normalizeAbilityPrograms([{ trigger: 'ON_MOVE', target: { area: 'SELF', who: 'ALLY', pick: 'ALL' }, effects: [{ op: 'TILE', tile: 'HOLY', value: 3 }], cooldown: 3 }])!;
+  check(holy[0].effects[0].tile === 'HOLY' && describeAbilities(holy).includes('聖域'), '聖域を置く能力として読めて、説明文に「聖域」と出る', describeAbilities(holy));
+  const aimedAtEnemy = normalizeAbilityPrograms([{ trigger: 'ON_MOVE', target: { area: 'RADIUS_2', who: 'ENEMY', pick: 'NEAREST', count: 1 }, effects: [{ op: 'TILE', tile: 'HOLY', value: 3 }], cooldown: 3 }])!;
+  check(aimedAtEnemy[0].target.who === 'ALLY', '敵に向けた聖域は、味方に向け直す');
 }
 
 console.log(failed === 0 ? '\nすべて成功' : `\n${failed} 件失敗`);

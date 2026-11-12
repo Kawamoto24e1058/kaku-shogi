@@ -75,7 +75,7 @@ export interface SpawnConfig {
 // ─── 動的インタープリター型能力システム（AbilitySpec） ────────────────────────
 // AIが出力する数値パラメータを元に、ゲームロジックが動的に射程・範囲・効果を計算する
 
-export type TileEffectType = 'FIRE_ZONE' | 'POISON_MUD' | 'ICE_FLOOR' | 'TIME_BOMB' | 'STEALTH_TRAP';
+export type TileEffectType = 'FIRE_ZONE' | 'POISON_MUD' | 'ICE_FLOOR' | 'TIME_BOMB' | 'STEALTH_TRAP' | 'SANCTUARY' | 'SEAL_ZONE' | 'SPRING_FLOOR';
 
 export interface TileState {
   effectType: TileEffectType;
