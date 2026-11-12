@@ -1,3 +1,4 @@
+import { promotePiece, demotePiece } from '../shared/promotion';
 import { extraMoves, initialMoveSeed, nextMoveSeed } from './moveExtras';
 import type { Board, Piece, Player, GameLog, AbilityEvent, AbilitySpec, CustomAbility, Position, TileEffectType, TileState, ActivationType } from './types';
 import { decrementCacheUses } from './aiGenerator';
@@ -1460,6 +1461,15 @@ export function executeMove(
   capturedPieces?: { sente: Piece[]; gote: Piece[] }
 ): MoveResult {
   const res = executeMoveCore(board, from, to, player, promote, playerNames, vsAiMode, isManual, capturedPieces);
+  // 成った駒は、キャラごとの変化（技が強くなる・別の技に目覚める・性質が変わる）を当てはめる
+  const promotedNow = res.board[to[0]]?.[to[1]];
+  if (promotedNow?.isPromoted && promotedNow.promotion && !promotedNow.unpromoted) {
+    res.board = res.board.map(r => [...r]);
+    res.board[to[0]][to[1]] = promotePiece(promotedNow);
+  }
+  // 取った駒は、成る前の姿に戻して持ち駒にする
+  if (res.capturedPiece) res.capturedPiece = demotePiece(res.capturedPiece);
+  if (res.capturedPieces) res.capturedPieces = res.capturedPieces.map(demotePiece);
   // 気まぐれワープの駒は、動くたびに次の行き先が変わる
   const movedPiece = res.board[to[0]]?.[to[1]];
   if (movedPiece?.move_extra?.kind === 'RANDOM_WARP') {

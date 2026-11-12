@@ -4,6 +4,7 @@
 // 重みは自動対局の勝率に合わせて決めた（scripts/calibrate-budget.ts）
 import { abilityPower, DRAWBACK_SPECS, TRAIT_SPECS, type AbilityProgram, type PieceTrait } from './abilityProgram.js';
 import { moveExtraScore, MOVE_EXTRA_SPECS, type MoveExtra } from './moveStyles.js';
+import { promotePiece, type PromotionSpec } from './promotion.js';
 
 /** 移動範囲の点数: 周囲1マスは1点、2マス先（飛び越えられる）は1.6点 */
 export function moveScore(grid: string | undefined): number {
@@ -117,4 +118,26 @@ export function fitToBudget<T extends BudgetPiece>(piece: T): T {
     added++;
   }
   return next;
+}
+
+/** 成った後の総合力の上限（成るのは終盤なので、通常の上限より少し高い） */
+export const PROMOTED_LIMIT = BUDGET_LIMIT + 4;
+
+/**
+ * 成ったときの変化を、成った後の総合力が上限以内に収まるよう調整する。
+ * 別の技に目覚める場合はその技の充填を延ばし、それでも強すぎる変化は「移動が広がる」にする
+ */
+export function fitPromotion(base: BudgetPiece & { range_geometry?: { normal_grid?: string; promoted_grid?: string } }, promotion: PromotionSpec): PromotionSpec {
+  let current = promotion;
+  for (let guard = 0; guard < 12; guard++) {
+    const promoted = promotePiece({ ...base, isPromoted: true, promotion: current, unpromoted: undefined });
+    const strength = pieceStrength({ ...promoted, range_geometry: { normal_grid: base.range_geometry?.promoted_grid ?? base.range_geometry?.normal_grid } });
+    if (strength.total <= PROMOTED_LIMIT) return current;
+    if (current.kind === 'AWAKEN' && current.ability && current.ability.cooldown < 8) {
+      current = { ...current, ability: { ...current.ability, cooldown: current.ability.cooldown + 1 } };
+      continue;
+    }
+    return { kind: 'GROW_MOVE' };
+  }
+  return current;
 }

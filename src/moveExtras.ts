@@ -44,10 +44,12 @@ export function extraMoves(board: Board, y: number, x: number, piece: Piece, gri
   const spec = MOVE_EXTRA_SPECS[extra.kind];
   // 封印中は移動の特徴も使えない（能力と同じく「特別な力」として封じられる）
   if (piece.isSilenced) return [];
-  // 成ると、滑る動きは1マス伸びる（その特徴の最大値まで）
+  // 成ると、滑る動きは1マス伸びる（その特徴の最大値まで）。
   const base = extra.range ?? spec.range?.[2] ?? 1;
   const isSlide = extra.kind === 'SLIDE_DIAGONAL' || extra.kind === 'SLIDE_ORTHOGONAL' || extra.kind === 'SLIDE_FORWARD';
-  const range = piece.isPromoted && isSlide && spec.range ? Math.min(spec.range[1], base + 1) : base;
+  // 「移動が広がる」成り方（指定がない駒も）のときだけ
+  const grows = !piece.promotion || piece.promotion.kind === 'GROW_MOVE';
+  const range = piece.isPromoted && grows && isSlide && spec.range ? Math.min(spec.range[1], base + 1) : base;
   const forward = piece.owner === 'sente' ? -1 : 1;
   switch (extra.kind) {
     case 'SLIDE_DIAGONAL':

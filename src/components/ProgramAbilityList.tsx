@@ -2,6 +2,7 @@ import React from 'react';
 import type { Piece } from '../types';
 import { describeAbility, describeTrait, TRAIT_SPECS } from '../../shared/abilityProgram';
 import { describeMoveExtra, MOVE_EXTRA_SPECS, MOVE_STYLE_SPECS, type MoveStyle } from '../../shared/moveStyles';
+import { describePromotion, PROMOTION_SPECS } from '../../shared/promotion';
 
 /** 性質の今の状態（寿命の残り・鈍足の休み・不死身を使ったか・成長の段階） */
 function traitStatus(piece: Piece): { text: string; color: string } {
@@ -64,6 +65,17 @@ export const ProgramAbilityList: React.FC<{ piece: Piece }> = ({ piece }) => {
           </div>
         );
       })}
+      {piece.promotion && !piece.isPromoted && (
+        <div style={{ borderRadius: '10px', border: '1px dashed rgba(158, 42, 43, 0.35)', background: 'rgba(254, 242, 242, 0.7)', padding: '8px 10px' }}>
+          <div style={{ fontWeight: 800, fontSize: '13px', color: '#1a1a1a', marginBottom: '2px' }}>
+            <span style={{ fontSize: '10px', color: '#9e2a2b', marginRight: '6px' }}>成ると</span>{PROMOTION_SPECS[piece.promotion.kind].label}
+          </div>
+          <div style={{ fontSize: '12px', lineHeight: 1.6, color: '#3f3a33' }}>{describePromotion(piece.promotion, piece.trait).replace(/^【[^】]*】/, '')}</div>
+        </div>
+      )}
+      {piece.isPromoted && piece.unpromoted && (
+        <div style={{ fontSize: '11px', fontWeight: 700, color: '#9e2a2b' }}>成り：{piece.promotion ? PROMOTION_SPECS[piece.promotion.kind].label : ''}（取られると元に戻る）</div>
+      )}
     </div>
   );
 };

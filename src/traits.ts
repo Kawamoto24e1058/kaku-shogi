@@ -6,6 +6,7 @@
 //   - 能力を受けるとき: 挑発・反射・重量は src/abilityEngine.ts、飛行は gameLogic の applyTileEffects
 import type { Board, GameLog, Piece, Player } from './types';
 import { TRAIT_SPECS, type TraitKind } from '../shared/abilityProgram';
+import { demotePiece } from '../shared/promotion';
 
 const SIZE = 9;
 const inBounds = (y: number, x: number) => y >= 0 && y < SIZE && x >= 0 && x < SIZE;
@@ -90,7 +91,7 @@ export function applyCaptureTraits(
       const cell = findHomeCell(next, owner);
       if (cell) {
         next = next === board ? board.map(r => [...r]) : next;
-        next[cell[0]][cell[1]] = { ...cap, owner, isPromoted: false, traitUsed: true, coolDownTurnsRemaining: 0 };
+        next[cell[0]][cell[1]] = { ...demotePiece(cap), owner, isPromoted: false, traitUsed: true, coolDownTurnsRemaining: 0 };
         logs.push({ player: owner, message: `【不死身】「${cap.word}」は倒れず、自陣によみがえりました！`, type: 'ability' });
         continue;
       }
@@ -106,7 +107,7 @@ export function applyCaptureTraits(
         let id = `${cap.id}_split`;
         for (let n = 2; ids.has(id); n++) id = `${cap.id}_split${n}`;
         // 分身は能力を持たない（能力ごと増えると強すぎた。自動対局で分裂の駒が勝率58%）
-        next[cell[0]][cell[1]] = { ...cap, id, owner, isPromoted: false, traitUsed: true, coolDownTurnsRemaining: 0, isStealth: false, isRevealed: true, abilities: undefined, ability_mode: undefined, abilityCooldowns: undefined, rules_text: undefined };
+        next[cell[0]][cell[1]] = { ...demotePiece(cap), id, owner, isPromoted: false, traitUsed: true, coolDownTurnsRemaining: 0, isStealth: false, isRevealed: true, abilities: undefined, ability_mode: undefined, abilityCooldowns: undefined, rules_text: undefined };
         logs.push({ player: owner, message: `【分裂】「${cap.word}」は取られる直前に分裂し、分身が残りました！`, type: 'ability' });
         // 分裂は1回だけ: 取られて持ち駒になった本体も使用済みにする（打ち直してまた分裂しないように）
         kept.push({ ...cap, traitUsed: true });
