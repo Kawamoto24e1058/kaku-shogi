@@ -7,6 +7,9 @@ import { readFileSync } from 'node:fs';
 import type { Board, Piece, Player, TileState } from '../src/types';
 import { normalizeAbilityPrograms, describeAbilities, abilityPower } from '../shared/abilityProgram';
 import { chooseWildMove, endOfTurnTraits, fickleTarget, markMoved, traitKind } from '../src/traits';
+import { judgeGame, JUDGE_PLY } from '../shared/endgame';
+// NO_ENDGAME=1 で判定のルールを切る（比較用）
+const ENDGAME = !process.env.NO_ENDGAME;
 
 const {
   initializeBoard, executeMove, executeDrop, applyAutomatedEffect, isTriggerMatching, drainTilePlacements,
@@ -134,11 +137,14 @@ function playGame(senteEntries: PoolEntry[], goteEntries: PoolEntry[]): GameResu
   let extraActionChain = 0;
   let abilityTriggers = 0;
   const res0 = { sentePool: senteEntries.map(e => e.name), gotePool: goteEntries.map(e => e.name) };
+  // TRACE=1 で、短手数で終わった対局の指し手と能力の記録を出す
+  const trace: string[] = [];
 
   const runEffect = (pos: [number, number], trigger: Parameters<typeof applyAutomatedEffect>[2], owner: Player, from?: [number, number], dead?: Piece) => {
     const r = applyAutomatedEffect(board, pos, trigger, owner, hands[owner], from, undefined, [], graveyard, undefined, dead, hands[opp(owner)]);
     if (r.logs.some(l => l.message.startsWith('【能力エラー】'))) throw new Error(`ability crashed (${trigger}) ${dead?.word ?? board[pos[0]][pos[1]]?.word}`);
     if (r.triggered) abilityTriggers++;
+    if (process.env.TRACE) trace.push(...r.logs.map(l => `  ${l.message}`));
     board = r.board;
     hands[owner] = r.capturedPieces;
     if (r.opponentCapturedPieces) hands[opp(owner)] = r.opponentCapturedPieces;
@@ -146,6 +152,7 @@ function playGame(senteEntries: PoolEntry[], goteEntries: PoolEntry[]): GameResu
   };
 
   for (let ply = 0; ply < 300; ply++) {
+    if (ENDGAME && ply >= JUDGE_PLY) return { winner: judgeGame(board, hands).winner, plies: ply, reason: 'judge', maxPieces, extraActionChain, abilityTriggers, ...res0 };
     // 手番開始の能力
     for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) {
       const p = board[y][x];
@@ -166,11 +173,15 @@ function playGame(senteEntries: PoolEntry[], goteEntries: PoolEntry[]): GameResu
         move.to = fickleTarget(piece, move.to, getValidMoves(move.from[0], move.from[1], board), board, rand);
         const zone = turn === 'sente' ? move.to[0] <= 2 : move.to[0] >= 6;
         const promote = zone && !piece.isKing && !piece.isPromoted;
+        if (process.env.TRACE) trace.push(`${ply}${turn === 'sente' ? '▲' : '▽'} ${piece.word} ${move.from}→${move.to}`);
         const res = executeMove(board, move.from, move.to, turn, promote, undefined, true, false, hands);
         board = markMoved(res.board, move.to);
         const captured = res.capturedPieces?.length ? res.capturedPieces : res.capturedPiece ? [res.capturedPiece] : [];
         for (const cap of captured) {
-          if (cap.isKing) return { winner: turn, plies: ply, reason: 'king-captured', maxPieces, extraActionChain, abilityTriggers, ...res0 };
+          if (cap.isKing) {
+            if (process.env.TRACE && ply < 4) console.log(`\n[短手数] ${ply}手で玉を取得 ${res0.sentePool.join('/')} vs ${res0.gotePool.join('/')}\n${trace.join('\n')}`);
+            return { winner: turn, plies: ply, reason: 'king-captured', maxPieces, extraActionChain, abilityTriggers, ...res0 };
+          }
           if (!board.some(r => r.some(c => c?.id === cap.id))) hands[turn].push({ ...cap, owner: turn, isPromoted: false, coolDownTurnsRemaining: 0, isRevealed: true });
         }
         for (const ev of res.abilityEvents ?? []) {

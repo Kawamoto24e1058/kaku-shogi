@@ -8,6 +8,7 @@ import { tickAbilityCooldowns } from '../src/abilityEngine';
 import { PROGRAM_OPS, normalizeAbilityPrograms, describeAbilities, type AbilityProgram, type ProgramOp } from '../shared/abilityProgram';
 import type { Board, Piece } from '../src/types';
 import { normalizeFusionWord, dailyWords, dailyKey } from '../shared/challenge';
+import { judgeGame, endgameNotice, JUDGE_PLY } from '../shared/endgame';
 
 const template = initializeBoard();
 const pawn = template[6][0]!;
@@ -326,6 +327,22 @@ for (const op of PROGRAM_OPS) {
   check(!weak.drawback, '弱い能力には代償は付かない');
   check(JSON.stringify(normalizeAbilityPrograms(structuredClone([strong]))![0]) === JSON.stringify(strong), '読み込み直しても代償・充填は変わらない');
   check(describeAbilities(recoil).includes('【代償】反動'), '説明文に代償が出る', describeAbilities(recoil));
+}
+
+// ===== 判定（長引いた対局の決着） =====
+{
+  const tpl = initializeBoard();
+  const b: Board = Array.from({ length: 9 }, () => Array(9).fill(null));
+  b[8][4] = { ...tpl[8][4]!, id: 'sk' }; b[0][4] = { ...tpl[0][4]!, id: 'gk' };
+  b[6][0] = { ...tpl[6][0]!, id: 'sp' }; // 先手の歩 1点
+  b[1][1] = { ...tpl[7][1]!, id: 'gb', owner: 'gote' }; // 後手の角 8点
+  const r1 = judgeGame(b, { sente: [], gote: [] });
+  check(r1.winner === 'gote' && r1.sente === 1 && r1.gote === 8, '判定: 点数の多い方が勝ち（玉は数えない）', `先手${r1.sente} 後手${r1.gote}`);
+  const r2 = judgeGame(b, { sente: [{ ...tpl[7][7]!, id: 'h1' }, { ...tpl[6][1]!, id: 'h2' }], gote: [] });
+  check(r2.winner === 'sente' && r2.sente === 10, '判定: 持ち駒も数える', `先手${r2.sente}`);
+  const tie = judgeGame([[{ ...tpl[8][4]!, id: 'k' }]], { sente: [], gote: [] });
+  check(tie.winner === 'gote', '判定: 同点なら後手の勝ち（先手の有利を打ち消す）');
+  check(endgameNotice(199) === null && !!endgameNotice(200)?.includes(`${JUDGE_PLY - 200}手で判定`), '判定の案内は200手目から出る', String(endgameNotice(200)));
 }
 
 console.log(failed === 0 ? '\nすべて成功' : `\n${failed} 件失敗`);

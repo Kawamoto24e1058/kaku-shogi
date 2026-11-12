@@ -270,6 +270,8 @@ export interface GameState {
     to: [number, number];
     piece: Piece;
   } | null;
+  /** 指し終えた手数（先手・後手の手番を合わせた数）。判定（shared/endgame.ts）に使う */
+  plyCount?: number;
 }
 
 export interface AbilityEvent {
