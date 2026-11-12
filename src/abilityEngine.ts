@@ -48,6 +48,11 @@ function isNextToEnemyKing(board: Board, pos: Position, player: Player): boolean
   return false;
 }
 
+/** pos が player 自身の玉の隣か（入れ替えで敵駒を自玉の隣に呼び込まないための確認） */
+function isNextToOwnKing(board: Board, pos: Position, player: Player): boolean {
+  return isNextToEnemyKing(board, pos, player === 'sente' ? 'gote' : 'sente');
+}
+
 /** 駒のおおよその価値（STRONGEST / WEAKEST の選択用）。空きマスは 0（空きマスを対象に「最も強い」を選ぶ能力もある） */
 function pieceStrength(p: Piece | null): number {
   if (!p) return 0;
@@ -340,7 +345,10 @@ function applyEffect(state: RunState, effect: ProgramEffect, target: ResolvedTar
 
     case 'SWAP': {
       const self = state.selfPos;
-      if (!self || !victim || victim.isKing || isObstacle(victim) || (enemyVictim && guarded(state, victim, pos, effect.op, value))) return false;
+      if (!self || !victim || victim.isKing || isObstacle(victim)) return false;
+      // 敵駒を自分の玉の隣へ呼び込む入れ替えはしない（入れ替えた直後に玉を取られてしまう。自動対局で2手目に玉を取られる対局が出た）
+      if (enemyVictim && isNextToOwnKing(board, self, state.player)) return false;
+      if (enemyVictim && guarded(state, victim, pos, effect.op, value)) return false;
       board[pos.y][pos.x] = board[self.y][self.x];
       board[self.y][self.x] = victim;
       state.selfPos = pos;
@@ -625,7 +633,7 @@ export interface ProgramPreview {
 }
 
 /** 先読み用: その効果がそのマスに実際に効きうるか（applyEffect の前提条件のおおまかな写し） */
-function couldAffect(op: string, cell: Piece | null, player: Player, self: Piece, tile?: string): boolean {
+function couldAffect(op: string, cell: Piece | null, player: Player, self: Piece, tile?: string, board: Board = [], selfAt: Position | null = null): boolean {
   const enemy = !!cell && cell.owner !== player;
   if (cell && isObstacle(cell)) return false;
   if (enemy && cell!.hasAbsoluteGuard) return false;
@@ -636,7 +644,8 @@ function couldAffect(op: string, cell: Piece | null, player: Player, self: Piece
     case 'SHIELD': case 'GUARD': case 'CLEANSE': return !!cell && !enemy;
     case 'CONTROL': return enemy && !cell!.isKing;
     case 'DESTROY': case 'CAPTURE': case 'TRANSFORM_PAWN': return !!cell && !cell.isKing;
-    case 'PUSH': case 'PULL': case 'SWAP': return !!cell && !cell.isKing && !(enemy && cell.trait?.kind === 'HEAVY');
+    case 'PUSH': case 'PULL': return !!cell && !cell.isKing && !(enemy && cell.trait?.kind === 'HEAVY');
+    case 'SWAP': return !!cell && !cell.isKing && !(enemy && cell.trait?.kind === 'HEAVY') && !(enemy && selfAt !== null && isNextToOwnKing(board, selfAt, player));
     default: return !!cell && !cell.isKing; // 凍結・麻痺・封印・呪い
   }
 }
@@ -669,7 +678,7 @@ export function previewPrograms(board: Board, position: [number, number], event:
       const target = random ? { ...ability.target, pick: 'ALL' as const } : ability.target;
       found = resolveTargets(board, target, origin, player, piece.id, ability.effects[0]?.op === 'PULL').map(t => t.pos)
         // 効果がそのマスに効きうるものだけ（玉・防護中・空きマスなど、効かない相手は外す）
-        .filter(c => ability.effects.some(e => !isSelfOnly(e) && couldAffect(e.op, board[c.y][c.x], player, piece, e.tile)
+        .filter(c => ability.effects.some(e => !isSelfOnly(e) && couldAffect(e.op, board[c.y][c.x], player, piece, e.tile, board, origin)
           // 分身・壁・地形は敵玉のすぐ隣には置けない（実際の発動と同じ制限）
           && !(['SPAWN', 'WALL', 'TILE'].includes(e.op) && isNextToEnemyKing(board, c, player))));
       if (found.length === 0) return;

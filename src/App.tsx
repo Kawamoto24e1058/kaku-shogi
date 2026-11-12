@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { GameState, Piece, Player, Board, GameLog, HistoryState, AbilityEvent, VisualEffect } from './types';
+import { JUDGE_PLY, judgeGame, endgameNotice } from '../shared/endgame';
 import {
   initializeBoard,
   getValidMoves,
@@ -124,6 +125,7 @@ export const App: React.FC = () => {
     activeAbilitySource: null,
     activeAbilityTargets: [],
     winner: null,
+    plyCount: 0,
     logs: [],
     historyStates: [],
     playerNames: { sente: savedSenteName, gote: savedGoteName },
@@ -1305,6 +1307,7 @@ export const App: React.FC = () => {
         board: JSON.stringify(initialB),
         turn: 'sente',
         winner: null,
+        plyCount: 0,
         capturedPieces: JSON.stringify({ sente: [], gote: [] }),
         sharedPieces: JSON.stringify([]),
         logs: [
@@ -1445,6 +1448,7 @@ export const App: React.FC = () => {
           board: JSON.stringify(initialB),
           turn: 'sente',
           winner: null,
+          plyCount: 0,
           capturedPieces: JSON.stringify({ sente: [], gote: [] }),
           sharedPieces: JSON.stringify([]),
           logs: [
@@ -1575,6 +1579,7 @@ export const App: React.FC = () => {
           sharedPieces: JSON.parse(data.sharedPieces),
           logs: data.logs || [],
           winner: data.winner,
+          plyCount: typeof data.plyCount === 'number' ? data.plyCount : prev.plyCount,
         };
       });
     } else if (data.status === 'finished') {
@@ -1792,10 +1797,12 @@ export const App: React.FC = () => {
     customDecks: GameState['customDecks'] = state.customDecks,
     destroyedPieces: Piece[] = state.destroyedPieces,
     logs: GameLog[] = state.logs,
-    tileBoard: GameState['tileBoard'] = state.tileBoard
+    tileBoard: GameState['tileBoard'] = state.tileBoard,
+    plyCount: number | undefined = undefined
   ) => {
     if (!onlineMode || !roomCode) return;
     updateMatch(roomCode, {
+      ...(plyCount !== undefined ? { plyCount } : {}),
       board: JSON.stringify(board),
       turn: turn,
       status: phase,
@@ -2388,9 +2395,31 @@ export const App: React.FC = () => {
       setShowCheckOverlay(true);
     }
 
+    // 手数を数え、判定の手数に達したら盤上と持ち駒の点数で決着（長引いて終わらない対局を防ぐ）
+    const nextPly = (state.plyCount ?? 0) + 1;
+    const notice = endgameNotice(nextPly);
+    if (notice && nextPly % 10 === 0 && nextPly < JUDGE_PLY) {
+      currentLogs.push({ id: generateId(), timestamp: new Date().toLocaleTimeString(), player: nextPlayer, message: `⏳ ${notice}`, type: 'system' });
+    }
+    if (nextPly >= JUDGE_PLY) {
+      const judged = judgeGame(currentBoard, currentCaptured);
+      currentLogs.push({
+        id: generateId(),
+        timestamp: new Date().toLocaleTimeString(),
+        player: judged.winner,
+        message: `⚖️ ${JUDGE_PLY}手で決着がつかなかったため判定：先手 ${judged.sente}点・後手 ${judged.gote}点で ${getPlayerName(judged.winner)} の勝ち`,
+        type: 'system'
+      });
+      setState(prev => ({ ...prev, board: currentBoard, capturedPieces: currentCaptured, tileBoard: nextTileBoard, phase: 'finished', winner: judged.winner, logs: currentLogs, plyCount: nextPly }));
+      setValidMoves([]);
+      syncOnlineState(currentBoard, nextPlayer, 'finished', judged.winner, currentCaptured, currentShared, nextCustomDecks, currentDestroyedPieces, currentLogs, nextTileBoard, nextPly);
+      return;
+    }
+
     setState(prev => {
       const nextState = {
         ...prev,
+        plyCount: nextPly,
         phase: 'playing' as const,
         board: currentBoard,
         capturedPieces: currentCaptured,
@@ -2423,7 +2452,8 @@ export const App: React.FC = () => {
       nextCustomDecks,
       currentDestroyedPieces,
       currentLogs,
-      nextTileBoard
+      nextTileBoard,
+      nextPly
     );
   };
 
@@ -3043,6 +3073,7 @@ export const App: React.FC = () => {
       ...prev,
       board: nextBoard,
       phase: 'playing',
+      plyCount: 0,
       turn: 'sente',
       customPieces: { sente: initializedSente, gote: initializedGote },
       customDecks: { sente: [], gote: [] },
@@ -3156,6 +3187,7 @@ export const App: React.FC = () => {
         setState(prev => ({
           ...prev,
           phase: 'playing',
+          plyCount: 0,
           turn: 'sente',
         }));
       }
@@ -3192,6 +3224,7 @@ export const App: React.FC = () => {
       ...prev,
       board: nextBoard,
       phase: 'playing',
+      plyCount: 0,
       turn: 'sente'
     }));
   };
@@ -3419,6 +3452,8 @@ export const App: React.FC = () => {
       const nextState = {
         ...prev,
         turn: nextPlayer,
+        // パスも1手として数える（パスを続けて判定を避けられないように）
+        plyCount: (prev.plyCount ?? 0) + 1,
         selectedCell: null,
         activeAbilityMode: false,
         activeAbilitySource: null,
@@ -3440,7 +3475,9 @@ export const App: React.FC = () => {
       state.sharedPieces,
       undefined,
       undefined,
-      nextLogs
+      nextLogs,
+      undefined,
+      (state.plyCount ?? 0) + 1
     );
   };
 
@@ -3463,6 +3500,7 @@ export const App: React.FC = () => {
       activeAbilitySource: null,
       activeAbilityTargets: [],
       winner: null,
+      plyCount: 0,
       logs: [],
       historyStates: [],
     }));
@@ -3939,8 +3977,14 @@ export const App: React.FC = () => {
                     ? `▲ ${playerNames.sente || 'プレイヤー1'}`
                     : `▽ ${playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')}`;
                   const mine = isPieceOwnerHuman(state.turn) && (onlineMode || vsAiMode);
+                  const endNotice = endgameNotice(state.plyCount ?? 0);
                   return (
                     <>
+                    {endNotice && (
+                      <div role="status" style={{ margin: '0 auto 6px', maxWidth: '520px', padding: '6px 12px', borderRadius: '10px', background: 'rgba(158, 42, 43, 0.08)', border: '1px solid rgba(158, 42, 43, 0.25)', color: 'var(--color-shinku)', fontSize: '12px', fontWeight: 700, textAlign: 'center' }}>
+                        ⏳ {endNotice}
+                      </div>
+                    )}
                     <div className="turn-strip" role="status" aria-live="polite">
                       <span className={mine ? 'turn-strip-me' : undefined}>{mine ? 'あなたの手番' : `${turnName} の手番`}</span>
                       <span className="turn-strip-sub">

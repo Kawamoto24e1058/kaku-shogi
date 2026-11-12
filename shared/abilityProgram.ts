@@ -153,7 +153,8 @@ interface OpSpec {
 
 export const OP_SPECS: Record<ProgramOp, OpSpec> = {
   DESTROY: { value: null, cost: 5, label: '消滅させる' },
-  CAPTURE: { value: null, cost: 6, label: '捕獲して持ち駒にする' },
+  // 捕獲は「相手の駒が減る」＋「自分の持ち駒が増える」。CPUが能力を狙うようにしたら、縦一列の捕獲が勝率80%になった
+  CAPTURE: { value: null, cost: 8, label: '捕獲して持ち駒にする' },
   PUSH: { value: [1, 8, 1], cost: 0.8, perValue: 0.3, label: 'マス押し出す' },
   PULL: { value: [1, 8, 1], cost: 0.8, perValue: 0.3, label: 'マス引き寄せる' },
   SWAP: { value: null, cost: 2, label: '自分と位置を入れ替える' },
@@ -404,7 +405,7 @@ const FREE_POWER = 3;
 /** これを超える強さは1ゲーム1回だけ */
 const ONCE_POWER = 18;
 /** 代償があっても、これを超える強さ（代償を引く前）は1ゲーム1回だけ */
-const ONCE_POWER_RAW = 24;
+const ONCE_POWER_RAW = 20;
 
 /** これより強い能力で代償が書かれていなければ、自動で「反動」を付ける（充填だけで抑えると、強い能力がどれも同じ「たまにしか使えない技」になる） */
 const AUTO_DRAWBACK_POWER = 10;
