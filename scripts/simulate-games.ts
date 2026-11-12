@@ -91,6 +91,13 @@ for (const [word, abilities] of Object.entries(EXTREME)) {
   pool.push({ name: `極端:${word}`, kind: 'random', data: { word, effect_name: word, range_geometry: baseRange, abilities, description: word, promoted_effect: { effect_name: `${word}・醒`, description: '' }, logic_code: 'normal' } });
 }
 
+// ONLY_EXTRA=1 で、EXTRA_POOL の駒だけで対局する（能力なしの駒だけで「泥沼化の基準」を測るときなど）
+if (process.env.ONLY_EXTRA) {
+  const extra = pool.filter(e => e.name.startsWith('AI:'));
+  pool.length = 0;
+  pool.push(...extra);
+}
+
 let idCounter = 0;
 const makePiece = (entry: PoolEntry, owner: Player): Piece => ({
   ...sanitizePieceData(structuredClone(entry.data), String(entry.data.word)),
@@ -320,6 +327,12 @@ for (const r of finished) {
   }
 }
 const ranked = [...stats].filter(([, s]) => s.games >= 15).map(([name, s]) => ({ name, rate: s.wins / s.games, games: s.games })).sort((a, b) => b.rate - a.rate);
+{
+  const rates = ranked.map(r => r.rate);
+  const mean = rates.reduce((a, b) => a + b, 0) / Math.max(1, rates.length);
+  const sd = Math.sqrt(rates.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, rates.length));
+  console.log(`\n■ 釣り合い: 駒ごとの勝率のばらつき（標準偏差）${(sd * 100).toFixed(1)}% / 65%超 ${rates.filter(r => r > 0.65).length}個 / 35%未満 ${rates.filter(r => r < 0.35).length}個（${rates.length}個中）`);
+}
 console.log('\n■ 勝率の高い駒（15局以上）');
 for (const r of ranked.slice(0, 10)) {
   const entry = pool.find(e => e.name === r.name)!;
@@ -329,4 +342,21 @@ for (const r of ranked.slice(0, 10)) {
 }
 console.log('■ 勝率の低い駒');
 for (const r of ranked.slice(-5)) console.log(`  ${(r.rate * 100).toFixed(0)}% (${r.games}局) ${r.name}`);
+
+// 泥沼化（300手で決着しない）しやすい駒: その駒が出た対局のうち、決着しなかった割合
+const stallStats = new Map<string, { games: number; stalls: number }>();
+for (const r of results.filter(x => !x.error)) {
+  for (const name of new Set([...r.sentePool, ...r.gotePool])) {
+    const s = stallStats.get(name) ?? { games: 0, stalls: 0 };
+    s.games++; if (r.stall) s.stalls++;
+    stallStats.set(name, s);
+  }
+}
+const stallRanked = [...stallStats].filter(([, s]) => s.games >= 15).map(([name, s]) => ({ name, rate: s.stalls / s.games, games: s.games })).sort((a, b) => b.rate - a.rate);
+console.log(`\n■ 泥沼化しやすい駒（全体の決着しない割合 ${(stalls.length / Math.max(1, results.length) * 100).toFixed(0)}%）`);
+for (const r of stallRanked.slice(0, 10)) {
+  const entry = pool.find(e => e.name === r.name)!;
+  const programs = normalizeAbilityPrograms(entry.data.abilities);
+  console.log(`  ${(r.rate * 100).toFixed(0)}% (${r.games}局) ${r.name}${programs ? `  ${describeAbilities(programs).replace(/\n/g, ' / ').slice(0, 120)}` : ''}`);
+}
 process.exit(errors.length ? 1 : 0);

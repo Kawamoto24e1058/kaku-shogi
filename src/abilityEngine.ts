@@ -514,8 +514,12 @@ export function runAbilityPrograms(
   const cooldowns = [...(piece.abilityCooldowns ?? piece.abilities.map(() => 0))];
   let anyTriggered = false;
 
+  // 代償「代価」の能力は、捨てる持ち駒が足りなければ使えない
+  let handCost = 0;
+  const canPay = (ability: AbilityProgram) =>
+    ability.drawback?.kind !== 'HAND_COST' || capturedPieces.length - handCost >= (ability.drawback.value ?? 1);
   const ready = (ability: AbilityProgram, index: number) =>
-    abilityMatchesEvent(ability, event) && (cooldowns[index] ?? 0) === 0
+    abilityMatchesEvent(ability, event) && (cooldowns[index] ?? 0) === 0 && canPay(ability)
     && conditionHolds(ability, nextBoard, state.selfPos ?? state.origin, piece, player, capturedPieces.length, state.opponentCaptured.length);
   // ランダム型（ガチャ・サイコロなど）は、使える能力のうち1つだけをランダムに選んで発動する
   let chosen: number | null = null;
@@ -552,6 +556,27 @@ export function runAbilityPrograms(
     if (triggered) {
       anyTriggered = true;
       cooldowns[index] = ability.cooldown;
+      // 代償を払う（発動したときだけ）
+      const drawback = ability.drawback;
+      const self = state.selfPos;
+      const me = self ? nextBoard[self.y][self.x] : null;
+      const meOnBoard = !!me && me.id === piece.id;
+      if (drawback?.kind === 'RECOIL' && meOnBoard) {
+        // 動けない手番は持ち主の手番の終わりに1減るので、今の手番の分を足す
+        const turns = drawback.value ?? 1;
+        // ただし仇討ちは相手の手番に起きるので、足さない（足すと1手番多く止まる）
+        const stun = event === 'ON_ALLY_TAKEN' ? turns : turns + 1;
+        nextBoard[self!.y][self!.x] = { ...me!, stunTurnsRemaining: Math.max(me!.stunTurnsRemaining ?? 0, stun) };
+        state.logs.push({ player, message: `【反動】${me!.word} は反動で${turns}手番動けません。`, type: 'ability' });
+      } else if (drawback?.kind === 'SACRIFICE' && meOnBoard && !me!.isKing) {
+        nextBoard[self!.y][self!.x] = null;
+        state.graveyard.push({ ...me! });
+        state.selfPos = null;
+        state.logs.push({ player, message: `【捨て身】${me!.word} は力を使い果たして消えました。`, type: 'ability' });
+      } else if (drawback?.kind === 'HAND_COST') {
+        handCost += drawback.value ?? 1;
+        state.logs.push({ player, message: `【代価】持ち駒を${drawback.value ?? 1}枚捨てました。`, type: 'ability' });
+      }
       if (chosen !== null) {
         // ランダム型は「1回引いたら、また引けるまで待つ」。充填中の間はどの能力も選ばれない。
         // 能力ごとに別々に充填すると、どれかが毎手番使えてしまい強すぎた（自動対局で勝率76%）。
@@ -572,9 +597,11 @@ export function runAbilityPrograms(
     if (me && me.id === piece.id) nextBoard[state.selfPos.y][state.selfPos.x] = { ...me, abilityCooldowns: cooldowns };
   }
 
+  // 代価で捨てる持ち駒は、元から持っていた駒の新しい方から
+  const hand = handCost > 0 ? capturedPieces.slice(0, Math.max(0, capturedPieces.length - handCost)) : capturedPieces;
   return {
     board: nextBoard,
-    capturedPieces: [...capturedPieces, ...state.captured],
+    capturedPieces: [...hand, ...state.captured],
     opponentCapturedPieces: state.opponentCaptured,
     graveyard: [...(graveyard ?? []), ...state.graveyard],
     logs: state.logs,
@@ -587,4 +614,70 @@ export function runAbilityPrograms(
 export function tickAbilityCooldowns(piece: Piece): Piece {
   if (!piece.abilityCooldowns?.some(c => c > 0 && c < 99)) return piece;
   return { ...piece, abilityCooldowns: piece.abilityCooldowns.map(c => (c > 0 && c < 99 ? c - 1 : c)) };
+}
+
+/** 盤面を変えずに、能力がどこに効くかを先読みした結果（画面の「どこに置けば発動するか」表示用） */
+export interface ProgramPreview {
+  /** yes = 発動する / maybe = 確率や無作為の選び方しだい / no = 発動しない */
+  status: 'yes' | 'maybe' | 'no';
+  /** 効果を受けるマス（無作為に選ぶ能力は、選ばれうるマスすべて） */
+  targets: Position[];
+}
+
+/** 先読み用: その効果がそのマスに実際に効きうるか（applyEffect の前提条件のおおまかな写し） */
+function couldAffect(op: string, cell: Piece | null, player: Player, self: Piece, tile?: string): boolean {
+  const enemy = !!cell && cell.owner !== player;
+  if (cell && isObstacle(cell)) return false;
+  if (enemy && cell!.hasAbsoluteGuard) return false;
+  if (enemy && cell!.trait?.kind === 'REFLECT' && !cell!.traitUsed) return true; // 跳ね返されるが「発動」はする
+  switch (op) {
+    case 'SPAWN': case 'WALL': case 'TELEPORT': return !cell;
+    case 'TILE': return tile === 'HOLY' ? !enemy : !cell || enemy || cell.id === self.id;
+    case 'SHIELD': case 'GUARD': case 'CLEANSE': return !!cell && !enemy;
+    case 'CONTROL': return enemy && !cell!.isKing;
+    case 'DESTROY': case 'CAPTURE': case 'TRANSFORM_PAWN': return !!cell && !cell.isKing;
+    case 'PUSH': case 'PULL': case 'SWAP': return !!cell && !cell.isKing && !(enemy && cell.trait?.kind === 'HEAVY');
+    default: return !!cell && !cell.isKing; // 凍結・麻痺・封印・呪い
+  }
+}
+
+/**
+ * 能力を実際には発動させずに、position にいる駒がイベントで発動するか・どのマスに効くかを返す。
+ * 判定は実際の発動（runAbilityPrograms）と同じ範囲・条件・対象の選び方を使う
+ */
+export function previewPrograms(board: Board, position: [number, number], event: ProgramTriggerEvent, player: Player, myHand: number, enemyHand: number): ProgramPreview {
+  const origin = { y: position[0], x: position[1] };
+  const piece = board[origin.y]?.[origin.x];
+  const none: ProgramPreview = { status: 'no', targets: [] };
+  if (!piece?.abilities?.length || piece.isSilenced) return none;
+  let status: ProgramPreview['status'] = 'no';
+  const cells = new Map<string, Position>();
+  piece.abilities.forEach((ability, index) => {
+    if (!abilityMatchesEvent(ability, event) || (piece.abilityCooldowns?.[index] ?? 0) > 0) return;
+    if (ability.drawback?.kind === 'HAND_COST' && myHand < (ability.drawback.value ?? 1)) return;
+    const chance = ability.condition === 'CHANCE';
+    if (!chance && !conditionHolds(ability, board, origin, piece, player, myHand, enemyHand)) return;
+    const isSelfOnly = (e: ProgramEffect) => e.op === 'STEALTH' || e.op === 'EXTRA_ACTION' || e.op === 'STEAL_HAND';
+    const ranged = ability.effects.some(e => !isSelfOnly(e));
+    // 持ち駒を奪うだけの能力は、相手の持ち駒がなければ何も起きない
+    if (!ranged && ability.effects.every(e => e.op === 'STEAL_HAND') && enemyHand === 0) return;
+    let found: Position[] = [origin];
+    let random = false;
+    if (ranged) {
+      // 無作為に選ぶ能力は、選ばれうる候補をすべて見せる（実際にはこのうち count 体）
+      random = ability.target.pick === 'RANDOM';
+      const target = random ? { ...ability.target, pick: 'ALL' as const } : ability.target;
+      found = resolveTargets(board, target, origin, player, piece.id, ability.effects[0]?.op === 'PULL').map(t => t.pos)
+        // 効果がそのマスに効きうるものだけ（玉・防護中・空きマスなど、効かない相手は外す）
+        .filter(c => ability.effects.some(e => !isSelfOnly(e) && couldAffect(e.op, board[c.y][c.x], player, piece, e.tile)
+          // 分身・壁・地形は敵玉のすぐ隣には置けない（実際の発動と同じ制限）
+          && !(['SPAWN', 'WALL', 'TILE'].includes(e.op) && isNextToEnemyKing(board, c, player))));
+      if (found.length === 0) return;
+      random = random && found.length > ability.target.count;
+    }
+    for (const c of found) cells.set(`${c.y},${c.x}`, c);
+    const s = chance || random || piece.ability_mode === 'RANDOM' ? 'maybe' : 'yes';
+    if (status !== 'yes') status = s;
+  });
+  return { status, targets: status === 'no' ? [] : [...cells.values()] };
 }

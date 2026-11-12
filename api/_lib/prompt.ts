@@ -54,6 +54,8 @@ ${TRAIT_LIST}
 - effects（1〜2個、配列の順に同じ対象へ実行）: { op, value?, tile? }
 ${OP_LIST}
 - cooldown: 使用後の充填手番（0〜5。99=1ゲーム1回）
+- drawback（任意）: 強い技の代償 { kind, value? }。RECOIL=反動（使った後この駒がvalue手番動けない） / SACRIFICE=捨て身（使うとこの駒も消える。自爆・特攻） / HAND_COST=代価（持ち駒をvalue枚捨てる。取引・錬金） / FRIENDLY_FIRE=巻き添え（範囲の味方にも効く。爆発・災害）。
+  強い技ほど、その単語らしい代償を付ける（代償の分だけ充填が短くなる）。付けなければ強い技にはシステムが反動を付ける
 - 玉将は消す・捕獲・寝返り・歩兵化できない。ON_TAKEN では自分がもう盤上にいないので、SWAP / TELEPORT / STEALTH / EXTRA_ACTION は使えない（仕返し・呪い・置き土産で表す）。
 
 # 手本（読み解き → 能力。この深さで考える。手本の技・効果をそのまま使い回さず、単語ごとに読み解きから考え直す）
@@ -101,7 +103,8 @@ ability_mode は "SINGLE"。くじ・ガチャ・サイコロ・天気のよう�
 - condition: NONE / IN_ENEMY_CAMP / ENEMIES_NEAR_AT_LEAST / NO_ALLY_NEAR / PROMOTED / CHANCE(%)
 - area: SELF / ADJACENT / RADIUS_2 / FRONT_LINE / LINES_8 / CROSS / ROW / COLUMN / ALL / ATTACKER(ON_TAKENのみ)。who: ENEMY/ALLY/ANY/EMPTY。pick: ALL/NEAREST/STRONGEST/WEAKEST/RANDOM
 - op: ${OP_NAMES}。TILE は tile=${TILE_KINDS.map(k => `${k}(${TILE_LABELS[k]})`).join('/')}（HOLY=味方を守る、ほかは敵が乗ると発動）
-- 強い能力にはシステムが充填手番を自動で付けるので弱くしなくてよい。ON_TAKEN では SWAP/TELEPORT/STEALTH/EXTRA_ACTION は使えない。
+- drawback（任意）: 強い技の代償。RECOIL(反動・value手番動けない)/SACRIFICE(捨て身・この駒も消える)/HAND_COST(代価・持ち駒value枚)/FRIENDLY_FIRE(巻き添え・味方にも効く)。単語に合うものを選ぶ（例 爆弾→FRIENDLY_FIRE、特攻→SACRIFICE）
+- 強い能力にはシステムが充填手番や反動を自動で付けるので弱くしなくてよい。ON_TAKEN では SWAP/TELEPORT/STEALTH/EXTRA_ACTION は使えない。
 例 消しゴム: 「書いた文字を消して書き直す」→ {"name":"書直","trigger":"ON_CAPTURE","condition":"NONE","target":{"area":"ADJACENT","who":"ENEMY","pick":"STRONGEST","count":1},"effects":[{"op":"TRANSFORM_PAWN"}],"cooldown":3}
 例 鏡: 「映ったものと入れ替わる」→ {"name":"鏡写","trigger":"ON_MOVE","condition":"NONE","target":{"area":"RADIUS_2","who":"ENEMY","pick":"STRONGEST","count":1},"effects":[{"op":"SWAP"}],"cooldown":3}
 （例の効果をそのまま使い回さない。単語ごとに読み解きから選び直す）

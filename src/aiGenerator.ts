@@ -21,7 +21,7 @@ const memoryCache = new Map<string, PieceData>();
 // バージョン管理されたワンタイムキャッシュクリーンアップ（v4にアップデートして古いキャッシュを全消去）
 try {
   if (typeof window !== 'undefined' && window.localStorage) {
-    const CURRENT_VERSION = 'v11'; // v11: 新しい駒から古い自律移動・移動指定を外す（古い駒の端末キャッシュを捨てる）
+    const CURRENT_VERSION = 'v12'; // v12: 強い能力に代償（反動など）を付けた釣り合いに変えた（古い駒の端末キャッシュを捨てる）
     const activeVersion = localStorage.getItem('shogi_cache_version');
     if (activeVersion !== CURRENT_VERSION) {
       localStorage.removeItem('shogi_piece_cache');

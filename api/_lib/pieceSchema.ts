@@ -2,8 +2,7 @@
 // enum でエンジンが実行できる値だけに制限する（能力は shared/abilityProgram.ts の部品）。
 import { TRAJECTORIES, VISUAL_THEMES } from '../../shared/abilityCatalog.js';
 import {
-  PROGRAM_TRIGGERS, PROGRAM_CONDITIONS, PROGRAM_OPS, TARGET_WHO, TARGET_PICKS, TILE_KINDS, AURAS, TRAIT_KINDS,
-} from '../../shared/abilityProgram.js';
+  PROGRAM_TRIGGERS, PROGRAM_CONDITIONS, PROGRAM_OPS, TARGET_WHO, TARGET_PICKS, TILE_KINDS, AURAS, TRAIT_KINDS, DRAWBACK_KINDS } from '../../shared/abilityProgram.js';
 
 const str = (description?: string) => ({ type: 'STRING', ...(description ? { description } : {}) });
 const enumOf = (values: readonly string[], description?: string) => ({ type: 'STRING', enum: [...values], ...(description ? { description } : {}) });
@@ -39,6 +38,12 @@ const abilityProgram = {
       },
     },
     cooldown: { type: 'INTEGER' },
+    drawback: {
+      type: 'OBJECT',
+      description: '代償（強い技のリスク）。無ければ省略',
+      properties: { kind: enumOf(DRAWBACK_KINDS), value: { type: 'INTEGER' } },
+      required: ['kind'],
+    },
   },
   required: ['name', 'trigger', 'condition', 'target', 'effects', 'cooldown'],
 };
