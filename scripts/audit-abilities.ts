@@ -10,12 +10,14 @@
 //   7. 「発動した」と扱われたときは、盤面・持ち駒・地形・再行動のどれかが実際に変わっている
 //   8. 範囲に対象がいなければ発動しない（範囲の効果と一緒の「もう1回」「隠れる」も出ない）
 //   9. 条件（敵陣にいる・周りに敵がいる・持ち駒がある・成っている など）を満たさなければ発動しない
+//  10. 画面の先読み（previewPrograms）が実際の発動と食い違わない（「発動しない」と出たのに発動する、またはその逆がない）
 import { readFileSync } from 'node:fs';
 import type { Board, Piece } from '../src/types';
 import { OP_SPECS, PROGRAM_TRIGGERS, PROGRAM_CONDITIONS, NAMED_AREAS, TARGET_WHO, TARGET_PICKS, TRAIT_KINDS, TILE_KINDS } from '../shared/abilityProgram';
 
 (globalThis as { localStorage?: unknown }).localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 const { sanitizePieceData } = await import('../src/aiGenerator');
+const { previewPrograms } = await import('../src/abilityEngine');
 const { initializeBoard, applyAutomatedEffect, isTriggerMatching, getValidMoves, drainTilePlacements, isAutonomousPiece } = await import('../src/gameLogic');
 
 let seed = 7;
@@ -190,6 +192,19 @@ for (const raw of raws) {
         const why = mine.map(a => (IMPOSSIBLE_ALONE.has(a.condition) ? `条件${a.condition}` : `範囲${a.target.area}/${a.target.who}`)).join(',');
         note('範囲に誰もいない・条件を満たさないのに発動した', `${word}: ${event}（${why}） ${res.logs.map(l => l.message).join(' / ').slice(0, 80)}`);
       }
+    }
+  }
+  // 10. 先読みと実際の発動が食い違わない（ひとりぼっち・敵に囲まれた盤の両方で）
+  for (const event of ['ON_MOVE', 'ON_CAPTURE', 'ON_PROMOTE', 'ON_DROP', 'ON_ALLY_TAKEN'] as const) {
+    if (!(piece.abilities ?? []).some(a => a.trigger === event)) continue;
+    for (const [label, make] of [['敵に囲まれた盤', setup], ['ひとりぼっちの盤', alone]] as const) {
+      const board = make(piece);
+      const pv = previewPrograms(board, [4, 4], event, 'sente', 0, 1);
+      drainTilePlacements();
+      const res = applyAutomatedEffect(board, [4, 4], event, 'sente', [], [5, 4], undefined, [], [], undefined, undefined, [{ ...pawn, id: 'h1', owner: 'gote' }]);
+      drainTilePlacements();
+      if (pv.status === 'no' && res.triggered) note('先読みは「発動しない」なのに発動した', `${word}: ${event} ${label}`);
+      if (res.triggered && pv.targets.length === 0) note('発動したのに先読みで効くマスが空', `${word}: ${event} ${label}`);
     }
   }
   // 3. 動けるマスは移動範囲どおり（飛・角・香・砲などの遠くまで動く駒は 5x5 で表せないので対象外）

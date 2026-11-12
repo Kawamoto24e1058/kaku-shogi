@@ -1,4 +1,5 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
+import { previewPrograms, type ProgramPreview } from '../abilityEngine';
 import type { Board, Piece, Player, GamePhase, VisualEffect, TileState } from '../types';
 import { BOARD_SIZE, getPieceLogicCode, getPieceTrigger, getEffectCells, getBoardPiece } from '../gameLogic';
 import type { AbilityAnimationState } from '../App';
@@ -75,6 +76,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   phase,
   customPiecesToPlace: _customPiecesToPlace,
   selectedCell,
+  selectedCapturedPiece,
+  capturedPieces,
   validMoves,
   activeAbilityTargets,
   activeAbilityMode: _activeAbilityMode,
@@ -652,6 +655,44 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   // activeAbilityMode 中にセルをホバーしたとき、着弾範囲を動的プレビューする
   const [hoveredAbilityCell, setHoveredAbilityCell] = useState<[number, number] | null>(null);
 
+  // ── 能力の先読み: 選んだ駒（または打とうとしている持ち駒）を各マスに動かしたら、能力が発動するか・どこに効くか ──
+  // 判定は実際の発動と同じエンジン（previewPrograms）を盤面を変えずに使う
+  const movePreviews = useMemo(() => {
+    const out = new Map<string, ProgramPreview>();
+    const dropping = selectedCapturedPiece?.piece;
+    const mover = selectedCell ? board[selectedCell[0]]?.[selectedCell[1]] : dropping ?? null;
+    if (!mover?.abilities?.length || validMoves.length === 0) return out;
+    const owner = mover.owner;
+    const enemy: Player = owner === 'sente' ? 'gote' : 'sente';
+    for (const [y, x] of validMoves) {
+      const hyp = board.map(row => [...row]);
+      const taken = hyp[y][x];
+      const isCapture = !!taken && taken.owner !== owner;
+      hyp[y][x] = selectedCell ? mover : { ...mover, owner };
+      if (selectedCell) hyp[selectedCell[0]][selectedCell[1]] = null;
+      const myHand = (capturedPieces[owner]?.length ?? 0) + (isCapture ? 1 : 0) - (selectedCell ? 0 : 1);
+      const enemyHand = capturedPieces[enemy]?.length ?? 0;
+      const events = selectedCell ? (['ON_MOVE', ...(isCapture ? ['ON_CAPTURE' as const] : [])] as const) : (['ON_DROP'] as const);
+      let status: ProgramPreview['status'] = 'no';
+      const cells = new Map<string, { y: number; x: number }>();
+      for (const ev of events) {
+        const p = previewPrograms(hyp, [y, x], ev, owner, myHand, enemyHand);
+        if (p.status === 'yes' || (p.status === 'maybe' && status === 'no')) status = p.status;
+        for (const c of p.targets) cells.set(`${c.y},${c.x}`, c);
+      }
+      if (status !== 'no') out.set(`${y},${x}`, { status, targets: [...cells.values()] });
+    }
+    return out;
+  }, [board, selectedCell, selectedCapturedPiece, validMoves, capturedPieces]);
+  // 先読みを見ているマス（PC はマウスを乗せる、スマホは長押し）
+  const [previewCell, setPreviewCell] = useState<[number, number] | null>(null);
+  const previewTargets = useMemo(() => {
+    const p = previewCell ? movePreviews.get(`${previewCell[0]},${previewCell[1]}`) : undefined;
+    return new Set((p?.targets ?? []).map(c => `${c.y},${c.x}`));
+  }, [previewCell, movePreviews]);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressed = useRef(false);
+
   const shouldRotate = onlineMode
     ? (myRole === 'gote')
     : (vsAiMode ? false : localTurn === 'gote');
@@ -853,6 +894,13 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       } else {
         cellClassName += ' move-highlight-normal';
       }
+    } else if (previewTargets.has(`${y},${x}`)) {
+      // 能力の先読み: このマスに効く
+      cellStyle.borderColor = 'rgba(220, 38, 38, 0.9)';
+      cellStyle.borderWidth = '2px';
+      cellStyle.background = piece && piece.owner !== (board[selectedCell?.[0] ?? -1]?.[selectedCell?.[1] ?? -1]?.owner ?? selectedCapturedPiece?.piece.owner)
+        ? 'rgba(220, 38, 38, 0.18)'
+        : 'rgba(37, 99, 235, 0.14)';
     } else if (isEffectPreview) {
       // 着弾範囲プレビュー（赤枠）
       cellStyle.borderColor = 'rgba(220, 38, 38, 0.85)';
@@ -1543,8 +1591,25 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         className={finalCellClassName}
         style={cellStyle}
         onClick={() => onCellClick(y, x)}
+        onTouchStart={() => {
+          // 能力が発動するマスを長押しすると、どこに効くかを見せる（指を離すと消える。このときは動かさない）
+          longPressed.current = false;
+          if (longPressTimer.current) clearTimeout(longPressTimer.current);
+          if (isMove && movePreviews.has(`${y},${x}`)) {
+            longPressTimer.current = setTimeout(() => { longPressed.current = true; setPreviewCell([y, x]); }, 380);
+          }
+        }}
+        onTouchMove={() => {
+          if (longPressTimer.current) clearTimeout(longPressTimer.current);
+        }}
         onTouchEnd={(e) => {
           e.preventDefault();
+          if (longPressTimer.current) clearTimeout(longPressTimer.current);
+          if (longPressed.current) {
+            longPressed.current = false;
+            setPreviewCell(null);
+            return;
+          }
           onCellClick(y, x);
           const viewer: Player = onlineMode ? (myRole || 'sente') : (vsAiMode ? 'sente' : localTurn);
           // ステルス未公開の敵駒は能力を見せない
@@ -1555,6 +1620,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           if (_activeAbilityMode) {
             setHoveredAbilityCell([y, x]);
           }
+          setPreviewCell(isMove && movePreviews.has(`${y},${x}`) ? [y, x] : null);
           if (piece) {
             const viewer: Player = onlineMode ? (myRole || 'sente') : (vsAiMode ? 'sente' : localTurn);
             // ステルス未公開の敵駒は除く（それ以外は敵駒も含めて全駒渡す）
@@ -1568,10 +1634,23 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         }}
         onMouseLeave={() => {
           setHoveredAbilityCell(null);
+          setPreviewCell(null);
           onHoverPiece?.(null);
         }}
       >
         {pieceUI}
+        {(() => {
+          const pv = isMove ? movePreviews.get(`${y},${x}`) : undefined;
+          if (!pv) return null;
+          return (
+            <span
+              aria-label={pv.status === 'yes' ? `ここに動くと能力が発動（${pv.targets.length}か所）` : `ここに動くと能力が発動するかも（${pv.targets.length}か所）`}
+              style={{ position: 'absolute', top: '1px', right: '1px', zIndex: 12, pointerEvents: 'none', fontSize: '9px', fontWeight: 900, lineHeight: 1, padding: '2px 3px', borderRadius: '6px', color: '#fff', background: pv.status === 'yes' ? 'rgba(220, 38, 38, 0.9)' : 'rgba(120, 113, 108, 0.9)', transform: shouldRotate ? 'rotate(180deg)' : undefined }}
+            >
+              {pv.status === 'yes' ? '⚡' : '？'}{pv.targets.length}
+            </span>
+          );
+        })()}
 
 
         

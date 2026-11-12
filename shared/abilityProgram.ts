@@ -70,6 +70,57 @@ export interface AbilityProgram {
   effects: ProgramEffect[];
   /** 発動後の充填手番。99 = 1ゲーム1回 */
   cooldown: number;
+  /** 代償（リスク・デメリット）。強い能力はこれを払う代わりに充填が短くなる */
+  drawback?: AbilityDrawback;
+}
+
+// ===== 代償（強い能力のリスク・デメリット） =====
+export const DRAWBACK_KINDS = ['RECOIL', 'SACRIFICE', 'HAND_COST', 'FRIENDLY_FIRE'] as const;
+export type DrawbackKind = typeof DRAWBACK_KINDS[number];
+export interface AbilityDrawback {
+  kind: DrawbackKind;
+  /** 反動の手番数・代価の枚数 */
+  value?: number;
+}
+interface DrawbackSpec {
+  label: string;
+  /** 説明（{n} は value） */
+  text: string;
+  value?: [number, number, number];
+  /** この代償で払える強さ（強さの見積もりから差し引く）。power は能力の強さ */
+  relief: (value: number, power: number) => number;
+}
+export const DRAWBACK_SPECS: Record<DrawbackKind, DrawbackSpec> = {
+  // 自動対局: 1手番あたり3を差し引くと「盤上の2体を消す」が勝率69%まで強くなったので2にする
+  RECOIL: { label: '反動', text: '使った後、この駒は{n}手番動けない', value: [1, 3, 1], relief: v => 2 * v },
+  SACRIFICE: { label: '捨て身', text: '使うと、この駒も消える', relief: () => 9 },
+  HAND_COST: { label: '代価', text: '使うたびに自分の持ち駒を{n}枚捨てる（足りなければ使えない）', value: [1, 2, 1], relief: v => 3 * v },
+  FRIENDLY_FIRE: { label: '巻き添え', text: '範囲にいる味方の駒にも効く', relief: (_v, power) => power * 0.35 },
+};
+/** 敵に向けて使う害のある部品（巻き添えで味方にも効く意味があるもの） */
+const HARMFUL_OPS = new Set(['DESTROY', 'CAPTURE', 'PUSH', 'PULL', 'FREEZE', 'STUN', 'SILENCE', 'DOOM', 'TRANSFORM_PAWN']);
+const DRAWBACK_NAMES: Record<string, DrawbackKind> = { 反動: 'RECOIL', 捨て身: 'SACRIFICE', 自爆: 'SACRIFICE', 代価: 'HAND_COST', 巻き添え: 'FRIENDLY_FIRE' };
+
+/** AIの書いた代償を読む。発動のきっかけや効果と組み合わせて意味のないものは捨てる */
+function normalizeDrawback(raw: unknown, trigger: ProgramTrigger, effects: ProgramEffect[], target: ProgramTarget): AbilityDrawback | undefined {
+  if (!raw) return undefined;
+  const obj = (typeof raw === 'object' ? raw : { kind: raw }) as Record<string, unknown>;
+  const name = String(obj.kind ?? obj.type ?? '').trim();
+  const kind = (DRAWBACK_KINDS as readonly string[]).includes(name.toUpperCase()) ? name.toUpperCase() as DrawbackKind : DRAWBACK_NAMES[name];
+  if (!kind) return undefined;
+  // 取られたときは、この駒はもう盤上にいないので「動けない」「この駒も消える」は意味がない
+  if ((kind === 'RECOIL' || kind === 'SACRIFICE') && trigger === 'ON_TAKEN') return undefined;
+  // 巻き添えは、敵に害のある効果を範囲に使う能力だけ
+  if (kind === 'FRIENDLY_FIRE' && (!effects.some(e => HARMFUL_OPS.has(e.op)) || target.who !== 'ENEMY' || ['SELF', 'ATTACKER'].includes(target.area))) return undefined;
+  const spec = DRAWBACK_SPECS[kind];
+  const drawback: AbilityDrawback = { kind };
+  if (spec.value) drawback.value = clamp(asInt(obj.value, spec.value[2]), spec.value[0], spec.value[1]);
+  return drawback;
+}
+
+export function describeDrawback(d: AbilityDrawback): string {
+  const spec = DRAWBACK_SPECS[d.kind];
+  return `${spec.label}：${spec.text.replace('{n}', String(d.value ?? spec.value?.[2] ?? ''))}`;
 }
 
 export interface PieceAppearance {
@@ -122,7 +173,8 @@ export const OP_SPECS: Record<ProgramOp, OpSpec> = {
   SPAWN: { value: [1, 3, 1], cost: 1.5, perValue: 1.5, label: '体の分身を呼び出す' },
   WALL: { value: [1, 4, 2], cost: 0.6, perValue: 0.2, label: '手番残る壁を置く' },
   TILE: { value: [1, 5, 3], cost: 0.8, perValue: 0.2, label: '手番残る地形を置く' },
-  STEAL_HAND: { value: [1, 2, 1], cost: 2, perValue: 2, self: true, label: '枚、相手の持ち駒を奪う' },
+  // 奪うと「相手が減って自分が増える」ので持ち駒の差は2倍動く。自動対局で「味方が取られたら2枚奪う」が勝率97%だった
+  STEAL_HAND: { value: [1, 2, 1], cost: 4, perValue: 4, self: true, label: '枚、相手の持ち駒を奪う' },
 };
 
 export const TRIGGER_LABELS: Record<ProgramTrigger, string> = {
@@ -292,6 +344,12 @@ function normalizeAbility(raw: unknown, index: number): AbilityProgram | null {
     effects,
     cooldown: clamp(asInt(a.cooldown, 0), 0, 99),
   };
+  const drawback = normalizeDrawback(a.drawback, trigger, effects, target);
+  if (drawback) {
+    ability.drawback = drawback;
+    // 巻き添え: 範囲の味方にも同じ効果が及ぶ
+    if (drawback.kind === 'FRIENDLY_FIRE') ability.target = { ...ability.target, who: 'ANY' };
+  }
   if (trigger === 'EVERY_N_TURNS') ability.every = clamp(asInt(a.every, 3), 2, 5);
   if (condition === 'CHANCE') ability.condition_value = clamp(asInt(a.condition_value, 50), 10, 90);
   else if (['ENEMIES_NEAR_AT_LEAST', 'ALLIES_NEAR_AT_LEAST'].includes(condition)) ability.condition_value = clamp(asInt(a.condition_value, 2), 1, 4);
@@ -310,7 +368,9 @@ function estimatedTargetCount(t: ProgramTarget): number {
 }
 
 const TRIGGER_WEIGHT: Record<ProgramTrigger, number> = {
-  ON_MOVE: 1, TURN_START: 1.3, EVERY_N_TURNS: 1, ON_CAPTURE: 0.8, ON_TAKEN: 0.7, ON_APPROACH: 0.9, ON_PROMOTE: 0.5, ON_DROP: 0.7, ON_ALLY_TAKEN: 0.8,
+  ON_MOVE: 1, TURN_START: 1.3, EVERY_N_TURNS: 1, ON_CAPTURE: 0.8, ON_TAKEN: 0.7, ON_APPROACH: 0.9, ON_PROMOTE: 0.5, ON_DROP: 0.7,
+  // 仇討ちは相手の手番に、手を使わずに何度も起きる
+  ON_ALLY_TAKEN: 1.1,
 };
 
 /** 1回の発動の強さ（だいたい「駒1枚を消す」= 5） */
@@ -343,18 +403,32 @@ export function abilityPower(a: AbilityProgram): number {
 const FREE_POWER = 3;
 /** これを超える強さは1ゲーム1回だけ */
 const ONCE_POWER = 18;
+/** 代償があっても、これを超える強さ（代償を引く前）は1ゲーム1回だけ */
+const ONCE_POWER_RAW = 24;
 
-/** 強さに見合う充填手番を付ける（AI が付けた値の方が長ければそちらを使う） */
+/** これより強い能力で代償が書かれていなければ、自動で「反動」を付ける（充填だけで抑えると、強い能力がどれも同じ「たまにしか使えない技」になる） */
+const AUTO_DRAWBACK_POWER = 10;
+
+/**
+ * 強さに見合う充填手番を付ける（AI が付けた値の方が長ければそちらを使う）。
+ * 代償（反動・捨て身・代価・巻き添え）がある能力は、その分だけ強さを差し引いて充填を短くする
+ */
 export function balanceAbility(a: AbilityProgram): AbilityProgram {
   const power = abilityPower(a);
-  let required = power <= FREE_POWER ? 0 : Math.ceil((power - FREE_POWER) / 2.5);
+  let drawback = a.drawback;
+  if (!drawback && power > AUTO_DRAWBACK_POWER && a.trigger !== 'ON_TAKEN') {
+    drawback = { kind: 'RECOIL', value: power > 16 ? 2 : 1 };
+  }
+  const relief = drawback ? DRAWBACK_SPECS[drawback.kind].relief(drawback.value ?? DRAWBACK_SPECS[drawback.kind].value?.[2] ?? 1, power) : 0;
+  const effective = Math.max(0, power - relief);
+  let required = effective <= FREE_POWER ? 0 : Math.ceil((effective - FREE_POWER) / 2.5);
   // 確率で発動する能力は、当たるまで平均 (1/確率 - 1) 手番待つので、その分だけ充填手番を短くする
   if (a.condition === 'CHANCE') required = Math.max(0, required - Math.floor(100 / (a.condition_value ?? 50) - 1));
-  if (power > ONCE_POWER) required = 99;
+  if (effective > ONCE_POWER || (power > ONCE_POWER_RAW && drawback?.kind !== 'SACRIFICE')) required = 99;
   // EVERY_N_TURNS は間隔そのものが充填手番になる
   if (a.trigger === 'EVERY_N_TURNS') required = Math.max(required, (a.every ?? 3) - 1);
   const cooldown = required >= 99 || a.cooldown >= 99 ? 99 : Math.min(Math.max(a.cooldown, required), 8);
-  return { ...a, cooldown };
+  return drawback ? { ...a, cooldown, drawback } : { ...a, cooldown };
 }
 
 /** AI の出力（abilities 配列）を検証・正規化・強さ調整する。使えるものが1つも無ければ null */
@@ -430,7 +504,8 @@ export function describeAbility(a: AbilityProgram): string {
     : `${describeTarget(a.target)}に：`;
   const body = `${prefix}${effects}`;
   const limit = a.cooldown >= 99 ? '（1ゲーム1回）' : a.cooldown > 0 ? `（使用後${a.cooldown}手番は充填中）` : '';
-  return `【${a.name}】${trigger}${cond ? '、' + cond : ''}→ ${body}${limit}`;
+  const cost = a.drawback ? `【代償】${describeDrawback(a.drawback)}` : '';
+  return `【${a.name}】${trigger}${cond ? '、' + cond : ''}→ ${body}${limit}${cost}`;
 }
 
 /** 駒の全能力の説明（UI・ログ用） */

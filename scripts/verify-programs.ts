@@ -284,5 +284,49 @@ for (const op of PROGRAM_OPS) {
   check(aimedAtEnemy[0].target.who === 'ALLY', '敵に向けた聖域は、味方に向け直す');
 }
 
+// ===== 代償（反動・捨て身・代価・巻き添え） =====
+{
+  const tpl = initializeBoard();
+  const base = tpl[6][0]!;
+  const mkp = (owner: 'sente' | 'gote', id: string, abilities?: AbilityProgram[]): Piece => ({ ...base, id, owner, isPawn: false, word: id, effect_name: id, abilities } as Piece);
+  const fresh = () => { const b: Board = Array.from({ length: 9 }, () => Array(9).fill(null)); b[8][0] = { ...tpl[8][4]!, id: 'sk' }; b[0][8] = { ...tpl[0][4]!, id: 'gk' }; return b; };
+  const prog = (drawback: unknown, effects: unknown[] = [{ op: 'DESTROY' }], target: unknown = { area: 'ADJACENT', who: 'ENEMY', pick: 'ALL' }) =>
+    normalizeAbilityPrograms([{ trigger: 'ON_MOVE', target, effects, cooldown: 0, drawback }])!;
+
+  const recoil = prog({ kind: 'RECOIL', value: 2 });
+  const b1 = fresh(); b1[4][4] = mkp('sente', 'me', recoil); b1[3][4] = mkp('gote', 'e');
+  const r1 = applyAutomatedEffect(b1, [4, 4], 'ON_MOVE', 'sente', []);
+  check(!r1.board[3][4] && (r1.board[4][4]?.stunTurnsRemaining ?? 0) === 3, '反動: 発動後、自分が2手番動けない（手番の終わりの分を足して3）');
+  const b1b = fresh(); b1b[4][4] = mkp('sente', 'me', recoil);
+  check(!applyAutomatedEffect(b1b, [4, 4], 'ON_MOVE', 'sente', []).board[4][4]?.stunTurnsRemaining, '反動: 不発なら代償も払わない');
+
+  const sac = prog({ kind: 'SACRIFICE' });
+  const b2 = fresh(); b2[4][4] = mkp('sente', 'me', sac); b2[3][4] = mkp('gote', 'e');
+  const r2 = applyAutomatedEffect(b2, [4, 4], 'ON_MOVE', 'sente', []);
+  check(!r2.board[3][4] && !r2.board[4][4] && r2.graveyard?.some(p => p.id === 'me') === true, '捨て身: 効果のあと自分も消えて墓所へ');
+  check(sac[0].cooldown < prog(undefined)[0].cooldown || sac[0].cooldown === 0, '捨て身の能力は、代償なしより充填が短い', `捨て身${sac[0].cooldown} なし${prog(undefined)[0].cooldown}`);
+
+  const cost = prog({ kind: 'HAND_COST', value: 2 });
+  const b3 = fresh(); b3[4][4] = mkp('sente', 'me', cost); b3[3][4] = mkp('gote', 'e');
+  check(!applyAutomatedEffect(b3, [4, 4], 'ON_MOVE', 'sente', [mkp('sente', 'h1')]).triggered, '代価: 持ち駒が足りなければ使えない');
+  const r3 = applyAutomatedEffect(b3, [4, 4], 'ON_MOVE', 'sente', [mkp('sente', 'h1'), mkp('sente', 'h2'), mkp('sente', 'h3')]);
+  check(r3.triggered && r3.capturedPieces.length === 1, '代価: 使うと持ち駒を2枚捨てる', `残り${r3.capturedPieces.length}`);
+
+  const ff = prog({ kind: 'FRIENDLY_FIRE' });
+  check(ff[0].target.who === 'ANY', '巻き添え: 範囲の味方にも効く対象になる');
+  const b4 = fresh(); b4[4][4] = mkp('sente', 'me', ff); b4[3][4] = mkp('gote', 'e'); b4[5][4] = mkp('sente', 'ally');
+  const r4 = applyAutomatedEffect(b4, [4, 4], 'ON_MOVE', 'sente', []);
+  check(!r4.board[3][4] && !r4.board[5][4], '巻き添え: 隣の敵も味方も消える');
+  check(prog({ kind: 'FRIENDLY_FIRE' }, [{ op: 'SHIELD' }], { area: 'ADJACENT', who: 'ALLY', pick: 'ALL' })[0].drawback === undefined, '巻き添えは、味方を強化する能力には付かない');
+  check(normalizeAbilityPrograms([{ trigger: 'ON_TAKEN', target: { area: 'ATTACKER', who: 'ENEMY', pick: 'ALL' }, effects: [{ op: 'DESTROY' }], drawback: { kind: 'SACRIFICE' } }])![0].drawback === undefined, '取られたときの能力に、捨て身・反動は付かない');
+
+  const strong = normalizeAbilityPrograms([{ trigger: 'ON_MOVE', target: { area: 'RADIUS_2', who: 'ENEMY', pick: 'ALL' }, effects: [{ op: 'DESTROY' }] }])![0];
+  check(strong.drawback?.kind === 'RECOIL', '代償の書かれていない強い能力には、自動で反動が付く', describeAbilities([strong]));
+  const weak = normalizeAbilityPrograms([{ trigger: 'ON_MOVE', target: { area: 'ADJACENT', who: 'ENEMY', pick: 'NEAREST', count: 1 }, effects: [{ op: 'PUSH', value: 1 }] }])![0];
+  check(!weak.drawback, '弱い能力には代償は付かない');
+  check(JSON.stringify(normalizeAbilityPrograms(structuredClone([strong]))![0]) === JSON.stringify(strong), '読み込み直しても代償・充填は変わらない');
+  check(describeAbilities(recoil).includes('【代償】反動'), '説明文に代償が出る', describeAbilities(recoil));
+}
+
 console.log(failed === 0 ? '\nすべて成功' : `\n${failed} 件失敗`);
 process.exit(failed === 0 ? 0 : 1);

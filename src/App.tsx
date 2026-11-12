@@ -610,7 +610,10 @@ export const App: React.FC = () => {
           if (trapEffectRes.opponentCapturedPieces) {
             capturedState[event.owner === 'sente' ? 'gote' : 'sente'] = trapEffectRes.opponentCapturedPieces;
           }
-          if (trapEffectRes.graveyard) {
+          if (trapPiece.abilities?.length) {
+            // 能力プログラムは「渡した墓所＋新しく消えた駒」を返す。墓所には新しく消えた駒だけを足す
+            sharedState = [...sharedState, ...(trapEffectRes.graveyard ?? []).slice(destroyedState.length)];
+          } else if (trapEffectRes.graveyard) {
             sharedState = trapEffectRes.graveyard;
           }
           logsState.push(...trapEffectRes.logs.map(l => ({
@@ -761,7 +764,10 @@ export const App: React.FC = () => {
             if (effectRes.opponentCapturedPieces) {
               capturedState[event.owner === 'sente' ? 'gote' : 'sente'] = effectRes.opponentCapturedPieces;
             }
-            if (effectRes.graveyard) {
+            if (firedPiece?.abilities?.length) {
+              // 渡した候補（自分の持ち駒＋消えた敵）を墓所に混ぜない。新しく消えた駒だけを足す
+              sharedState = [...sharedState, ...(effectRes.graveyard ?? []).slice(graveyardCandidates.length)];
+            } else if (effectRes.graveyard) {
               sharedState = effectRes.graveyard;
             }
             if (effectRes.reAction) {
