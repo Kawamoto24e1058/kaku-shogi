@@ -7,7 +7,8 @@ import { normalizeAbilityPrograms, normalizeAbilityMode, describeAbilities, norm
 import { normalizeFusionWord } from '../shared/challenge';
 import { extractPartialPiece, type PartialPiece } from '../shared/partialPiece';
 import { normalizeMoveStyle, MOVE_STYLE_SPECS, normalizeMoveExtra, describeMoveExtra, type MoveExtra } from '../shared/moveStyles';
-import { fitToBudget } from '../shared/pieceBudget';
+import { fitToBudget, fitPromotion } from '../shared/pieceBudget';
+import { normalizePromotion, describePromotion } from '../shared/promotion';
 
 const AREA_SHAPE_SET = new Set<string>(AREA_SHAPES);
 // 対象マスではなく発動した駒自身に作用するアクション（範囲が自分のマスだけでも効果が出る）
@@ -23,7 +24,7 @@ const memoryCache = new Map<string, PieceData>();
 // バージョン管理されたワンタイムキャッシュクリーンアップ（v4にアップデートして古いキャッシュを全消去）
 try {
   if (typeof window !== 'undefined' && window.localStorage) {
-    const CURRENT_VERSION = 'v15'; // v15: ルールの組み合わせの整理（封印・成り・透明・地形）と説明文の範囲の書き方（古い駒の端末キャッシュを捨てる）
+    const CURRENT_VERSION = 'v16'; // v16: 成ったときの変化をキャラごとに（古い駒の端末キャッシュを捨てる）
     const activeVersion = localStorage.getItem('shogi_cache_version');
     if (activeVersion !== CURRENT_VERSION) {
       localStorage.removeItem('shogi_piece_cache');
@@ -972,6 +973,23 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
     delete parsed.abilities;
     delete parsed.ability_mode;
     delete parsed.rules_text;
+  }
+  // ─── 成ったときの変化（キャラごと）。新しい駒だけ。成った後の総合力が上限を超えないよう調整する ───
+  if (parsed.abilities?.length || parsed.trait || parsed.move_style || parsed.move_extra) {
+    let requested = normalizePromotion(parsed.promotion);
+    // 目覚める技が元の技と同じ（AIが写しただけ）なら、成っても何も変わらないので「技が強くなる」にする
+    const sameAbility = (a: unknown, b: unknown) => JSON.stringify({ ...(a as object), name: '', cooldown: 0, drawback: undefined }) === JSON.stringify({ ...(b as object), name: '', cooldown: 0, drawback: undefined });
+    if (requested.kind === 'AWAKEN' && parsed.abilities?.some((a: unknown) => sameAbility(a, requested.ability))) requested = { kind: 'POWER_UP' };
+    // 性質の変化が今の性質と同じなら、何も変わらないので「移動が広がる」にする
+    if (requested.kind === 'TRANSFORM_TRAIT' && (requested.trait?.kind ?? null) === (parsed.trait?.kind ?? null)) requested = { kind: 'GROW_MOVE' };
+    const promotion = fitPromotion(
+      { range_geometry: parsed.range_geometry, abilities: parsed.abilities, ability_mode: parsed.ability_mode, trait: parsed.trait ?? null, move_extra: parsed.move_extra },
+      requested,
+    );
+    parsed.promotion = promotion;
+    parsed.rules_text = [parsed.rules_text, describePromotion(promotion, parsed.trait)].filter(Boolean).join('\n');
+  } else {
+    delete parsed.promotion;
   }
   parsed.appearance = normalizeAppearance(parsed.appearance, String(parsed.effect_name || parsed.word || ''));
 

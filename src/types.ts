@@ -153,6 +153,10 @@ export interface PieceData {
   move_style?: string;
   /** 気まぐれワープの行き先を決める乱数の種（駒が動くたびに進む） */
   moveSeed?: number;
+  /** 成ったときの変化（shared/promotion.ts） */
+  promotion?: import('../shared/promotion').PromotionSpec;
+  /** 成った駒の、成る前の能力・性質（取られて持ち駒に戻るときに元に戻す） */
+  unpromoted?: { abilities?: import('../shared/abilityProgram').AbilityProgram[]; trait?: import('../shared/abilityProgram').PieceTrait | null; rules_text?: string };
   traitLife?: number;
   traitRest?: number;
   traitLevel?: number;

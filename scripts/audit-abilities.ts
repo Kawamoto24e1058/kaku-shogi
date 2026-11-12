@@ -48,6 +48,7 @@ function randomRawPiece(i: number): Record<string, unknown> {
     trait: rand() < 0.3 ? { kind: pick(TRAIT_KINDS) } : null,
     move_style: rand() < 0.5 ? pick(MOVE_STYLES) : undefined,
     move_extra: rand() < 0.35 ? { kind: pick(MOVE_EXTRAS), range: 1 + Math.floor(rand() * 7) } : undefined,
+    promotion: rand() < 0.5 ? pick([{ kind: 'POWER_UP' }, { kind: 'GROW_MOVE' }, { kind: 'TRANSFORM_TRAIT', trait: { kind: pick(TRAIT_KINDS) } }, { kind: 'AWAKEN', ability: { trigger: pick(PROGRAM_TRIGGERS), target: { area: pick(NAMED_AREAS), who: pick(TARGET_WHO), pick: pick(TARGET_PICKS), count: 1 }, effects: [{ op: pick(OPS), value: 2 }] } }]) : undefined,
     // AI が書かない・変な値を書くことがある項目も混ぜる
     logic_code: pick(['normal', '', undefined, 'linear_charge', 'leap_move', 'move_like_gold']),
     mechanics_type: pick(['FORCE_CRUSH', 'STEALTH_GHOST', 'AUTOMATIC_DRIVE', undefined]),

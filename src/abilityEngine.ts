@@ -6,6 +6,7 @@
 import type { Board, GameLog, Piece, Player, Position, TileEffectType } from './types';
 import type { AbilityProgram, ProgramEffect, ProgramTarget, TileKind } from '../shared/abilityProgram';
 import { NAMED_AREAS, TILE_LABELS } from '../shared/abilityProgram';
+import { demotePiece } from '../shared/promotion';
 import { applyCoreActionEffect, getCellLabel, queueTilePlacement } from './gameLogic';
 
 export type ProgramTriggerEvent = 'ON_MOVE' | 'TURN_START' | 'ON_APPROACH' | 'ON_TAKEN' | 'TURN_END' | 'ON_DEATH' | 'ON_PROMOTE' | 'ON_CAPTURE' | 'ON_DROP' | 'ON_ALLY_TAKEN';
@@ -611,7 +612,8 @@ export function runAbilityPrograms(
   const hand = handCost > 0 ? capturedPieces.slice(0, Math.max(0, capturedPieces.length - handCost)) : capturedPieces;
   return {
     board: nextBoard,
-    capturedPieces: [...hand, ...state.captured],
+    // 能力で捕獲した駒は、成る前の姿に戻して持ち駒にする
+    capturedPieces: [...hand, ...state.captured.map(demotePiece)],
     opponentCapturedPieces: state.opponentCaptured,
     graveyard: [...(graveyard ?? []), ...state.graveyard],
     logs: state.logs,

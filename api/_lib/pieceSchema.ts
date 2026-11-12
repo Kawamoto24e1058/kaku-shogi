@@ -4,6 +4,7 @@ import { TRAJECTORIES, VISUAL_THEMES } from '../../shared/abilityCatalog.js';
 import {
   PROGRAM_TRIGGERS, PROGRAM_CONDITIONS, PROGRAM_OPS, TARGET_WHO, TARGET_PICKS, TILE_KINDS, AURAS, TRAIT_KINDS, DRAWBACK_KINDS } from '../../shared/abilityProgram.js';
 import { MOVE_STYLES, MOVE_EXTRAS } from '../../shared/moveStyles.js';
+import { PROMOTION_KINDS } from '../../shared/promotion.js';
 
 const str = (description?: string) => ({ type: 'STRING', ...(description ? { description } : {}) });
 const enumOf = (values: readonly string[], description?: string) => ({ type: 'STRING', enum: [...values], ...(description ? { description } : {}) });
@@ -77,6 +78,12 @@ const PIECE_SCHEMA = {
     visual_theme: enumOf(VISUAL_THEMES),
     isAutonomous: { type: 'BOOLEAN' },
     move_style: { ...enumOf(MOVE_STYLES), description: 'キャラに合う移動の型。マス目はこの型から決まる' },
+    promotion: {
+      type: 'OBJECT',
+      description: '成ったときの変化（キャラに合うもの）',
+      properties: { kind: enumOf(PROMOTION_KINDS), ability: abilityProgram, trait: { type: 'OBJECT', properties: { kind: enumOf(TRAIT_KINDS), value: { type: 'INTEGER' } } } },
+      required: ['kind'],
+    },
     move_extra: {
       type: 'OBJECT',
       description: '移動の特徴（任意。動き方に特徴があるキャラだけ。無ければ省略）',

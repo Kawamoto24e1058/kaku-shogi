@@ -32,6 +32,8 @@ for (const word of words) {
     console.log(`  移動の特徴: AI=${rawExtra ? `${rawExtra.kind}:${rawExtra.range ?? ''}` : 'なし'} → 調整後=${p.move_extra ? `${MOVE_EXTRA_SPECS[p.move_extra.kind].label}${p.move_extra.range ? ` 最大${p.move_extra.range}` : ''}` : 'なし'}`);
     console.log(grid(p.range_geometry?.normal_grid));
     console.log(`  性質: ${p.trait?.kind ?? 'なし'}`);
+    const rawPromo = raw.promotion as { kind?: string } | undefined;
+    console.log(`  成ると: AI=${rawPromo?.kind ?? 'なし'} → 調整後=${p.promotion?.kind ?? 'なし'}`);
     console.log(`  総合力: 移動${st.move} 能力${st.ability.toFixed(1)} 性質${st.trait} → ${st.total}`);
     console.log(`  ${String(p.rules_text ?? '').replace(/\n/g, '\n  ')}`);
   } catch (err) {
