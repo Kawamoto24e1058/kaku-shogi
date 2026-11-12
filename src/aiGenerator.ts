@@ -6,7 +6,7 @@ import { containsNgWord, pieceHasNgText } from '../shared/moderation';
 import { normalizeAbilityPrograms, normalizeAbilityMode, describeAbilities, normalizeAppearance, normalizeTrait, describeTrait, applyTraitBalance } from '../shared/abilityProgram';
 import { normalizeFusionWord } from '../shared/challenge';
 import { extractPartialPiece, type PartialPiece } from '../shared/partialPiece';
-import { normalizeMoveStyle, MOVE_STYLE_SPECS } from '../shared/moveStyles';
+import { normalizeMoveStyle, MOVE_STYLE_SPECS, normalizeMoveExtra, describeMoveExtra, type MoveExtra } from '../shared/moveStyles';
 import { fitToBudget } from '../shared/pieceBudget';
 
 const AREA_SHAPE_SET = new Set<string>(AREA_SHAPES);
@@ -23,7 +23,7 @@ const memoryCache = new Map<string, PieceData>();
 // バージョン管理されたワンタイムキャッシュクリーンアップ（v4にアップデートして古いキャッシュを全消去）
 try {
   if (typeof window !== 'undefined' && window.localStorage) {
-    const CURRENT_VERSION = 'v13'; // v13: 総合力（移動・能力・性質）の上限と移動の型、古い移動指定の削除（古い駒の端末キャッシュを捨てる）
+    const CURRENT_VERSION = 'v14'; // v14: 移動の特徴（滑る・ワープなど）と総合力への組み込み（古い駒の端末キャッシュを捨てる）
     const activeVersion = localStorage.getItem('shogi_cache_version');
     if (activeVersion !== CURRENT_VERSION) {
       localStorage.removeItem('shogi_piece_cache');
@@ -913,6 +913,24 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
     delete parsed.move_style;
   }
 
+  // ─── 移動の特徴（斜めに滑る・気まぐれワープなど）。新しい駒（能力・性質・型のある駒）だけ ───
+  // 古い「飛車・角・香車の動き」（どこまでも進める）は、最大マス数のある滑る動きに読み替えて総合力で調整できるようにする
+  const isProgramPiece = !!(parsed.abilities || parsed.trait || moveStyle);
+  let moveExtra: MoveExtra | null = normalizeMoveExtra(parsed.move_extra);
+  if (isProgramPiece && !moveExtra) {
+    const LEGACY_SLIDES: Record<string, MoveExtra> = {
+      move_like_rook: { kind: 'SLIDE_ORTHOGONAL', range: 4 }, move_like_bishop: { kind: 'SLIDE_DIAGONAL', range: 4 },
+      move_like_lance: { kind: 'SLIDE_FORWARD', range: 6 }, move_like_queen_limit_3: { kind: 'SLIDE_ORTHOGONAL', range: 3 }, queen_limit_3: { kind: 'SLIDE_ORTHOGONAL', range: 3 },
+    };
+    moveExtra = LEGACY_SLIDES[String(parsed.logic_code)] ?? null;
+  }
+  if (isProgramPiece && moveExtra) {
+    parsed.move_extra = moveExtra;
+    if (String(parsed.logic_code).startsWith('move_like_') && parsed.logic_code !== 'move_like_cannon' || parsed.logic_code === 'queen_limit_3') parsed.logic_code = 'normal';
+  } else {
+    delete parsed.move_extra;
+  }
+
   // ─── 能力プログラム（v2）: 検証・強さの自動調整・説明文の生成 ─────────────
   // 使える部品が1つも無ければ消し、従来の ability_spec / custom_ability で動かす
   // 性質: trait 項目のほか、AIが abilities の中に {kind: "TRAIT", trait: ...} として書いた場合も拾う
@@ -929,16 +947,27 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
     parsed.abilities = applyTraitBalance(programs, trait);
     parsed.ability_mode = mode;
     // 総合力（移動・能力・性質の合計）が上限を超えたら充填・移動範囲を削り、下限を下回れば移動を足す
-    const fitted = fitToBudget({ range_geometry: parsed.range_geometry, abilities: parsed.abilities, ability_mode: mode, trait });
+    const fitted = fitToBudget({ range_geometry: parsed.range_geometry, abilities: parsed.abilities, ability_mode: mode, trait, move_extra: parsed.move_extra });
     parsed.abilities = fitted.abilities;
     parsed.range_geometry = fitted.range_geometry;
-    parsed.rules_text = [trait ? describeTrait(trait) : '', describeAbilities(parsed.abilities, mode)].filter(Boolean).join('\n');
+    if (fitted.move_extra) parsed.move_extra = fitted.move_extra; else delete parsed.move_extra;
+    parsed.rules_text = [parsed.move_extra ? describeMoveExtra(parsed.move_extra) : '', trait ? describeTrait(trait) : '', describeAbilities(parsed.abilities, mode)].filter(Boolean).join('\n');
   } else if (trait) {
     // 性質だけの駒（発動の能力なし）
     delete parsed.abilities;
     delete parsed.ability_mode;
-    parsed.range_geometry = fitToBudget({ range_geometry: parsed.range_geometry, trait }).range_geometry;
-    parsed.rules_text = describeTrait(trait);
+    const fitted = fitToBudget({ range_geometry: parsed.range_geometry, trait, move_extra: parsed.move_extra });
+    parsed.range_geometry = fitted.range_geometry;
+    if (fitted.move_extra) parsed.move_extra = fitted.move_extra; else delete parsed.move_extra;
+    parsed.rules_text = [parsed.move_extra ? describeMoveExtra(parsed.move_extra) : '', describeTrait(trait)].filter(Boolean).join('\n');
+  } else if (parsed.move_extra) {
+    // 移動の特徴だけの駒
+    delete parsed.abilities;
+    delete parsed.ability_mode;
+    const fitted = fitToBudget({ range_geometry: parsed.range_geometry, move_extra: parsed.move_extra });
+    parsed.range_geometry = fitted.range_geometry;
+    if (fitted.move_extra) parsed.move_extra = fitted.move_extra; else delete parsed.move_extra;
+    if (parsed.move_extra) parsed.rules_text = describeMoveExtra(parsed.move_extra); else delete parsed.rules_text;
   } else {
     delete parsed.abilities;
     delete parsed.ability_mode;

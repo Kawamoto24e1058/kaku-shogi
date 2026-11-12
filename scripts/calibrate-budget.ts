@@ -4,7 +4,8 @@
 //   3. npx tsx scripts/calibrate-budget.ts fit プール 結果1 [結果2 ...]  … 勝率 ≒ 定数 + a×移動 + b×能力 + c×性質 を当てはめる
 import { readFileSync, writeFileSync } from 'node:fs';
 import { OP_SPECS, TRAIT_KINDS, NAMED_AREAS } from '../shared/abilityProgram';
-import { MOVE_STYLES, MOVE_STYLE_SPECS } from '../shared/moveStyles';
+import { MOVE_STYLES, MOVE_STYLE_SPECS, MOVE_EXTRAS, MOVE_EXTRA_SPECS } from '../shared/moveStyles';
+import { moveScore } from '../shared/pieceBudget';
 import { pieceStrength } from '../shared/pieceBudget';
 
 (globalThis as { localStorage?: unknown }).localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
@@ -35,6 +36,49 @@ if (mode === 'make') {
   }));
   writeFileSync(poolFile, JSON.stringify(pool));
   console.log(`${pool.length} 駒を ${poolFile} に書きました`);
+} else if (mode === 'make-move') {
+  // 移動だけの駒（能力・性質なし）。移動の特徴の強さを測る
+  const pool = Array.from({ length: 180 }, (_, i) => {
+    const kind = rand() < 0.8 ? pick(MOVE_EXTRAS) : null;
+    const spec = kind ? MOVE_EXTRA_SPECS[kind] : null;
+    const range = spec?.range ? spec.range[0] + Math.floor(rand() * (spec.range[1] - spec.range[0] + 1)) : undefined;
+    return {
+      word: `移${i}`, effect_name: `移${i}`, ability_genre: '試験', description: '試験',
+      move_style: pick(MOVE_STYLES), move_extra: kind ? { kind, range } : null,
+      // 総合力の調整で範囲が縮まないよう、性質で「新しい駒」として扱わせる（点数0の性質）
+      trait: { kind: 'INVISIBLE' }, logic_code: 'normal',
+    };
+  });
+  writeFileSync(poolFile, JSON.stringify(pool));
+  console.log(`${pool.length} 駒を ${poolFile} に書きました`);
+} else if (mode === 'fit-move') {
+  const pool = JSON.parse(readFileSync(poolFile, 'utf8')) as Record<string, unknown>[];
+  const stats: Record<string, { games: number; wins: number }> = {};
+  for (const f of statFiles) for (const [name, st] of Object.entries(JSON.parse(readFileSync(f, 'utf8')) as Record<string, { games: number; wins: number }>)) {
+    const cur = stats[name] ?? { games: 0, wins: 0 }; stats[name] = { games: cur.games + st.games, wins: cur.wins + st.wins };
+  }
+  // 勝率 = c + a*マス目の点数 + 特徴ごとの効果（特徴×範囲） を、特徴ごとに分けて当てはめる
+  const rows = pool.map(raw => {
+    const piece = sanitizePieceData(structuredClone(raw), String(raw.word));
+    const st = stats[`AI:${raw.word}`];
+    return st ? { grid: moveScore(piece.range_geometry?.normal_grid), extra: piece.move_extra as { kind: string; range?: number } | undefined, rate: st.wins / st.games, games: st.games } : null;
+  }).filter((r): r is NonNullable<typeof r> => r !== null);
+  const none = rows.filter(r => !r.extra);
+  // マス目の点数1点あたりの勝率の伸び（特徴なしの駒で回帰）
+  const mean = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
+  const gx = none.map(r => r.grid), gy = none.map(r => r.rate);
+  const slope = gx.reduce((s, x, i) => s + (x - mean(gx)) * (gy[i] - mean(gy)), 0) / gx.reduce((s, x) => s + (x - mean(gx)) ** 2, 0);
+  console.log(`特徴なし ${none.length}駒: 勝率 ${(mean(gy) * 100).toFixed(1)}%、マス目1点あたり ${(slope * 100).toFixed(2)}%`);
+  const base = (g: number) => mean(gy) + slope * (g - mean(gx));
+  const groups = new Map<string, number[]>();
+  for (const r of rows.filter(r => r.extra)) {
+    const key = `${r.extra!.kind}${r.extra!.range !== undefined ? `:${r.extra!.range}` : ''}`;
+    groups.set(key, [...(groups.get(key) ?? []), r.rate - base(r.grid)]);
+  }
+  for (const [key, diffs] of [...groups].sort()) {
+    const d = mean(diffs);
+    console.log(`  ${key.padEnd(20)} ${diffs.length}駒  勝率の上乗せ ${(d * 100).toFixed(1)}%  → マス目換算 ${(d / slope).toFixed(1)}点`);
+  }
 } else if (mode === 'fit') {
   const pool = JSON.parse(readFileSync(poolFile, 'utf8')) as Record<string, unknown>[];
   const stats: Record<string, { games: number; wins: number }> = {};

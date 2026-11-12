@@ -4,7 +4,7 @@
 // 出力の形は responseSchema（pieceSchema.ts）で強制できるモデルでは二重になるが、
 // スキーマ非対応のモデル（Gemma 等）のために最小限の例を残している。
 import { OP_SPECS, TILE_KINDS, TILE_LABELS, TRAIT_SPECS } from '../../shared/abilityProgram.js';
-import { MOVE_STYLES, MOVE_STYLE_SPECS } from '../../shared/moveStyles.js';
+import { MOVE_STYLES, MOVE_STYLE_SPECS, MOVE_EXTRAS, MOVE_EXTRA_SPECS } from '../../shared/moveStyles.js';
 
 // 効果の部品の一覧（value の範囲つき）。shared/abilityProgram.ts の定義から作るので、エンジンとずれない
 const OP_LIST = Object.entries(OP_SPECS)
@@ -16,6 +16,7 @@ const OP_LIST = Object.entries(OP_SPECS)
   .join('\n');
 
 // 性質の一覧（shared/abilityProgram.ts の定義から作るので、エンジンとずれない）
+const EXTRA_LIST = MOVE_EXTRAS.map(k => `- ${k} = ${MOVE_EXTRA_SPECS[k].label}：${MOVE_EXTRA_SPECS[k].text.replace('{n}', 'range')}（${MOVE_EXTRA_SPECS[k].fits}${MOVE_EXTRA_SPECS[k].range ? `。range ${MOVE_EXTRA_SPECS[k].range![0]}〜${MOVE_EXTRA_SPECS[k].range![1]}` : ''}）`).join('\n');
 const STYLE_LIST = MOVE_STYLES.map(k => `- ${k} = ${MOVE_STYLE_SPECS[k].label}：${MOVE_STYLE_SPECS[k].fits}`).join('\n');
 const TRAIT_LIST = Object.entries(TRAIT_SPECS)
   .map(([kind, spec]) => `  - ${kind}=${spec.label}: ${spec.text.replace('{n}', 'value')}${spec.value ? `（value=${spec.value[0]}〜${spec.value[1]}）` : ''}`)
@@ -72,6 +73,10 @@ ${OP_LIST}
 ${STYLE_LIST}
 動き方の個性で選ぶ（迷ったら BALANCED ではなく、その単語らしい型を選ぶ）。
 
+# ③b 移動の特徴 move_extra（任意。{kind, range}。動き方そのものに特徴があるキャラだけ付ける。無ければ null）
+${EXTRA_LIST}
+例: 新幹線 → {"kind":"SLIDE_FORWARD","range":5} / 幽霊 → {"kind":"RANDOM_WARP","range":3} / 忍者 → {"kind":"SLIDE_DIAGONAL","range":3} / 忠犬 → {"kind":"ALLY_HOP","range":3}。強い特徴を付けると、システムが範囲や能力の充填で釣り合いを取る
+
 # ③' 移動範囲 range_geometry（move_style に合わせて書く）
 5x5のマス目を「上の行（2マス前＝敵陣側）から」5行、/ で区切って書く。各行5文字、1=動けるマス、0=動けない、真ん中の行の真ん中は必ず2（自分）。
 1行目=2マス前 / 2行目=1マス前 / 3行目=自分の行（必ず xx2xx の形） / 4行目=1マス後ろ / 5行目=2マス後ろ
@@ -91,7 +96,7 @@ ${STYLE_LIST}
 
 # 出力
 {"pieces":[ 単語ごとに1つ、入力と同じ順で ]} のJSONのみ。各要素のキー（この順に書く）:
-word, deep_search_analysis, effect_name, ability_genre, appearance{color,accent,emblem,aura}, move_style, range_geometry{normal_grid,promoted_grid}, description, ability_mode, abilities[], trait({kind,value?} または null), mechanics_type(FORCE_CRUSH/HACK_AND_STEAL/STEALTH_GHOST/SUPPORT_BUFF/SPAWNER_BUILD/TRAP_MINE/AUTOMATIC_DRIVE/UNKNOWN_HERESY), visual_theme(WARRIOR_IRON/MYSTIC_MIST/SHADOW_NIGHT/NATURE_STONE/SPACE_NATURE/UNIQUE), isAutonomous, logic_code, promoted_effect{effect_name,description}, visual_effect{trajectory_type(PARABOLA/BEAM/STRIKE/SPIRAL/BURST),particle_color,particle_count,particle_speed,screen_shake}`;
+word, deep_search_analysis, effect_name, ability_genre, appearance{color,accent,emblem,aura}, move_style, move_extra, range_geometry{normal_grid,promoted_grid}, description, ability_mode, abilities[], trait({kind,value?} または null), mechanics_type(FORCE_CRUSH/HACK_AND_STEAL/STEALTH_GHOST/SUPPORT_BUFF/SPAWNER_BUILD/TRAP_MINE/AUTOMATIC_DRIVE/UNKNOWN_HERESY), visual_theme(WARRIOR_IRON/MYSTIC_MIST/SHADOW_NIGHT/NATURE_STONE/SPACE_NATURE/UNIQUE), isAutonomous, logic_code, promoted_effect{effect_name,description}, visual_effect{trajectory_type(PARABOLA/BEAM/STRIKE/SPIRAL/BURST),particle_color,particle_count,particle_speed,screen_shake}`;
 
 // 予備のAI（Groq など）用の短い指示。予備のAIは「1分あたりのトークン数」の上限が小さく、
 // 長い指示（約3,100トークン）だと1分に2枚ほどしか作れないため、要点だけに絞る（約1,300トークン）。
@@ -116,9 +121,10 @@ ability_mode は "SINGLE"。くじ・ガチャ・サイコロ・天気のよう�
 （例の効果をそのまま使い回さない。単語ごとに読み解きから選び直す）
 2b. trait（性質。キャラの本質が動き方にあるときだけ1つ、無ければ null）: ${Object.entries(TRAIT_SPECS).map(([k, v]) => `${k}=${v.label}`).join(' / ')}。例 ゴールドシップ → {"kind":"WILD"}（操作できず勝手に敵へ向かう）＋ 動いた後の能力。例 鳥→FLYING、スライム→SPLIT、鏡→REFLECT、幽霊→INVISIBLE。弱点の性質は充填が短くなる。
 3. move_style（キャラの動き方。マス目はこの型で決まる）: ${MOVE_STYLES.map(k => `${k}=${MOVE_STYLE_SPECS[k].label}（${MOVE_STYLE_SPECS[k].fits}）`).join(' / ')}。その単語らしい型を選ぶ。
+   move_extra（任意。動き方に特徴があるキャラだけ。無ければ null）: ${MOVE_EXTRAS.map(k => `${k}=${MOVE_EXTRA_SPECS[k].label}（${MOVE_EXTRA_SPECS[k].fits}）`).join(' / ')}。{kind, range} の形。例 新幹線 {"kind":"SLIDE_FORWARD","range":5}、幽霊 {"kind":"RANDOM_WARP","range":3}
    range_geometry: 5x5 を上の行（敵陣側）から5行、/区切り。1=動ける 0=不可、中央は2。例 周囲1マス 00000/01110/01210/01110/00000。速いものは前に広く、重いものは狭く。promoted_grid は normal_grid より広く。logic_code は通常 "normal"。
 4. 文章: effect_name(2-6字の漢字の技名)、ability_genre(10字以内)、description(80字以内。能力で起きることだけ。スタン・バフなどのカタカナ用語は使わず、麻痺・強化と書く)、appearance{color:#rrggbb, accent:#rrggbb, emblem:1-2字, aura:NONE/GLOW/FLAME/SPARK/MIST/RIPPLE/SHADOW}、promoted_effect{effect_name, description(40字以内)}
-出力は {"pieces":[...]} のJSONのみ。キーの順: word, deep_search_analysis, effect_name, ability_genre, appearance, move_style, range_geometry{normal_grid,promoted_grid}, description, ability_mode, abilities, trait, logic_code, promoted_effect`;
+出力は {"pieces":[...]} のJSONのみ。キーの順: word, deep_search_analysis, effect_name, ability_genre, appearance, move_style, move_extra, range_geometry{normal_grid,promoted_grid}, description, ability_mode, abilities, trait, logic_code, promoted_effect`;
 
 /**
  * references: 単語ごとの参考情報（api/_lib/reference.ts。無ければ null）。

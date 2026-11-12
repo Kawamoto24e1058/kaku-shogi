@@ -14,6 +14,7 @@
 import { readFileSync } from 'node:fs';
 import type { Board, Piece } from '../src/types';
 import { OP_SPECS, PROGRAM_TRIGGERS, PROGRAM_CONDITIONS, NAMED_AREAS, TARGET_WHO, TARGET_PICKS, TRAIT_KINDS, TILE_KINDS } from '../shared/abilityProgram';
+import { MOVE_EXTRAS, MOVE_STYLES } from '../shared/moveStyles';
 
 (globalThis as { localStorage?: unknown }).localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 const { sanitizePieceData } = await import('../src/aiGenerator');
@@ -45,6 +46,8 @@ function randomRawPiece(i: number): Record<string, unknown> {
     range_geometry: { normal_grid: pick(GRIDS), promoted_grid: '00000/11111/11211/11111/00000' },
     abilities, ability_mode: rand() < 0.15 ? 'RANDOM' : 'SINGLE',
     trait: rand() < 0.3 ? { kind: pick(TRAIT_KINDS) } : null,
+    move_style: rand() < 0.5 ? pick(MOVE_STYLES) : undefined,
+    move_extra: rand() < 0.35 ? { kind: pick(MOVE_EXTRAS), range: 1 + Math.floor(rand() * 7) } : undefined,
     // AI が書かない・変な値を書くことがある項目も混ぜる
     logic_code: pick(['normal', '', undefined, 'linear_charge', 'leap_move', 'move_like_gold']),
     mechanics_type: pick(['FORCE_CRUSH', 'STEALTH_GHOST', 'AUTOMATIC_DRIVE', undefined]),
@@ -207,7 +210,16 @@ for (const raw of raws) {
       if (res.triggered && pv.targets.length === 0) note('発動したのに先読みで効くマスが空', `${word}: ${event} ${label}`);
     }
   }
-  // 3. 動けるマスは移動範囲どおり（飛・角・香・砲などの遠くまで動く駒は 5x5 で表せないので対象外）
+  // 3'. どの駒も、盤の外や味方の駒のマスへは動けない（移動の特徴を含めて）
+  {
+    const b = setup(piece);
+    for (const [y, x] of getValidMoves(4, 4, b)) {
+      if (y < 0 || y > 8 || x < 0 || x > 8) note('盤の外へ動ける', `${word}: ${y},${x}`);
+      else if (b[y][x]?.owner === 'sente') note('味方の駒のマスへ動ける', `${word}: ${y},${x} 特徴=${piece.move_extra?.kind}`);
+    }
+  }
+  // 3. 動けるマスは移動範囲どおり（飛・角・香・砲などの遠くまで動く駒、移動の特徴を持つ駒は 5x5 だけでは表せないので対象外）
+  if (piece.move_extra) continue;
   if (piece.logic_code && piece.logic_code !== 'normal') {
     if (!/^move_like_(rook|bishop|lance|cannon|queen_limit_3)$|^queen_limit_3$/.test(piece.logic_code)) note('移動の種類が想定外', `${word}: logic=${piece.logic_code}`);
     continue;

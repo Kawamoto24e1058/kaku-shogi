@@ -3,13 +3,13 @@
 // 1. すべての効果の部品が、ゲームエンジン上で実際に盤面・持ち駒を変えるか
 // 2. 条件・充填手番・防護・取られたときの発動・強さの自動調整が想定どおりか
 (globalThis as { localStorage?: unknown }).localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
-import { initializeBoard, applyAutomatedEffect, drainTilePlacements, isTriggerMatching, BOARD_SIZE, applyTileEffects, createEmptyTileBoard } from '../src/gameLogic';
+import { initializeBoard, applyAutomatedEffect, drainTilePlacements, isTriggerMatching, BOARD_SIZE, applyTileEffects, createEmptyTileBoard, getValidMoves, executeMove } from '../src/gameLogic';
 import { tickAbilityCooldowns } from '../src/abilityEngine';
 import { PROGRAM_OPS, normalizeAbilityPrograms, describeAbilities, type AbilityProgram, type ProgramOp } from '../shared/abilityProgram';
 import type { Board, Piece } from '../src/types';
 import { normalizeFusionWord, dailyWords, dailyKey } from '../shared/challenge';
 import { judgeGame, endgameNotice, JUDGE_PLY } from '../shared/endgame';
-import { MOVE_STYLE_SPECS } from '../shared/moveStyles';
+import { MOVE_STYLE_SPECS, describeMoveExtra } from '../shared/moveStyles';
 import { pieceStrength, fitToBudget, BUDGET_LIMIT, BUDGET_FLOOR } from '../shared/pieceBudget';
 import { sanitizePieceData } from '../src/aiGenerator';
 
@@ -363,6 +363,47 @@ for (const op of PROGRAM_OPS) {
   check(pieceStrength(weak).total >= BUDGET_FLOOR, '弱点の性質＋狭い移動の駒は、下限まで移動が足される', `${weak.range_geometry.normal_grid} → ${pieceStrength(weak).total}`);
   const plain = { range_geometry: { normal_grid: MOVE_STYLE_SPECS.BALANCED.grid } };
   check(fitToBudget(plain) === plain, '上限と下限の間の駒は変えない');
+}
+
+// ===== 移動の特徴（斜めに滑る・気まぐれワープ・端から端へ・仲間のもとへ） =====
+{
+  const tpl = initializeBoard();
+  const pawnT = tpl[6][0]!;
+  const fresh = () => { const b: Board = Array.from({ length: 9 }, () => Array(9).fill(null)); b[8][0] = { ...tpl[8][4]!, id: 'sk' }; b[0][8] = { ...tpl[0][4]!, id: 'gk' }; return b; };
+  const mover = (move_extra: unknown, grid = MOVE_STYLE_SPECS.CROSS.grid): Piece => ({ ...pawnT, id: 'me', isPawn: false, word: 'me', logic_code: 'normal', range_geometry: { normal_grid: grid }, move_extra } as Piece);
+  const has = (moves: [number, number][], y: number, x: number) => moves.some(([a, b]) => a === y && b === x);
+
+  const b1 = fresh(); b1[4][4] = mover({ kind: 'SLIDE_DIAGONAL', range: 3 }); b1[2][2] = { ...pawnT, id: 'own' }; b1[6][6] = { ...pawnT, id: 'foe', owner: 'gote' };
+  const m1 = getValidMoves(4, 4, b1);
+  check(has(m1, 1, 7) && !has(m1, 0, 8) && has(m1, 3, 3) && !has(m1, 2, 2) && has(m1, 6, 6) && !has(m1, 7, 7), '斜めに滑る: 最大3マス・味方の手前で止まる・敵は取れてその先へは行けない');
+
+  const b2 = fresh(); b2[6][4] = mover({ kind: 'SLIDE_FORWARD', range: 4 });
+  const m2 = getValidMoves(6, 4, b2);
+  check(has(m2, 2, 4) && !has(m2, 1, 4), '前へ滑る: 前へ最大4マス');
+
+  const b3 = fresh(); b3[4][0] = mover({ kind: 'EDGE_WRAP' }, MOVE_STYLE_SPECS.CROSS.grid);
+  check(has(getValidMoves(4, 0, b3), 4, 8), '端から端へ: 左の端の左は、右の端に出る');
+
+  const b4 = fresh(); b4[6][4] = mover({ kind: 'ALLY_HOP', range: 3 }); b4[3][6] = { ...pawnT, id: 'friend' };
+  const m4 = getValidMoves(6, 4, b4);
+  check(has(m4, 2, 6) && has(m4, 3, 7), '仲間のもとへ: 3マス以内の味方の隣へ行ける');
+
+  const b5 = fresh(); b5[4][4] = mover({ kind: 'RANDOM_WARP', range: 3 });
+  const warp1 = getValidMoves(4, 4, b5).filter(([y, x]) => Math.max(Math.abs(y - 4), Math.abs(x - 4)) > 1);
+  check(warp1.length === 2 && warp1.every(([y, x]) => !b5[y][x]), '気まぐれワープ: 周囲の空きマス2か所（マス目の外）', JSON.stringify(warp1));
+  check(JSON.stringify(getValidMoves(4, 4, b5)) === JSON.stringify(getValidMoves(4, 4, b5)), '気まぐれワープ: 同じ盤面なら同じ行き先（オンラインの両端末でずれない）');
+  const moved = executeMove(b5, [4, 4], [3, 4], 'sente', false);
+  const back = executeMove(moved.board, [3, 4], [4, 4], 'sente', false);
+  const warp2 = getValidMoves(4, 4, back.board).filter(([y, x]) => Math.max(Math.abs(y - 4), Math.abs(x - 4)) > 1);
+  check(JSON.stringify(warp2) !== JSON.stringify(warp1), '気まぐれワープ: 動くたびに行き先が変わる', `${JSON.stringify(warp1)} → ${JSON.stringify(warp2)}`);
+
+  const raw = (extra: Record<string, unknown>) => ({ word: '試', effect_name: '試', description: '試', move_style: 'CROSS', trait: { kind: 'INVISIBLE' }, ...extra });
+  const legacyRook = sanitizePieceData(raw({ logic_code: 'move_like_rook' }), '試');
+  check(legacyRook.move_extra?.kind === 'SLIDE_ORTHOGONAL' && legacyRook.logic_code === 'normal', '古い「飛車の動き」は、最大マス数のある「縦横に滑る」に読み替える');
+  const strong = sanitizePieceData(raw({ move_style: 'BALANCED', trait: { kind: 'GROWTH' }, move_extra: { kind: 'SLIDE_ORTHOGONAL', range: 4 } }), '試');
+  check((strong.move_extra?.range ?? 0) < 4 && pieceStrength(strong).total <= BUDGET_LIMIT, '強い移動の特徴＋得な性質は、滑る範囲が縮められる（強すぎれば特徴ごと外す）', `範囲${strong.move_extra?.range ?? 'なし'} 総合力${pieceStrength(strong).total}`);
+  const ninja = sanitizePieceData(raw({ move_style: 'DIAGONAL', trait: { kind: 'INVISIBLE' }, move_extra: { kind: 'SLIDE_DIAGONAL', range: 3 } }), '試');
+  check(ninja.move_extra?.kind === 'SLIDE_DIAGONAL' && String(ninja.rules_text).includes('【移動：斜めに滑る】'), '上限内なら特徴はそのまま残り、説明文に出る', describeMoveExtra(ninja.move_extra!));
 }
 
 console.log(failed === 0 ? '\nすべて成功' : `\n${failed} 件失敗`);
