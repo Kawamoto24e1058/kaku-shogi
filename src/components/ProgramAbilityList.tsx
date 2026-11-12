@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Piece } from '../types';
 import { describeAbility, describeTrait, TRAIT_SPECS } from '../../shared/abilityProgram';
+import { describeMoveExtra, MOVE_EXTRA_SPECS, MOVE_STYLE_SPECS, type MoveStyle } from '../../shared/moveStyles';
 
 /** 性質の今の状態（寿命の残り・鈍足の休み・不死身を使ったか・成長の段階） */
 function traitStatus(piece: Piece): { text: string; color: string } {
@@ -16,10 +17,20 @@ function traitStatus(piece: Piece): { text: string; color: string } {
 /** 能力プログラム（v2）の駒の能力一覧。性質を先頭に、能力ごとに説明と充填中かどうかを出す */
 export const ProgramAbilityList: React.FC<{ piece: Piece }> = ({ piece }) => {
   const abilities = piece.abilities ?? [];
-  if (abilities.length === 0 && !piece.trait) return null;
+  if (abilities.length === 0 && !piece.trait && !piece.move_extra) return null;
   const status = piece.trait ? traitStatus(piece) : null;
+  const style = piece.move_style && piece.move_style in MOVE_STYLE_SPECS ? MOVE_STYLE_SPECS[piece.move_style as MoveStyle].label : null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      {piece.move_extra && (
+        <div style={{ borderRadius: '10px', border: '1px solid rgba(37, 99, 235, 0.3)', background: 'rgba(239, 246, 255, 0.95)', padding: '8px 10px' }}>
+          <div style={{ fontWeight: 800, fontSize: '13px', color: '#1a1a1a', marginBottom: '2px' }}>
+            <span style={{ fontSize: '10px', color: '#2563eb', marginRight: '6px' }}>移動</span>{MOVE_EXTRA_SPECS[piece.move_extra.kind].label}
+            {style && <span style={{ fontSize: '10px', color: '#6b7280', marginLeft: '6px' }}>（{style}＋）</span>}
+          </div>
+          <div style={{ fontSize: '12px', lineHeight: 1.6, color: '#3f3a33' }}>{describeMoveExtra(piece.move_extra).replace(/^【[^】]*】/, '')}</div>
+        </div>
+      )}
       {piece.trait && status && (
         <div style={{ borderRadius: '10px', border: '1px solid rgba(180, 83, 9, 0.3)', background: 'rgba(255, 247, 237, 0.95)', padding: '8px 10px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>

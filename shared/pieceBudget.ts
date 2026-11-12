@@ -3,6 +3,7 @@
 // 能力と性質の両方が強い駒が、どちらか片方だけの駒より大きく強くならないようにするため。
 // 重みは自動対局の勝率に合わせて決めた（scripts/calibrate-budget.ts）
 import { abilityPower, DRAWBACK_SPECS, TRAIT_SPECS, type AbilityProgram, type PieceTrait } from './abilityProgram.js';
+import { moveExtraScore, MOVE_EXTRA_SPECS, type MoveExtra } from './moveStyles.js';
 
 /** 移動範囲の点数: 周囲1マスは1点、2マス先（飛び越えられる）は1.6点 */
 export function moveScore(grid: string | undefined): number {
@@ -38,33 +39,47 @@ export function traitScore(trait: PieceTrait | null | undefined): number {
 
 export interface PieceStrength { move: number; ability: number; trait: number; total: number }
 
+type BudgetPiece = { range_geometry?: { normal_grid?: string }; abilities?: AbilityProgram[]; ability_mode?: string; trait?: PieceTrait | null; move_extra?: MoveExtra | null };
+
 /**
- * 総合力の重み（移動1点を1とした、勝率への効き方）。calibrate-budget.ts の回帰（較正用の駒150個・2100局）で決めた:
- *   性質1点は移動1点の約3倍効く。能力は充填手番の自動調整ですでに釣り合っていて、1手番あたりの強さと勝率はほぼ無関係だった
- *   （相関 -0.15）ので、極端な能力だけ拾えるよう小さく入れる
+ * 総合力の重み（マス目の1マス＝1点を基準）。scripts/calibrate-budget.ts の自動対局で決めた:
+ *   - 性質1点はマス目1点の約3倍、勝率に効く（較正用の駒150個・2100局の回帰）
+ *   - 移動の特徴の点数は、マス目1点と同じ単位で測った（shared/moveStyles.ts）
+ *   - 能力は充填手番の自動調整ですでに釣り合っていて、1手番あたりの強さと勝率はほぼ無関係（相関 -0.15）。極端な能力だけ拾えるよう小さく入れる
+ * 「勝率+1%＝1点」に単位をそろえて性質の重みを1.4にした版も試したが、駒ごとの勝率のばらつき（ノイズを除いた推定）が
+ * 4.2% → 5.9% に広がったので、この値に戻している
  */
-export const BUDGET_WEIGHTS = { move: 1, ability: 0.3, trait: 3 };
-/** 総合力の上限。これを超える駒は移動範囲・充填で削る */
+export const BUDGET_WEIGHTS = { grid: 1, ability: 0.3, trait: 3 };
+/** 総合力の上限。これを超える駒は移動の特徴・充填・移動範囲で削る */
 export const BUDGET_LIMIT = 14;
-/** 総合力の下限。これを下回る駒（弱点の性質＋狭い移動など）は、周囲1マスの移動を足して底上げする */
+/** 総合力の下限。これを下回る駒（弱点の性質＋狭い移動など）は、移動を足して底上げする */
 export const BUDGET_FLOOR = 4;
 
-export function pieceStrength(p: { range_geometry?: { normal_grid?: string }; abilities?: AbilityProgram[]; ability_mode?: string; trait?: PieceTrait | null }): PieceStrength {
-  const move = moveScore(p.range_geometry?.normal_grid);
+export function pieceStrength(p: BudgetPiece): PieceStrength {
+  // 移動 = マス目の点数（重み付き） + 移動の特徴（斜めに滑るなど）の点数
+  const move = moveScore(p.range_geometry?.normal_grid) * BUDGET_WEIGHTS.grid + moveExtraScore(p.move_extra);
   const ability = abilityScore(p.abilities, p.ability_mode === 'RANDOM');
   const trait = traitScore(p.trait);
-  const total = move * BUDGET_WEIGHTS.move + ability * BUDGET_WEIGHTS.ability + trait * BUDGET_WEIGHTS.trait;
-  return { move, ability, trait, total: Math.round(total * 10) / 10 };
+  const total = move + ability * BUDGET_WEIGHTS.ability + trait * BUDGET_WEIGHTS.trait;
+  return { move: Math.round(move * 10) / 10, ability, trait, total: Math.round(total * 10) / 10 };
 }
 
 /**
  * 総合力が上限を超えていたら削る（元の駒は変えずに新しい値を返す）。
- *   1. 能力の充填手番を1ずつ延ばす（最大8。1ゲーム1回の能力はそのまま）
- *   2. それでも超えていれば、2マス先の移動を後ろから順に外す（周囲1マスは残す＝動き方の個性は残る）
+ *   1. 移動の特徴の範囲（滑るマス数など）を1ずつ縮める（特徴そのものは残す＝キャラの個性は残る）
+ *   2. 能力の充填手番を1ずつ延ばす（最大8。1ゲーム1回の能力はそのまま）
+ *   3. それでも超えていれば、2マス先の移動を後ろから順に外し、次に周囲1マスの後ろ側を外す（最低3マスは残す）
+ *   4. 最後に、移動の特徴そのものを外す
  */
-export function fitToBudget<T extends { range_geometry?: { normal_grid?: string }; abilities?: AbilityProgram[]; ability_mode?: string; trait?: PieceTrait | null }>(piece: T): T {
+export function fitToBudget<T extends BudgetPiece>(piece: T): T {
   let next = piece;
-  for (let guard = 0; guard < 16 && pieceStrength(next).total > BUDGET_LIMIT; guard++) {
+  for (let guard = 0; guard < 24 && pieceStrength(next).total > BUDGET_LIMIT; guard++) {
+    const extra = next.move_extra;
+    const minRange = extra ? MOVE_EXTRA_SPECS[extra.kind].range?.[0] : undefined;
+    if (extra && minRange !== undefined && (extra.range ?? minRange) > minRange) {
+      next = { ...next, move_extra: { ...extra, range: (extra.range ?? minRange) - 1 } };
+      continue;
+    }
     const abilities = next.abilities;
     const canSlow = abilities?.some(a => a.cooldown < 8);
     if (abilities?.length && canSlow) {
@@ -77,7 +92,11 @@ export function fitToBudget<T extends { range_geometry?: { normal_grid?: string 
     const BACK_FIRST = [16, 18, 17, 6, 8];
     const moves = [...grid].filter(c => c === '1').length;
     const drop = farCells.length ? farCells[farCells.length - 1].i : moves > 3 ? BACK_FIRST.find(i => grid[i] === '1') : undefined;
-    if (drop === undefined) break;
+    if (drop === undefined) {
+      // 最後の手段: 移動の特徴そのものを外す（ここまで削っても超えるのは、得な性質と強い特徴が重なったときだけ）
+      if (next.move_extra) { next = { ...next, move_extra: null }; continue; }
+      break;
+    }
     const trimmed = [...grid].map((c, i) => (i === drop ? '0' : c)).join('');
     next = { ...next, range_geometry: { ...next.range_geometry, normal_grid: trimmed } };
   }

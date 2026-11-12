@@ -147,6 +147,12 @@ export interface PieceData {
   trait?: PieceTrait;
   /** 性質の状態（対局中に変わる）: 不死身を使ったか / 寿命の残り手番 / 鈍足の休み / 成長の段階 */
   traitUsed?: boolean;
+  /** 移動の特徴（斜めに滑る・気まぐれワープなど。shared/moveStyles.ts） */
+  move_extra?: import('../shared/moveStyles').MoveExtra;
+  /** 移動の型（突進・跳ねるなど） */
+  move_style?: string;
+  /** 気まぐれワープの行き先を決める乱数の種（駒が動くたびに進む） */
+  moveSeed?: number;
   traitLife?: number;
   traitRest?: number;
   traitLevel?: number;

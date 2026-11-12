@@ -1,3 +1,4 @@
+import { extraMoves, initialMoveSeed, nextMoveSeed } from './moveExtras';
 import type { Board, Piece, Player, GameLog, AbilityEvent, AbilitySpec, CustomAbility, Position, TileEffectType, TileState, ActivationType } from './types';
 import { decrementCacheUses } from './aiGenerator';
 import { programTriggerMatches, runAbilityPrograms } from './abilityEngine';
@@ -1324,6 +1325,14 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
     }
   }
 
+  // 移動の特徴（斜めに滑る・気まぐれワープ・端から端へ・仲間のもとへ など）で増える行き先
+  if (piece.move_extra) {
+    const rg = piece.range_geometry;
+    let grid = piece.isPromoted && rg?.promoted_grid ? rg.promoted_grid : rg?.normal_grid;
+    if (piece.isPromoted && rg && (!rg.promoted_grid || rg.promoted_grid === rg.normal_grid)) grid = mergeGrids(rg.normal_grid, '0000001110012100111000000');
+    validMoves.push(...extraMoves(board, y, x, piece, grid));
+  }
+
   // Deduplicate coordinates in validMoves
   const uniqueMoves: [number, number][] = [];
   const seen = new Set<string>();
@@ -1446,6 +1455,12 @@ export function executeMove(
   capturedPieces?: { sente: Piece[]; gote: Piece[] }
 ): MoveResult {
   const res = executeMoveCore(board, from, to, player, promote, playerNames, vsAiMode, isManual, capturedPieces);
+  // 気まぐれワープの駒は、動くたびに次の行き先が変わる
+  const movedPiece = res.board[to[0]]?.[to[1]];
+  if (movedPiece?.move_extra?.kind === 'RANDOM_WARP') {
+    res.board = res.board.map(r => [...r]);
+    res.board[to[0]][to[1]] = { ...movedPiece, moveSeed: nextMoveSeed(movedPiece.moveSeed ?? initialMoveSeed(movedPiece.id)) };
+  }
   const captured = res.capturedPieces?.length ? res.capturedPieces : res.capturedPiece ? [res.capturedPiece] : [];
   if (!captured.length) return res;
   const traits = applyCaptureTraits(res.board, captured, to, player);
