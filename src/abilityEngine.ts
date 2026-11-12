@@ -535,13 +535,19 @@ export function runAbilityPrograms(
     state.name = ability.name;
     const targets = resolveTargets(nextBoard, ability.target, center, player, piece.id, ability.effects[0]?.op === 'PULL');
     let triggered = false;
-    for (const effect of ability.effects) {
-      const selfOnly = effect.op === 'STEALTH' || effect.op === 'EXTRA_ACTION' || effect.op === 'STEAL_HAND';
-      if (selfOnly) {
-        if (applyEffect(state, effect, { pos: state.selfPos ?? center, id: null })) triggered = true;
-        continue;
-      }
-      for (const target of targets) if (applyEffect(state, effect, target)) triggered = true;
+    // 範囲に効く効果（押す・凍らせるなど）と、自分に効く効果（隠れる・もう1回・持ち駒を奪う）に分ける。
+    // 範囲に効く効果がある能力は、範囲に対象がいなければ丸ごと不発。自分に効く効果も、範囲の効果が実際に効いたときだけ出す
+    // （以前は「周りの敵を押す＋もう1回」で、周りに敵がいなくても「もう1回」だけ発動していた）
+    const isSelfOnly = (e: ProgramEffect) => e.op === 'STEALTH' || e.op === 'EXTRA_ACTION' || e.op === 'STEAL_HAND';
+    const ranged = ability.effects.filter(e => !isSelfOnly(e));
+    const selfEffects = ability.effects.filter(isSelfOnly);
+    let rangedHit = false;
+    for (const effect of ranged) {
+      for (const target of targets) if (applyEffect(state, effect, target)) rangedHit = true;
+    }
+    if (rangedHit) triggered = true;
+    if (ranged.length === 0 || rangedHit) {
+      for (const effect of selfEffects) if (applyEffect(state, effect, { pos: state.selfPos ?? center, id: null })) triggered = true;
     }
     if (triggered) {
       anyTriggered = true;
@@ -555,8 +561,8 @@ export function runAbilityPrograms(
           if (i !== index && (cooldowns[i] ?? 0) < 99) cooldowns[i] = Math.max(cooldowns[i] ?? 0, shared);
         });
       }
-    } else if (targets.length === 0) {
-      state.logs.push({ player, message: `【${ability.name}】対象がいなかったため不発でした。`, type: 'system' });
+    } else if (ranged.length > 0) {
+      state.logs.push({ player, message: `【${ability.name}】${targets.length === 0 ? '範囲に対象がいなかった' : '効果を受ける駒がいなかった'}ため不発でした。`, type: 'system' });
     }
   });
 
