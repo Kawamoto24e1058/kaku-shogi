@@ -237,6 +237,37 @@ export function applyTileEffects(
           });
           continue;
         }
+      } else if (tile.effectType === 'SANCTUARY') {
+        // 聖域: 置いた側の駒が乗っている間は、能力による効果を受けない（持ち主の手番終了ごとに1減るので2を入れる）
+        if (p && p.owner === tile.ownerPlayer && !p.hasAbsoluteGuard) {
+          setBoardPiece(nextBoard, { x: c, y: r }, { ...p, hasAbsoluteGuard: true, guardDuration: 2 });
+          triggered = true;
+          logs.push({ player: activePlayer, message: `【聖域】${p.word} (${getCellLabel(r, c)}) は聖域に守られています。`, type: 'ability' });
+        }
+      } else if (tile.effectType === 'SEAL_ZONE') {
+        // 封印陣: 敵が乗ると2手番能力を封じる（すでに封じられていれば重ねない）
+        if (p && !p.isKing && p.owner !== tile.ownerPlayer && !p.isSilenced) {
+          setBoardPiece(nextBoard, { x: c, y: r }, { ...p, isSilenced: true, silenceDuration: 2 });
+          triggered = true;
+          logs.push({ player: activePlayer, message: `【封印陣】${p.word} (${getCellLabel(r, c)}) は封印陣を踏み、能力を2手番封じられました！`, type: 'ability' });
+        }
+      } else if (tile.effectType === 'SPRING_FLOOR') {
+        // 跳ね床: 敵が乗ると、その敵の自陣の方向へ2マス弾き飛ばす（駒や盤の端で止まる）
+        if (p && !p.isKing && p.owner !== tile.ownerPlayer) {
+          const dy = tile.ownerPlayer === 'sente' ? -1 : 1;
+          let ty = r;
+          for (let i = 0; i < 2; i++) {
+            const ny = ty + dy;
+            if (!isWithinBounds(ny, c) || getBoardPiece(nextBoard, { x: c, y: ny })) break;
+            ty = ny;
+          }
+          if (ty !== r) {
+            setBoardPiece(nextBoard, { x: c, y: ty }, p);
+            setBoardPiece(nextBoard, { x: c, y: r }, null);
+            triggered = true;
+            logs.push({ player: activePlayer, message: `【跳ね床】${p.word} が跳ね床で ${getCellLabel(ty, c)} へ弾き飛ばされました！`, type: 'ability' });
+          }
+        }
       } else if (tile.effectType === 'TIME_BOMB') {
         if (tile.duration <= 1) {
           for (let dr = -1; dr <= 1; dr++) {

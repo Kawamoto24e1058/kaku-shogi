@@ -32,7 +32,7 @@ export const TARGET_PICKS = ['ALL', 'NEAREST', 'FARTHEST', 'STRONGEST', 'WEAKEST
 export type TargetWho = typeof TARGET_WHO[number];
 export type TargetPick = typeof TARGET_PICKS[number];
 
-export const TILE_KINDS = ['FIRE', 'POISON', 'ICE', 'BOMB', 'TRAP'] as const;
+export const TILE_KINDS = ['FIRE', 'POISON', 'ICE', 'BOMB', 'TRAP', 'HOLY', 'SEAL', 'SPRING'] as const;
 export type TileKind = typeof TILE_KINDS[number];
 
 /** 効果の部品。value の意味は部品ごと（マス数・手番数・体数・枚数） */
@@ -166,7 +166,8 @@ const AREA_LABELS: Record<NamedArea, string> = {
 };
 
 const WHO_LABELS: Record<TargetWho, string> = { ENEMY: '敵駒', ALLY: '味方の駒', ANY: '駒', EMPTY: '空きマス' };
-const TILE_LABELS: Record<TileKind, string> = { FIRE: '炎', POISON: '毒沼', ICE: '氷床', BOMB: '時限爆弾', TRAP: '見えない罠' };
+/** 地形の名前。HOLY は味方を守り、ほかは敵が乗ると発動する（設置型の能力） */
+export const TILE_LABELS: Record<TileKind, string> = { FIRE: '炎', POISON: '毒沼', ICE: '氷床', BOMB: '時限爆弾', TRAP: '見えない罠', HOLY: '聖域', SEAL: '封印陣', SPRING: '跳ね床' };
 
 // ===== 検証・正規化 =====
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
@@ -248,7 +249,7 @@ function reconcileTargetKind(target: ProgramTarget, effects: ProgramEffect[]): P
   // 隣の駒はそれ以上引き寄せられない。「周囲1マスを引き寄せる」は何も起きないので、周囲2マスに広げる
   if (effects.some(e => e.op === 'PULL') && target.area === 'ADJACENT') return { ...target, area: 'RADIUS_2' };
   // 味方を強化する部品は味方に、敵を弱める部品は敵に向ける（SELF はそのまま）
-  const buffs = effects.every(e => ['SHIELD', 'GUARD', 'CLEANSE', 'STEALTH'].includes(e.op));
+  const buffs = effects.every(e => ['SHIELD', 'GUARD', 'CLEANSE', 'STEALTH'].includes(e.op) || (e.op === 'TILE' && e.tile === 'HOLY'));
   if (buffs && target.area !== 'SELF') return { ...target, who: 'ALLY' };
   if (target.area === 'SELF' && !buffs && !effects.some(e => e.op === 'TILE')) {
     return { ...target, area: 'ADJACENT', who: 'ENEMY' };

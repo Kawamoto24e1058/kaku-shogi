@@ -9,7 +9,7 @@
 //   6. 充填（クールダウン）のある能力は、発動した直後にもう一度は発動しない
 import { readFileSync } from 'node:fs';
 import type { Board, Piece } from '../src/types';
-import { OP_SPECS, PROGRAM_TRIGGERS, PROGRAM_CONDITIONS, NAMED_AREAS, TARGET_WHO, TARGET_PICKS, TRAIT_KINDS } from '../shared/abilityProgram';
+import { OP_SPECS, PROGRAM_TRIGGERS, PROGRAM_CONDITIONS, NAMED_AREAS, TARGET_WHO, TARGET_PICKS, TRAIT_KINDS, TILE_KINDS } from '../shared/abilityProgram';
 
 (globalThis as { localStorage?: unknown }).localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 const { sanitizePieceData } = await import('../src/aiGenerator');
@@ -32,7 +32,7 @@ function randomRawPiece(i: number): Record<string, unknown> {
     condition: rand() < 0.6 ? 'NONE' : pick(PROGRAM_CONDITIONS),
     condition_value: 1 + Math.floor(rand() * 60),
     target: { area: pick(NAMED_AREAS), who: pick(TARGET_WHO), pick: pick(TARGET_PICKS), count: 1 + Math.floor(rand() * 3) },
-    effects: Array.from({ length: 1 + Math.floor(rand() * 2) }, () => ({ op: pick(OPS), value: 1 + Math.floor(rand() * 3), tile: 'FIRE' })),
+    effects: Array.from({ length: 1 + Math.floor(rand() * 2) }, () => ({ op: pick(OPS), value: 1 + Math.floor(rand() * 3), tile: pick(TILE_KINDS) })),
     cooldown: Math.floor(rand() * 4),
   }));
   return {

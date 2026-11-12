@@ -881,6 +881,19 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       } else if (currentTile.effectType === 'TIME_BOMB') {
         cellStyle.background = 'radial-gradient(circle, rgba(234, 179, 8, 0.45) 0%, rgba(161, 98, 7, 0.25) 100%)';
         cellStyle.borderColor = '#eab308';
+      } else if (currentTile.effectType === 'STEALTH_TRAP') {
+        // 見えない罠は置いた側にだけ見える（showTileGraphic で相手には出さない）
+        cellStyle.background = 'repeating-linear-gradient(45deg, rgba(120, 113, 108, 0.30) 0 4px, rgba(68, 64, 60, 0.15) 4px 8px)';
+        cellStyle.borderColor = '#78716c';
+      } else if (currentTile.effectType === 'SANCTUARY') {
+        cellStyle.background = 'radial-gradient(circle, rgba(253, 230, 138, 0.55) 0%, rgba(250, 204, 21, 0.18) 100%)';
+        cellStyle.borderColor = '#facc15';
+      } else if (currentTile.effectType === 'SEAL_ZONE') {
+        cellStyle.background = 'radial-gradient(circle, rgba(236, 72, 153, 0.40) 0%, rgba(157, 23, 77, 0.20) 100%)';
+        cellStyle.borderColor = '#ec4899';
+      } else if (currentTile.effectType === 'SPRING_FLOOR') {
+        cellStyle.background = 'radial-gradient(circle, rgba(74, 222, 128, 0.45) 0%, rgba(21, 128, 61, 0.20) 100%)';
+        cellStyle.borderColor = '#4ade80';
       }
     }
 
@@ -1342,6 +1355,26 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                     {currentTile.effectType === 'TIME_BOMB' && (
                       <span className="text-yellow-300 font-black text-[9px] animate-ping drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
                         💣 {currentTile.duration}
+                      </span>
+                    )}
+                    {currentTile.effectType === 'STEALTH_TRAP' && (
+                      <span className="text-stone-300 font-black text-[9px] drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                        ⚠️ 罠 ({currentTile.duration})
+                      </span>
+                    )}
+                    {currentTile.effectType === 'SANCTUARY' && (
+                      <span className="text-yellow-200 font-black text-[9px] drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                        ✨ 聖域 ({currentTile.duration})
+                      </span>
+                    )}
+                    {currentTile.effectType === 'SEAL_ZONE' && (
+                      <span className="text-pink-300 font-black text-[9px] drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                        🔒 封印 ({currentTile.duration})
+                      </span>
+                    )}
+                    {currentTile.effectType === 'SPRING_FLOOR' && (
+                      <span className="text-green-300 font-black text-[9px] drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                        🌀 跳ね ({currentTile.duration})
                       </span>
                     )}
                   </div>

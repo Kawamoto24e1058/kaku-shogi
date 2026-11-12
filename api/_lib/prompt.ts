@@ -3,13 +3,13 @@
 // 項目だけに絞って短く保つ。能力は「部品の組み合わせ（shared/abilityProgram.ts）」で書かせる。
 // 出力の形は responseSchema（pieceSchema.ts）で強制できるモデルでは二重になるが、
 // スキーマ非対応のモデル（Gemma 等）のために最小限の例を残している。
-import { OP_SPECS, TILE_KINDS, TRAIT_SPECS } from '../../shared/abilityProgram.js';
+import { OP_SPECS, TILE_KINDS, TILE_LABELS, TRAIT_SPECS } from '../../shared/abilityProgram.js';
 
 // 効果の部品の一覧（value の範囲つき）。shared/abilityProgram.ts の定義から作るので、エンジンとずれない
 const OP_LIST = Object.entries(OP_SPECS)
   .map(([op, spec]) => {
     const value = spec.value ? ` value=${spec.value[0]}〜${spec.value[1]}` : '';
-    const tile = op === 'TILE' ? ` tile=${TILE_KINDS.join('/')}` : '';
+    const tile = op === 'TILE' ? ` tile=${TILE_KINDS.map(k => `${k}(${TILE_LABELS[k]})`).join('/')}（HOLY は味方を守る。ほかは敵が乗ると発動する）` : '';
     return `  - ${op}${value}${tile}: ${spec.value ? 'value' : ''}${spec.label}${spec.self ? '（自分に）' : ''}`;
   })
   .join('\n');
@@ -100,7 +100,7 @@ ability_mode は "SINGLE"。くじ・ガチャ・サイコロ・天気のよう�
 - trigger: ON_MOVE(動いた後・基本) / ON_CAPTURE(取ったとき) / ON_PROMOTE(成ったとき) / ON_TAKEN(取られたとき) / ON_DROP(打ったとき) / ON_ALLY_TAKEN(味方が取られたとき=仇討ち)
 - condition: NONE / IN_ENEMY_CAMP / ENEMIES_NEAR_AT_LEAST / NO_ALLY_NEAR / PROMOTED / CHANCE(%)
 - area: SELF / ADJACENT / RADIUS_2 / FRONT_LINE / LINES_8 / CROSS / ROW / COLUMN / ALL / ATTACKER(ON_TAKENのみ)。who: ENEMY/ALLY/ANY/EMPTY。pick: ALL/NEAREST/STRONGEST/WEAKEST/RANDOM
-- op: ${OP_NAMES}。TILE は tile=${TILE_KINDS.join('/')}
+- op: ${OP_NAMES}。TILE は tile=${TILE_KINDS.map(k => `${k}(${TILE_LABELS[k]})`).join('/')}（HOLY=味方を守る、ほかは敵が乗ると発動）
 - 強い能力にはシステムが充填手番を自動で付けるので弱くしなくてよい。ON_TAKEN では SWAP/TELEPORT/STEALTH/EXTRA_ACTION は使えない。
 例 消しゴム: 「書いた文字を消して書き直す」→ {"name":"書直","trigger":"ON_CAPTURE","condition":"NONE","target":{"area":"ADJACENT","who":"ENEMY","pick":"STRONGEST","count":1},"effects":[{"op":"TRANSFORM_PAWN"}],"cooldown":3}
 例 鏡: 「映ったものと入れ替わる」→ {"name":"鏡写","trigger":"ON_MOVE","condition":"NONE","target":{"area":"RADIUS_2","who":"ENEMY","pick":"STRONGEST","count":1},"effects":[{"op":"SWAP"}],"cooldown":3}
