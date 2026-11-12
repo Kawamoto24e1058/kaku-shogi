@@ -7,6 +7,9 @@
 //   4. 発動しても、盤の外・駒の重複・玉の消失などの壊れた盤面にならない
 //   5. 勝手に動く（操作できない）のは性質「暴れ馬」の駒だけ（説明文の「暴走」「気まぐれ」などの言葉では決まらない）
 //   6. 充填（クールダウン）のある能力は、発動した直後にもう一度は発動しない
+//   7. 「発動した」と扱われたときは、盤面・持ち駒・地形・再行動のどれかが実際に変わっている
+//   8. 範囲に対象がいなければ発動しない（範囲の効果と一緒の「もう1回」「隠れる」も出ない）
+//   9. 条件（敵陣にいる・周りに敵がいる・持ち駒がある・成っている など）を満たさなければ発動しない
 import { readFileSync } from 'node:fs';
 import type { Board, Piece } from '../src/types';
 import { OP_SPECS, PROGRAM_TRIGGERS, PROGRAM_CONDITIONS, NAMED_AREAS, TARGET_WHO, TARGET_PICKS, TRAIT_KINDS, TILE_KINDS } from '../shared/abilityProgram';
@@ -76,6 +79,19 @@ function gridMoves(grid: string): Set<string> {
   for (let i = 0; i < 25; i++) if (g[i] === '1') cells.add(`${4 + Math.floor(i / 5) - 2},${4 + (i % 5) - 2}`);
   return cells;
 }
+
+
+/** 盤の真ん中にその駒だけ（玉は、どの範囲・直線にも入らない隅の近くに置く） */
+function alone(piece: Piece): Board {
+  const board: Board = Array.from({ length: 9 }, () => Array(9).fill(null));
+  board[8][1] = { ...template[8][4]!, id: 'sk' };
+  board[0][7] = { ...template[0][4]!, id: 'gk' };
+  board[4][4] = piece;
+  return board;
+}
+/** ひとりぼっちの盤では満たせない条件 */
+const IMPOSSIBLE_ALONE = new Set(['IN_ENEMY_CAMP', 'IN_OWN_CAMP', 'ENEMIES_NEAR_AT_LEAST', 'ALLIES_NEAR_AT_LEAST', 'MY_HAND_AT_LEAST', 'ENEMY_HAND_AT_LEAST', 'PROMOTED']);
+const SELF_OPS = new Set(['STEALTH', 'EXTRA_ACTION', 'STEAL_HAND']);
 
 const RETIRED = ['TURN_START', 'ON_APPROACH'] as const;
 const EVENTS = ['ON_MOVE', 'ON_CAPTURE', 'ON_PROMOTE', 'ON_TAKEN', 'ON_DROP', 'ON_ALLY_TAKEN'] as const;
@@ -147,6 +163,34 @@ for (const raw of raws) {
     if ((after.abilities ?? []).some(a => a.trigger === event && !a.cooldown)) continue;
     const second = applyAutomatedEffect(first.board, at, event, 'sente', [], [5, 4]);
     if (second.triggered) note('充填中なのに続けて発動した', `${word}: ${event}`);
+  }
+  // 7〜9. 発動したなら何かが変わっている / 範囲に誰もいない・条件を満たさないなら発動しない
+  for (const event of ['ON_MOVE', 'ON_CAPTURE', 'ON_PROMOTE', 'ON_DROP', 'ON_ALLY_TAKEN'] as const) {
+    const mine = (piece.abilities ?? []).filter(a => a.trigger === event);
+    if (!mine.length) continue;
+    {
+      const board = setup(piece);
+      const before = JSON.stringify(board);
+      drainTilePlacements();
+      const res = applyAutomatedEffect(board, [4, 4], event, 'sente', [], [5, 4], undefined, [], [], undefined, undefined, [{ ...pawn, id: 'h1', owner: 'gote' }]);
+      const changed = JSON.stringify(res.board) !== before || res.capturedPieces.length > 0 || (res.opponentCapturedPieces?.length ?? 1) !== 1 || drainTilePlacements().length > 0 || !!res.reAction;
+      if (res.triggered && !changed) note('「発動」したのに何も変わらない', `${word}: ${event}`);
+    }
+    const blocked = (a: typeof mine[number]) => {
+      if (IMPOSSIBLE_ALONE.has(a.condition)) return true;
+      const ranged = a.effects.some(e => !SELF_OPS.has(e.op));
+      return ranged && ['ENEMY', 'ALLY', 'ANY'].includes(a.target.who) && !['SELF', 'ALL', 'ATTACKER'].includes(a.target.area);
+    };
+    if (mine.every(blocked)) {
+      const board = alone(piece);
+      drainTilePlacements();
+      const res = applyAutomatedEffect(board, [4, 4], event, 'sente', [], [5, 4]);
+      drainTilePlacements();
+      if (res.triggered) {
+        const why = mine.map(a => (IMPOSSIBLE_ALONE.has(a.condition) ? `条件${a.condition}` : `範囲${a.target.area}/${a.target.who}`)).join(',');
+        note('範囲に誰もいない・条件を満たさないのに発動した', `${word}: ${event}（${why}） ${res.logs.map(l => l.message).join(' / ').slice(0, 80)}`);
+      }
+    }
   }
   // 3. 動けるマスは移動範囲どおり（飛・角・香・砲などの遠くまで動く駒は 5x5 で表せないので対象外）
   if (piece.logic_code && piece.logic_code !== 'normal') {

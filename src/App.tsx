@@ -245,6 +245,26 @@ export const App: React.FC = () => {
     return out;
   };
 
+  /**
+   * 能力プログラムの演出: 実際に発動した後の盤面と比べ、変わったマスだけを対象として光らせる。
+   * （以前は発動前に、古い仕組みの範囲データで演出を予約していたため、不発でも演出が出たり、光るマスがずれたりしていた）
+   */
+  const programAnimation = (before: Board, after: Board, source: [number, number], piece: Piece, trigger: string) => {
+    const targets: [number, number][] = [];
+    const includeSource = trigger === 'ON_TAKEN'; // 取られたときは、元のマスに取った駒がいる（その駒が効果を受けることがある）
+    for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) {
+      if (!includeSource && y === source[0] && x === source[1]) continue;
+      if (before[y][x] !== after[y][x]) targets.push([y, x]);
+    }
+    const ability = piece.abilities?.find(a => a.trigger === trigger) ?? piece.abilities?.[0];
+    const op = ability?.effects.find(e => !['STEALTH', 'EXTRA_ACTION', 'STEAL_HAND'].includes(e.op))?.op ?? ability?.effects[0]?.op;
+    const EFFECT_TYPES: Record<string, string> = {
+      DESTROY: 'DESTROY', CAPTURE: 'DESTROY', DOOM: 'DESTROY', FREEZE: 'IMMOBILIZE', STUN: 'IMMOBILIZE', SILENCE: 'IMMOBILIZE',
+      PUSH: 'PUSH', PULL: 'PULL', SWAP: 'SWAP', TELEPORT: 'SWAP', EXTRA_ACTION: 'RE_ACTION',
+    };
+    return { source, targets, theme: piece.visual_theme || null, effectType: (op && EFFECT_TYPES[op]) || 'DEFAULT', visualEffect: piece.visual_effect };
+  };
+
   /** 持ち駒から打ったとき: 打った駒がこの発動タイミングの能力を持っていればイベント */
   const dropEvents = (board: Board, at: [number, number], player: Player): AbilityEvent[] => {
     const p = board[at[0]][at[1]];
@@ -393,7 +413,9 @@ export const App: React.FC = () => {
         : (animPos ? boardState[animPos[0]][animPos[1]] : null);
       let animTargets: [number, number][] = [];
 
-      const isCustomAnimStart = animPiece && !animPiece.isKing && !animPiece.isPawn && !animPiece.isHisha && !animPiece.isKaku;
+      // 能力プログラムの駒は、発動した後に programAnimation で演出を作る（ここでは予約しない）
+      const firingPiece = (event.triggerType === 'ON_TAKEN' || event.triggerType === 'ON_DEATH') ? event.targetCellPiece : animPiece;
+      const isCustomAnimStart = animPiece && !animPiece.isKing && !animPiece.isPawn && !animPiece.isHisha && !animPiece.isKaku && !firingPiece?.abilities?.length;
       if (animPiece && isCustomAnimStart) {
         const spec = getPieceAbilitySpec(animPiece);
         if (event.triggerType === 'ON_TAKEN' || event.triggerType === 'ON_DEATH') {
@@ -564,7 +586,8 @@ export const App: React.FC = () => {
           [ty, tx],
           'ON_TAKEN',
           event.owner,
-          [],
+          // 「持ち駒がN枚以上なら」の条件のため、自分の持ち駒を渡す（以前は空で、この条件が常に不成立だった）
+          trapPiece.abilities?.length ? capturedState[event.owner] : [],
           undefined,
           undefined,
           [...destroyedState],
@@ -576,8 +599,12 @@ export const App: React.FC = () => {
 
         if (trapEffectRes.triggered) {
           await announceAbility(trapPiece, 'ON_TAKEN');
+          if (trapPiece.abilities?.length) animationsToPlay.push(programAnimation(boardState, trapEffectRes.board, [ty, tx], trapPiece, 'ON_TAKEN'));
           boardState = trapEffectRes.board;
-          if (trapEffectRes.capturedPieces && trapEffectRes.capturedPieces.length > 0) {
+          if (trapPiece.abilities?.length) {
+            // 能力プログラムには持ち駒を渡しているので、戻り値がそのまま新しい持ち駒（足すと二重になる）
+            capturedState[event.owner] = trapEffectRes.capturedPieces;
+          } else if (trapEffectRes.capturedPieces && trapEffectRes.capturedPieces.length > 0) {
             capturedState[event.owner] = [...capturedState[event.owner], ...trapEffectRes.capturedPieces];
           }
           if (trapEffectRes.opponentCapturedPieces) {
@@ -596,6 +623,8 @@ export const App: React.FC = () => {
           capturedState[event.owner] = capturedState[event.owner].filter(p => p.id !== event.pieceId);
           capturedState[event.owner === 'sente' ? 'gote' : 'sente'] = capturedState[event.owner === 'sente' ? 'gote' : 'sente'].filter(p => p.id !== event.pieceId);
         } else if (
+          // 能力プログラムの駒は、能力が不発なら何も起きない（説明文の「道連れ」「自爆」で勝手に相手を消さない）
+          !trapPiece.abilities?.length &&
           (trapPiece.trigger === 'ON_TAKEN' || (trapPiece.custom_ability?.triggers && trapPiece.custom_ability.triggers.includes('ON_TAKEN'))) &&
           (
             trapPiece.logic_code === 'self_destruct_trap' ||
@@ -726,6 +755,7 @@ export const App: React.FC = () => {
           if (effectRes.triggered) {
             const firedPiece = boardState[event.position[0]]?.[event.position[1]];
             if (firedPiece) await announceAbility(firedPiece, event.triggerType);
+            if (firedPiece?.abilities?.length) animationsToPlay.push(programAnimation(boardState, effectRes.board, event.position, firedPiece, event.triggerType));
             boardState = effectRes.board;
             capturedState[event.owner] = effectRes.capturedPieces;
             if (effectRes.opponentCapturedPieces) {
