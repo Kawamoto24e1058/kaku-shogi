@@ -194,8 +194,11 @@ export function applyTileEffects(
       if (!tile) continue;
 
       const onTile = getBoardPiece(nextBoard, { x: c, y: r });
-      // 性質「飛行」の駒は、地面の地形（炎・毒沼・氷・隠し罠）の効果を受けない（時限爆弾の爆発は受ける）
-      const p = onTile?.trait?.kind === 'FLYING' ? null : onTile;
+      // 性質「飛行」の駒は、害のある地面の地形の効果を受けない（聖域の守りは受ける。時限爆弾の爆発は受ける）。
+      // 性質「重量」の駒は、跳ね床で弾かれない
+      const ignores = (onTile?.trait?.kind === 'FLYING' && tile.effectType !== 'SANCTUARY')
+        || (onTile?.trait?.kind === 'HEAVY' && tile.effectType === 'SPRING_FLOOR');
+      const p = ignores ? null : onTile;
       if (tile.effectType === 'FIRE_ZONE') {
         if (p && !p.isKing && p.owner !== tile.ownerPlayer) {
           setBoardPiece(nextBoard, { x: c, y: r }, null);
@@ -839,8 +842,10 @@ export function getValidMoves(y: number, x: number, board: Board): [number, numb
     return [];
   }
 
-  // Silenced pieces can only move 1 step forward (pawn-like)
-  if (piece.isSilenced) {
+  // 封印: 古い駒は前に1マスだけ動ける。能力プログラム・性質・移動の型を持つ新しい駒は、能力と移動の特徴だけが封じられ、
+  // マス目の動きはそのまま（説明文「能力を封じる」と動きが食い違っていたため）
+  const isNewStylePiece = !!(piece.abilities?.length || piece.trait || piece.move_extra || piece.move_style);
+  if (piece.isSilenced && !isNewStylePiece) {
     const forward = piece.owner === 'sente' ? -1 : 1;
     const silY = y + forward;
     const silX = x;
