@@ -105,7 +105,8 @@ export function applyCaptureTraits(
         const ids = new Set(next.flat().filter(Boolean).map(q => q!.id));
         let id = `${cap.id}_split`;
         for (let n = 2; ids.has(id); n++) id = `${cap.id}_split${n}`;
-        next[cell[0]][cell[1]] = { ...cap, id, owner, isPromoted: false, traitUsed: true, coolDownTurnsRemaining: 0, isStealth: false, isRevealed: true };
+        // 分身は能力を持たない（能力ごと増えると強すぎた。自動対局で分裂の駒が勝率58%）
+        next[cell[0]][cell[1]] = { ...cap, id, owner, isPromoted: false, traitUsed: true, coolDownTurnsRemaining: 0, isStealth: false, isRevealed: true, abilities: undefined, ability_mode: undefined, abilityCooldowns: undefined, rules_text: undefined };
         logs.push({ player: owner, message: `【分裂】「${cap.word}」は取られる直前に分裂し、分身が残りました！`, type: 'ability' });
         // 分裂は1回だけ: 取られて持ち駒になった本体も使用済みにする（打ち直してまた分裂しないように）
         kept.push({ ...cap, traitUsed: true });

@@ -20,7 +20,7 @@ const withKings = (b: Board) => { b[8][0] = { ...template[8][4]!, id: 'sk' }; b[
 
 {
   check(normalizeTrait({ kind: 'WILD' })?.kind === 'WILD' && normalizeTrait('暴れ馬')?.kind === 'WILD' && normalizeTrait('NOPE') === null, '性質を英語名・日本語名で読み、知らないものは無視する');
-  check(normalizeTrait({ kind: 'LIFESPAN', value: 99 })?.value === 8, '寿命の手番数は範囲内に収める');
+  check(normalizeTrait({ kind: 'LIFESPAN', value: 99 })?.value === 10, '寿命の手番数は範囲内に収める');
   const ab = normalizeAbilityPrograms([{ trigger: 'ON_MOVE', target: { area: 'RADIUS_2', who: 'ENEMY', pick: 'NEAREST', count: 1 }, effects: [{ op: 'DESTROY' }] }])!;
   const wild = applyTraitBalance(ab, { kind: 'WILD' })[0].cooldown;
   const undying = applyTraitBalance(ab, { kind: 'UNDYING' })[0].cooldown;
@@ -173,6 +173,11 @@ const caster = (op: string, area?: string, value?: number) => mk('sente', 'caste
   const res = executeMove(b, [4, 4], [3, 4], 'sente', false);
   const clone = res.board.flat().find(p => p?.id === 'slime_split');
   check(!!res.capturedPiece && !!clone && clone.owner === 'gote' && clone.traitUsed === true, '分裂: 本体は取られ、隣に分身が残る');
+  const b3 = withKings(empty());
+  b3[4][4] = mk('sente', 'attacker3');
+  b3[3][4] = mk('gote', 'slime', { trait: { kind: 'SPLIT' }, abilities: normalizeAbilityPrograms([{ trigger: 'ON_MOVE', target: { area: 'ADJACENT', who: 'ENEMY', pick: 'NEAREST', count: 1 }, effects: [{ op: 'STUN', value: 1 }] }])! });
+  const clone3 = executeMove(b3, [4, 4], [3, 4], 'sente', false).board.flat().find(p => p?.id === 'slime_split');
+  check(!!clone3 && !clone3.abilities?.length, '分裂: 分身は能力を持たない');
   check(res.capturedPiece?.traitUsed === true, '分裂は1回だけ: 持ち駒になった本体も使用済み（打ち直しても再び分裂しない）');
   const b2 = withKings(empty());
   b2[4][4] = mk('sente', 'attacker2');

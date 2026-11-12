@@ -9,6 +9,9 @@ import { PROGRAM_OPS, normalizeAbilityPrograms, describeAbilities, type AbilityP
 import type { Board, Piece } from '../src/types';
 import { normalizeFusionWord, dailyWords, dailyKey } from '../shared/challenge';
 import { judgeGame, endgameNotice, JUDGE_PLY } from '../shared/endgame';
+import { MOVE_STYLE_SPECS } from '../shared/moveStyles';
+import { pieceStrength, fitToBudget, BUDGET_LIMIT, BUDGET_FLOOR } from '../shared/pieceBudget';
+import { sanitizePieceData } from '../src/aiGenerator';
 
 const template = initializeBoard();
 const pawn = template[6][0]!;
@@ -343,6 +346,23 @@ for (const op of PROGRAM_OPS) {
   const tie = judgeGame([[{ ...tpl[8][4]!, id: 'k' }]], { sente: [], gote: [] });
   check(tie.winner === 'gote', '判定: 同点なら後手の勝ち（先手の有利を打ち消す）');
   check(endgameNotice(199) === null && !!endgameNotice(200)?.includes(`${JUDGE_PLY - 200}手で判定`), '判定の案内は200手目から出る', String(endgameNotice(200)));
+}
+
+// ===== 移動の型・総合力 =====
+{
+  const raw = (extra: Record<string, unknown>) => ({ word: '試', effect_name: '試', description: '試', range_geometry: { normal_grid: '00000/01110/01210/01110/00000' }, ...extra });
+  const rusher = sanitizePieceData(raw({ move_style: 'RUSHER' }), '試');
+  check(rusher.range_geometry.normal_grid === MOVE_STYLE_SPECS.RUSHER.grid, '移動の型: 突進型のマス目になる', rusher.range_geometry.normal_grid);
+  check(sanitizePieceData(raw({ move_style: '跳ねる（桂馬）' }), '試').range_geometry.normal_grid === MOVE_STYLE_SPECS.JUMPER.grid, '移動の型: 日本語の名前でも読める');
+  check(sanitizePieceData(raw({ move_style: 'NOPE' }), '試').range_geometry.normal_grid === '0000001110012100111000000', '知らない型なら AI のマス目のまま');
+
+  const strongTrait = sanitizePieceData(raw({ move_style: 'FLYER', trait: { kind: 'GROWTH' }, abilities: [{ trigger: 'ON_MOVE', target: { area: 'ADJACENT', who: 'ENEMY', pick: 'NEAREST', count: 1 }, effects: [{ op: 'DESTROY' }] }] }), '試');
+  const st = pieceStrength(strongTrait);
+  check(st.total <= BUDGET_LIMIT, '能力＋得な性質＋広い移動の駒は、総合力の上限以内に削られる', `移動${st.move} 能力${st.ability.toFixed(1)} 性質${st.trait} → ${st.total}`);
+  const weak = sanitizePieceData(raw({ move_style: 'HEAVY', trait: { kind: 'LIFESPAN' } }), '試');
+  check(pieceStrength(weak).total >= BUDGET_FLOOR, '弱点の性質＋狭い移動の駒は、下限まで移動が足される', `${weak.range_geometry.normal_grid} → ${pieceStrength(weak).total}`);
+  const plain = { range_geometry: { normal_grid: MOVE_STYLE_SPECS.BALANCED.grid } };
+  check(fitToBudget(plain) === plain, '上限と下限の間の駒は変えない');
 }
 
 console.log(failed === 0 ? '\nすべて成功' : `\n${failed} 件失敗`);

@@ -3,6 +3,7 @@
 import { TRAJECTORIES, VISUAL_THEMES } from '../../shared/abilityCatalog.js';
 import {
   PROGRAM_TRIGGERS, PROGRAM_CONDITIONS, PROGRAM_OPS, TARGET_WHO, TARGET_PICKS, TILE_KINDS, AURAS, TRAIT_KINDS, DRAWBACK_KINDS } from '../../shared/abilityProgram.js';
+import { MOVE_STYLES } from '../../shared/moveStyles.js';
 
 const str = (description?: string) => ({ type: 'STRING', ...(description ? { description } : {}) });
 const enumOf = (values: readonly string[], description?: string) => ({ type: 'STRING', enum: [...values], ...(description ? { description } : {}) });
@@ -75,6 +76,7 @@ const PIECE_SCHEMA = {
     ability_genre: str('表示用の日本語ジャンル名（10文字以内）'),
     visual_theme: enumOf(VISUAL_THEMES),
     isAutonomous: { type: 'BOOLEAN' },
+    move_style: { ...enumOf(MOVE_STYLES), description: 'キャラに合う移動の型。マス目はこの型から決まる' },
     range_geometry: {
       type: 'OBJECT',
       // charging_grid（充填中の移動範囲）は全駒共通の十字移動なのでAIに出力させず、サニタイザで補完する

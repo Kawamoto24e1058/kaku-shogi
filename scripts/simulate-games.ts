@@ -3,7 +3,7 @@
 // App.tsx の手番処理（手番開始の能力 → 指し手 → 移動・駒取り・取られた時の能力 → 地形 → 手番終了の状態異常の経過）を
 // 簡略化して再現している。画面の演出や、手動で対象を選ぶ能力の操作は含まない。
 (globalThis as { localStorage?: unknown }).localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import type { Board, Piece, Player, TileState } from '../src/types';
 import { normalizeAbilityPrograms, describeAbilities, abilityPower } from '../shared/abilityProgram';
 import { chooseWildMove, endOfTurnTraits, fickleTarget, markMoved, traitKind } from '../src/traits';
@@ -369,5 +369,9 @@ for (const r of stallRanked.slice(0, 10)) {
   const entry = pool.find(e => e.name === r.name)!;
   const programs = normalizeAbilityPrograms(entry.data.abilities);
   console.log(`  ${(r.rate * 100).toFixed(0)}% (${r.games}局) ${r.name}${programs ? `  ${describeAbilities(programs).replace(/\n/g, ' / ').slice(0, 120)}` : ''}`);
+}
+// STATS_OUT=ファイル で、駒ごとの対局数・勝ち数を書き出す（scripts/calibrate-budget.ts の当てはめ用）
+if (process.env.STATS_OUT) {
+  writeFileSync(process.env.STATS_OUT, JSON.stringify(Object.fromEntries(stats)));
 }
 process.exit(errors.length ? 1 : 0);
