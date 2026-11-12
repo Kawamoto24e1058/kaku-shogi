@@ -52,7 +52,7 @@ type BudgetPiece = { range_geometry?: { normal_grid?: string }; abilities?: Abil
 export const BUDGET_WEIGHTS = { grid: 1, ability: 0.3, trait: 3 };
 /** 総合力の上限。これを超える駒は移動の特徴・充填・移動範囲で削る */
 export const BUDGET_LIMIT = 14;
-/** 総合力の下限。これを下回る駒（弱点の性質＋狭い移動など）は、移動を足して底上げする */
+/** 総合力の下限。これを下回る駒（弱点の性質＋狭い移動など）は、充填を短くし、周囲1マスを3マスまで足して底上げする */
 export const BUDGET_FLOOR = 4;
 
 export function pieceStrength(p: BudgetPiece): PieceStrength {
@@ -100,14 +100,21 @@ export function fitToBudget<T extends BudgetPiece>(piece: T): T {
     const trimmed = [...grid].map((c, i) => (i === drop ? '0' : c)).join('');
     next = { ...next, range_geometry: { ...next.range_geometry, normal_grid: trimmed } };
   }
-  // 弱すぎる駒は、動けないマスを前から順に足す（キャラの動き方はなるべく残す）
-  // 周囲1マスが埋まっても足りなければ、2マス前・2マス後ろ（飛び越えられる）も足す
-  const ORDER = [7, 11, 13, 6, 8, 17, 16, 18, 2, 22];
+  // 弱すぎる駒は、まず能力の充填を短くし、それでも足りなければ周囲1マスの動けないマスを前から順に足す。
+  // 足すのは3マスまで・2マス先は足さない（ゾウ＝重い型＋重量のような駒が、何でも動ける駒になってキャラが消えたため）
+  for (let guard = 0; guard < 8 && pieceStrength(next).total < BUDGET_FLOOR; guard++) {
+    const abilities = next.abilities;
+    if (!abilities?.some(a => a.cooldown > 0 && a.cooldown < 99)) break;
+    next = { ...next, abilities: abilities.map(a => (a.cooldown > 0 && a.cooldown < 99 ? { ...a, cooldown: a.cooldown - 1 } : a)) };
+  }
+  const ORDER = [7, 11, 13, 6, 8, 17, 16, 18];
+  let added = 0;
   for (const i of ORDER) {
-    if (pieceStrength(next).total >= BUDGET_FLOOR) break;
+    if (added >= 3 || pieceStrength(next).total >= BUDGET_FLOOR) break;
     const grid = (next.range_geometry?.normal_grid ?? '').replace(/\//g, '');
     if (grid.length !== 25 || grid[i] === '1') continue;
     next = { ...next, range_geometry: { ...next.range_geometry, normal_grid: [...grid].map((c, k) => (k === i ? '1' : c)).join('') } };
+    added++;
   }
   return next;
 }
