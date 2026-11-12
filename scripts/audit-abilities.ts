@@ -222,7 +222,7 @@ for (const raw of raws) {
   }
   const extraMoves = [...actual].filter(c => !expected.has(c));
   const missing = [...expected].filter(c => !actual.has(c));
-  if (extraMoves.length || missing.length) note('動けるマスが移動範囲と違う', `${word}: logic=${piece.logic_code} 余分${extraMoves.length} 不足${missing.length}`);
+  if (extraMoves.length || missing.length) note('動けるマスが移動範囲と違う', `${word}: logic=${piece.logic_code} 余分${extraMoves.join(';')} 不足${missing.length} grid=${piece.range_geometry?.normal_grid} trait=${piece.trait?.kind}`);
 }
 
 console.log(`能力プログラムの駒 ${checked} 個を調べました（ランダム ${Math.min(400, raws.length)} ＋ 実際の駒 ${extra.length}）\n`);

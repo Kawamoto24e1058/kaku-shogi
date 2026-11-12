@@ -6,6 +6,8 @@ import { containsNgWord, pieceHasNgText } from '../shared/moderation';
 import { normalizeAbilityPrograms, normalizeAbilityMode, describeAbilities, normalizeAppearance, normalizeTrait, describeTrait, applyTraitBalance } from '../shared/abilityProgram';
 import { normalizeFusionWord } from '../shared/challenge';
 import { extractPartialPiece, type PartialPiece } from '../shared/partialPiece';
+import { normalizeMoveStyle, MOVE_STYLE_SPECS } from '../shared/moveStyles';
+import { fitToBudget } from '../shared/pieceBudget';
 
 const AREA_SHAPE_SET = new Set<string>(AREA_SHAPES);
 // 対象マスではなく発動した駒自身に作用するアクション（範囲が自分のマスだけでも効果が出る）
@@ -21,7 +23,7 @@ const memoryCache = new Map<string, PieceData>();
 // バージョン管理されたワンタイムキャッシュクリーンアップ（v4にアップデートして古いキャッシュを全消去）
 try {
   if (typeof window !== 'undefined' && window.localStorage) {
-    const CURRENT_VERSION = 'v12'; // v12: 強い能力に代償（反動など）を付けた釣り合いに変えた（古い駒の端末キャッシュを捨てる）
+    const CURRENT_VERSION = 'v13'; // v13: 総合力（移動・能力・性質）の上限と移動の型、古い移動指定の削除（古い駒の端末キャッシュを捨てる）
     const activeVersion = localStorage.getItem('shogi_cache_version');
     if (activeVersion !== CURRENT_VERSION) {
       localStorage.removeItem('shogi_piece_cache');
@@ -371,6 +373,8 @@ export function getRandomCachedPieces(count: number): PieceData[] {
 
 /** 2マス先へ動けるマスの上限（通常・成った後）。バランス調整は scripts/simulate-games.ts で確認する */
 const MAX_FAR_MOVES = 2;
+/** 5x5 のマス目では表せない、遠くまで動く動き（飛・角・香・砲・8方向3マス）。これだけは logic_code で残す */
+const LONG_RANGE_LOGIC = ['move_like_rook', 'move_like_bishop', 'move_like_lance', 'move_like_cannon', 'move_like_queen_limit_3', 'queen_limit_3'];
 const MAX_FAR_MOVES_PROMOTED = 4;
 
 export function sanitizePieceData(parsed: any, word: string): PieceData {
@@ -898,6 +902,17 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
     parsed.promoted_effect.visual_effect = { ...parsed.visual_effect };
   }
 
+  // ─── 移動の型: AI が選んだ型（突進・跳躍・重い など）のマス目を使う。型がなければ AI のマス目のまま ───
+  const moveStyle = normalizeMoveStyle(parsed.move_style);
+  if (moveStyle) {
+    const grid = MOVE_STYLE_SPECS[moveStyle].grid;
+    parsed.move_style = moveStyle;
+    parsed.range_geometry = { ...(parsed.range_geometry || {}), normal_grid: grid, promoted_grid: mergeGrids(grid, '0000001110012100111000000') };
+    if (!LONG_RANGE_LOGIC.includes(String(parsed.logic_code))) parsed.logic_code = 'normal';
+  } else {
+    delete parsed.move_style;
+  }
+
   // ─── 能力プログラム（v2）: 検証・強さの自動調整・説明文の生成 ─────────────
   // 使える部品が1つも無ければ消し、従来の ability_spec / custom_ability で動かす
   // 性質: trait 項目のほか、AIが abilities の中に {kind: "TRAIT", trait: ...} として書いた場合も拾う
@@ -913,11 +928,16 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
     const mode = requestedMode === 'RANDOM' && programs.length > 1 ? 'RANDOM' : 'SINGLE';
     parsed.abilities = applyTraitBalance(programs, trait);
     parsed.ability_mode = mode;
+    // 総合力（移動・能力・性質の合計）が上限を超えたら充填・移動範囲を削り、下限を下回れば移動を足す
+    const fitted = fitToBudget({ range_geometry: parsed.range_geometry, abilities: parsed.abilities, ability_mode: mode, trait });
+    parsed.abilities = fitted.abilities;
+    parsed.range_geometry = fitted.range_geometry;
     parsed.rules_text = [trait ? describeTrait(trait) : '', describeAbilities(parsed.abilities, mode)].filter(Boolean).join('\n');
   } else if (trait) {
     // 性質だけの駒（発動の能力なし）
     delete parsed.abilities;
     delete parsed.ability_mode;
+    parsed.range_geometry = fitToBudget({ range_geometry: parsed.range_geometry, trait }).range_geometry;
     parsed.rules_text = describeTrait(trait);
   } else {
     delete parsed.abilities;
@@ -934,9 +954,11 @@ export function sanitizePieceData(parsed: any, word: string): PieceData {
     parsed.isAutonomous = wild;
     if (parsed.custom_ability) parsed.custom_ability.isAutonomous = wild;
     if (parsed.mechanics_type === 'AUTOMATIC_DRIVE' && !wild) parsed.mechanics_type = 'UNKNOWN_HERESY';
-    const LONG_RANGE = ['move_like_rook', 'move_like_bishop', 'move_like_lance', 'move_like_cannon', 'move_like_queen_limit_3', 'queen_limit_3'];
-    if (!LONG_RANGE.includes(String(parsed.logic_code))) parsed.logic_code = 'normal';
-    if (parsed.promoted_effect && !LONG_RANGE.includes(String(parsed.promoted_effect.logic_code))) parsed.promoted_effect.logic_code = 'normal';
+    if (!LONG_RANGE_LOGIC.includes(String(parsed.logic_code))) parsed.logic_code = 'normal';
+    if (parsed.promoted_effect && !LONG_RANGE_LOGIC.includes(String(parsed.promoted_effect.logic_code))) parsed.promoted_effect.logic_code = 'normal';
+    // 古い仕組みの移動指定（custom_moves）はマス目より優先されてしまうので消す。新しい駒の移動はマス目（移動の型・総合力で調整済み）だけで決める
+    delete parsed.custom_moves;
+    if (parsed.custom_ability) delete parsed.custom_ability.custom_moves;
   }
 
 
