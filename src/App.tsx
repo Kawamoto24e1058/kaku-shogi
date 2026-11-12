@@ -3835,7 +3835,7 @@ export const App: React.FC = () => {
           架空将棋
         </h1>
         <div className="app-header-subtitle" style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-cyber)' }}>
-          SAPIENS RUNTIME v3.0.0
+          v3.0.0
         </div>
       </header>}
 
