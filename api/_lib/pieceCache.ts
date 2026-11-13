@@ -56,12 +56,20 @@ export async function getCachedPiece(key: string): Promise<Json | null> {
   return data;
 }
 
+/**
+ * 駒データの仕様の版。プロンプト・駒の形を大きく変えたら上げる（この版より古い駒は、夜のバックフィルが少しずつ作り直す）。
+ * 3 = 移動の型・移動の特徴・成ったときの変化を含む版
+ */
+export const PIECE_SCHEMA_VERSION = 3;
+
 export async function saveCachedPiece(key: string, piece: Json, meta: { provider: string; backfilled?: boolean }): Promise<void> {
+  // AI がどの項目を書かなかったかに関係なく、この版で作ったことを記録する（書かれなかった駒を毎晩作り直さないように）
+  const data = { ...piece, schema_version: PIECE_SCHEMA_VERSION };
   await rpc('server_save_piece', {
     p_token: SERVER_TOKEN, p_key: key, p_word: String(piece.word ?? key).slice(0, 64),
-    p_data: piece, p_provider: meta.provider, p_backfilled: !!meta.backfilled,
+    p_data: data, p_provider: meta.provider, p_backfilled: !!meta.backfilled,
   });
-  remember(key, piece);
+  remember(key, data);
 }
 
 /**
@@ -80,11 +88,12 @@ export async function consumeSharedQuota(buckets: string[], limits: number[]): P
 }
 
 /**
- * 古い仕様で作られた駒（能力の持ち方 ability_mode が無い＝読み解き・能力1つ化より前の駒）を古い順に返す。
+ * 古い仕様で作られた駒（schema_version が今の版より古い・無い）を古い順に返す。
  * バックフィルが少しずつ作り直す（上書き保存される）
  */
 export async function listStalePieces(limit: number): Promise<{ key: string; word: string }[]> {
-  return await rest(`pieces?select=key,word&data->>ability_mode=is.null&order=created_at.asc&limit=${limit}`) as { key: string; word: string }[];
+  // 版の記録がない駒（版3より前に作った駒）。次に版を上げるときは、ここに「古い版」の条件も足す
+  return await rest(`pieces?select=key,word&data->>schema_version=is.null&order=created_at.asc&limit=${limit}`) as { key: string; word: string }[];
 }
 
 /** AI生成できなかった単語を待ち行列に積む（何度も要求された単語ほど優先してバックフィルされる） */

@@ -17,7 +17,9 @@
     "simulate": "tsx scripts/simulate-games.ts",
     "try:generate": "tsx scripts/try-generate.ts",
     "bench:models": "tsx scripts/bench-models.ts",
-    "eval:generation": "tsx scripts/eval-generation.ts"
+    "eval:generation": "tsx scripts/eval-generation.ts",
+    "test": "npm run verify:abilities && npm run verify:programs && npm run verify:traits && npm run verify:rules && npm run audit:abilities",
+    "e2e:online": "node scripts/e2e-online.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
