@@ -24,7 +24,7 @@ const memoryCache = new Map<string, PieceData>();
 // バージョン管理されたワンタイムキャッシュクリーンアップ（v4にアップデートして古いキャッシュを全消去）
 try {
   if (typeof window !== 'undefined' && window.localStorage) {
-    const CURRENT_VERSION = 'v16'; // v16: 成ったときの変化をキャラごとに（古い駒の端末キャッシュを捨てる）
+    const CURRENT_VERSION = 'v17'; // v17: 害のある能力は「巻き添え」がない限り敵だけに（古い駒の端末キャッシュを捨てる）
     const activeVersion = localStorage.getItem('shogi_cache_version');
     if (activeVersion !== CURRENT_VERSION) {
       localStorage.removeItem('shogi_piece_cache');

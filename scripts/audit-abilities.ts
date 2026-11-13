@@ -11,6 +11,7 @@
 //   8. 範囲に対象がいなければ発動しない（範囲の効果と一緒の「もう1回」「隠れる」も出ない）
 //   9. 条件（敵陣にいる・周りに敵がいる・持ち駒がある・成っている など）を満たさなければ発動しない
 //  10. 画面の先読み（previewPrograms）が実際の発動と食い違わない（「発動しない」と出たのに発動する、またはその逆がない）
+//  11. 敵だけが対象の能力は味方の駒を変えない。害のある効果が味方にも効くのは「巻き添え」と明記した能力だけ
 import { readFileSync } from 'node:fs';
 import type { Board, Piece } from '../src/types';
 import { OP_SPECS, PROGRAM_TRIGGERS, PROGRAM_CONDITIONS, NAMED_AREAS, TARGET_WHO, TARGET_PICKS, TRAIT_KINDS, TILE_KINDS } from '../shared/abilityProgram';
@@ -18,7 +19,7 @@ import { MOVE_EXTRAS, MOVE_STYLES } from '../shared/moveStyles';
 
 (globalThis as { localStorage?: unknown }).localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 const { sanitizePieceData } = await import('../src/aiGenerator');
-const { previewPrograms } = await import('../src/abilityEngine');
+const { previewPrograms, abilityMatchesEvent } = await import('../src/abilityEngine');
 const { initializeBoard, applyAutomatedEffect, isTriggerMatching, getValidMoves, drainTilePlacements, isAutonomousPiece } = await import('../src/gameLogic');
 
 let seed = 7;
@@ -209,6 +210,31 @@ for (const raw of raws) {
       drainTilePlacements();
       if (pv.status === 'no' && res.triggered) note('先読みは「発動しない」なのに発動した', `${word}: ${event} ${label}`);
       if (res.triggered && pv.targets.length === 0) note('発動したのに先読みで効くマスが空', `${word}: ${event} ${label}`);
+    }
+  }
+  // 11'. 害のある効果が「敵味方どちらにも」効くのは、代償「巻き添え」と明記した能力だけ
+  for (const a of piece.abilities) {
+    if (a.target.who === 'ANY' && a.drawback?.kind !== 'FRIENDLY_FIRE' && a.effects.some(e => ['DESTROY', 'CAPTURE', 'PUSH', 'PULL', 'FREEZE', 'STUN', 'SILENCE', 'DOOM', 'TRANSFORM_PAWN'].includes(e.op))) {
+      note('巻き添えの表示なしで味方にも害がある', `${word}: ${a.name} ${a.effects.map(e => e.op).join(',')}`);
+    }
+  }
+  // 11. 敵だけが対象の能力（巻き添えの代償なし）は、味方の駒を変えない（消す・動かす・状態を変える のどれも起きない）
+  for (const event of EVENTS) {
+    if (!triggers.has(event)) continue;
+    const enemyOnly = piece.abilities.filter(a => abilityMatchesEvent(a, event)).every(a => a.target.who === 'ENEMY' || a.target.who === 'EMPTY' || a.target.area === 'SELF');
+    if (!enemyOnly) continue;
+    const board = setup(piece);
+    for (const [y, x] of [[4, 3], [3, 4], [5, 4], [4, 6], [2, 2], [6, 2]]) board[y][x] ??= { ...pawn, id: `a${y}${x}`, owner: 'sente', isPawn: false };
+    if (event === 'ON_TAKEN') board[4][4] = { ...pawn, id: 'attacker', owner: 'gote', isPawn: false };
+    const allies = new Map(board.flat().filter(p => p && p.owner === 'sente' && p.id !== 'me').map(p => [p!.id, JSON.stringify(p)]));
+    const res = applyAutomatedEffect(board, [4, 4], event, 'sente', [], [5, 4], undefined, [], [], undefined, event === 'ON_TAKEN' ? piece : undefined, []);
+    const after = new Map(res.board.flat().filter(p => p && p.id !== 'me').map(p => [p!.id, p!]));
+    for (const [id, json] of allies) {
+      const p = after.get(id);
+      const ops = piece.abilities.flatMap(a => a.effects.map(e => e.op)).join(',');
+      if (!p) note('敵だけの能力で味方が消えた', `${word}: ${event} ${id} ops=${ops}`);
+      else if (p.owner !== 'sente') note('敵だけの能力で味方が寝返った', `${word}: ${event} ${id} ops=${ops}`);
+      else if (JSON.stringify(p) !== json) note('敵だけの能力で味方の状態が変わった', `${word}: ${event} ${id} ops=${ops} 差分=${Object.keys(p).filter(k => JSON.stringify((p as Record<string, unknown>)[k]) !== JSON.stringify((JSON.parse(json) as Record<string, unknown>)[k])).join(',')}`);
     }
   }
   // 3'. どの駒も、盤の外や味方の駒のマスへは動けない（移動の特徴を含めて）
