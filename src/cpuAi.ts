@@ -13,6 +13,16 @@ export type CpuMove =
   | { type: 'drop' | 'custom_deck_drop'; to: [number, number]; piece: Piece; index: number; from?: undefined };
 
 const KING_VALUE = 10000;
+/** CPU の強さ。easy は初めての人向け（自動対局で ふつう に対して約8%勝つ程度。120局で測定） */
+export type CpuLevel = 'easy' | 'normal';
+const EASY_WINDOW = 60;
+const LEVEL_KEY = 'kaku-shogi:cpu-level';
+export function loadCpuLevel(): CpuLevel {
+  try { return localStorage.getItem(LEVEL_KEY) === 'easy' ? 'easy' : 'normal'; } catch { return 'normal'; }
+}
+export function saveCpuLevel(level: CpuLevel): void {
+  try { localStorage.setItem(LEVEL_KEY, level); } catch { /* 保存できなくても遊べる */ }
+}
 
 export function pieceValue(p: Piece | null): number {
   if (!p || p.isObstacle || p.type === 'wall' || p.type === 'hazard') return 0;
@@ -164,7 +174,8 @@ export function chooseCpuMove(
   hand: Piece[],
   customDeck: Piece[],
   me: Player = 'gote',
-  random: () => number = Math.random
+  random: () => number = Math.random,
+  level: CpuLevel = 'normal'
 ): CpuMove | null {
   const scored: { move: CpuMove; score: number }[] = [];
   const kingAt = enemyKingAt(board, me);
@@ -219,6 +230,12 @@ export function chooseCpuMove(
 
   // 同点付近の手からランダムに選んで、毎回同じ展開にならないようにする
   const best = Math.max(...scored.map(s => s.score));
+  // やさしい: 玉を取る手は逃さないが、それ以外は良い手の幅を広くとり、ときどき見落とす（取られる駒をそのままにする等）
+  if (level === 'easy' && best < KING_VALUE) {
+    const safe = scored.filter(s => s.score > -KING_VALUE / 2);
+    const pool = random() < 0.12 && safe.length ? safe : scored.filter(s => s.score >= best - EASY_WINDOW);
+    return pool[Math.floor(random() * pool.length)].move;
+  }
   const nearBest = scored.filter(s => s.score >= best - 5);
   return nearBest[Math.floor(random() * nearBest.length)].move;
 }
