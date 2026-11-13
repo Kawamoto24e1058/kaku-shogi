@@ -218,7 +218,7 @@ const AREA_LABELS: Record<NamedArea, string> = {
   ATTACKER: '自分を取った駒',
 };
 
-const WHO_LABELS: Record<TargetWho, string> = { ENEMY: '敵駒', ALLY: '味方の駒', ANY: '駒', EMPTY: '空きマス' };
+const WHO_LABELS: Record<TargetWho, string> = { ENEMY: '敵駒', ALLY: '味方の駒', ANY: '敵味方の駒', EMPTY: '空きマス' };
 /** 地形の名前。HOLY は味方を守り、ほかは敵が乗ると発動する（設置型の能力） */
 export const TILE_LABELS: Record<TileKind, string> = { FIRE: '炎', POISON: '毒沼', ICE: '氷床', BOMB: '時限爆弾', TRAP: '見えない罠', HOLY: '聖域', SEAL: '封印陣', SPRING: '跳ね床' };
 
@@ -350,6 +350,11 @@ function normalizeAbility(raw: unknown, index: number): AbilityProgram | null {
     ability.drawback = drawback;
     // 巻き添え: 範囲の味方にも同じ効果が及ぶ
     if (drawback.kind === 'FRIENDLY_FIRE') ability.target = { ...ability.target, who: 'ANY' };
+  }
+  // 害のある効果を「敵味方どちらにも」向けるのは、代償「巻き添え」と明記した能力だけ。
+  // それ以外は敵だけにする（説明に「駒」としか出ず、敵だけに効くように読めるのに味方も消えていた）
+  if (ability.target.who === 'ANY' && ability.drawback?.kind !== 'FRIENDLY_FIRE' && effects.some(e => HARMFUL_OPS.has(e.op))) {
+    ability.target = { ...ability.target, who: 'ENEMY' };
   }
   if (trigger === 'EVERY_N_TURNS') ability.every = clamp(asInt(a.every, 3), 2, 5);
   if (condition === 'CHANCE') ability.condition_value = clamp(asInt(a.condition_value, 50), 10, 90);

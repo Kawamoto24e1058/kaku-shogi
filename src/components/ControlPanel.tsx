@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import type { GameLog, Player, Piece, GamePhase } from '../types';
-import { PieceDetailCard } from './PieceDetailCard';
+import { PieceInfo } from './PieceInfo';
 import { AbilityTooltip } from './AbilityTooltip';
-import { ProgramAbilityList } from './ProgramAbilityList';
 
 interface ControlPanelProps {
   turn: Player;
@@ -31,6 +30,8 @@ interface ControlPanelProps {
   onHoverPiece?: (piece: Piece | null) => void;
   isResurrectActive?: boolean;
   isViewerOpponent?: boolean;
+  /** 画面を見ている側（相手の駒の能力を隠すため）。1台で交代に指すときは null（すべて見える） */
+  viewer?: Player | null;
   canTriggerActiveAbility?: boolean;
   onTriggerActiveAbility?: () => void;
 }
@@ -57,6 +58,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onHoverPiece,
   isResurrectActive,
   isViewerOpponent = false,
+  viewer = null,
   canTriggerActiveAbility = false,
   onTriggerActiveAbility,
 }) => {
@@ -370,158 +372,77 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   return (
     <div className="cp-stack" style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
       
-      {/* Tactical Info Panel (Shoji Style) */}
-      <div className="cyber-panel cp-info" style={{ padding: '20px', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
-        <h3 className="cyber-title" style={{ fontSize: '16px', marginBottom: '12px' }}>
-          情報
-        </h3>
-        
-        {/* Selected Piece Details */}
-        <div className="cp-info-body" style={{ height: '380px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {(() => {
-            const displayPiece = hoveredPiece || selectedPiece || null;
-            if (!displayPiece) {
-              return (
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px dashed rgba(139, 92, 26, 0.15)', borderRadius: '12px', background: 'rgba(139, 92, 26, 0.01)' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'var(--font-cyber)' }}>駒をタップ（パソコンはマウスを重ねる）と能力を表示</span>
-                </div>
-              );
-            }
-            const hasPrograms = !!(!!(displayPiece as Piece).abilities?.length) || !!displayPiece?.trait || !!(displayPiece as Piece).move_extra;
-            const hasCustomAbility = !hasPrograms && !!(displayPiece as Piece).custom_ability;
-            return (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {/* カスタム能力バッジカードを先頭に表示 */}
-                {hasCustomAbility && (
-                  <AbilityTooltip 
-                    piece={displayPiece as Piece} 
-                    visible 
-                    isViewerOpponent={isViewerOpponent} 
-                  />
-                )}
-                {hasPrograms && <ProgramAbilityList piece={displayPiece as Piece} />}
-                {/* 従来の詳細カード */}
-                <PieceDetailCard 
-                  piece={displayPiece} 
-                  isHoverPreview={!!hoveredPiece} 
-                  isViewerOpponent={isViewerOpponent} 
-                />
-                {canTriggerActiveAbility && !hoveredPiece && (
-                  <button
-                    type="button"
-                    onClick={onTriggerActiveAbility}
-                    style={{
-                      width: '100%',
-                      marginTop: '8px',
-                      padding: '10px 16px',
-                      backgroundColor: '#D97706',
-                      color: '#FFFFFF',
-                      border: 'none',
-                      borderRadius: '10px',
-                      fontWeight: 'bold',
-                      fontSize: '13px',
-                      letterSpacing: '0.1em',
-                      cursor: 'pointer',
-                      boxShadow: '0 4px 12px rgba(217, 119, 6, 0.4)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    <span>⚡</span> 能力発動 (対象選択)
-                  </button>
-                )}
+      {/* 駒の情報（選んだ駒だけ。何も選んでいなければ出さない） */}
+      {(() => {
+        const displayPiece = hoveredPiece || selectedPiece || null;
+        if (!displayPiece) return null;
+        const hasCustomAbility = !displayPiece.abilities?.length && !displayPiece.trait && !!displayPiece.custom_ability;
+        return (
+          <div className="cyber-panel cp-info" style={{ padding: '14px 16px', background: 'rgba(255, 255, 255, 0.85)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
+            {hasCustomAbility
+              ? <AbilityTooltip piece={displayPiece} visible isViewerOpponent={isViewerOpponent} />
+              : <PieceInfo piece={displayPiece} viewer={viewer} />}
+            {canTriggerActiveAbility && !hoveredPiece && (
+              <button
+                type="button"
+                onClick={onTriggerActiveAbility}
+                style={{ width: '100%', marginTop: '8px', padding: '10px 16px', backgroundColor: '#D97706', color: '#FFFFFF', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
+              >
+                ⚡ 能力を使う（対象を選ぶ）
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* 持ち駒（相手 → 自分の順。墓所は駒があるとき・蘇生で選ぶときだけ） */}
+      <div className="cyber-panel cp-hands" style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '10px', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
+        {(['gote', 'sente'] as const).map(owner => {
+          const name = owner === 'gote' ? (vsAiMode ? 'CPU' : playerNames.gote || '後手') : (playerNames.sente || '先手');
+          const label = viewer ? (owner === viewer ? 'あなたの持ち駒' : `${name} の持ち駒`) : `${name} の持ち駒`;
+          const empty = capturedPieces[owner].length === 0 && customDecks[owner].length === 0;
+          return (
+            <div key={owner} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 'bold', color: owner === viewer ? 'var(--color-shinku)' : '#78716c' }}>
+                {label}{empty && <span style={{ fontWeight: 'normal', marginLeft: '6px' }}>なし</span>}
               </div>
-            );
-          })()}
-        </div>
+              {!empty && (
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {capturedPieces[owner].map((piece, idx) => renderCapturedPieceTile(piece, idx, owner, 'captured'))}
+                  {customDecks[owner].map((piece, idx) => renderCustomDeckPieceTile(piece, idx, owner))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {(sharedPieces.length > 0 || isResurrectActive) && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 'bold', color: isResurrectActive ? 'var(--color-gold)' : '#78716c' }}>
+              墓所（能力で消えた駒）{isResurrectActive && <span style={{ color: 'var(--color-shinku)' }}>：よみがえらせる駒を選んでください</span>}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {sharedPieces.map((piece, idx) => renderCapturedPieceTile(piece, idx, 'sente', 'shared'))}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Captured Pieces & Shared Pool Panel */}
-      <div className="cyber-panel cp-hands" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', minHeight: '220px', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
-        <h3 className="cyber-title" style={{ fontSize: '16px', marginBottom: '4px' }}>
-          手札・持ち駒ストック
-        </h3>
-        
-        {/* Gote Hand */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <div style={{ fontSize: '11px', color: 'var(--color-gold)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold' }}>
-            ▽ {playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2')} 手札・持ち駒
-          </div>
-          
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', minHeight: '38px', padding: '8px', background: 'rgba(139, 92, 26, 0.02)', border: '1px solid rgba(139, 92, 26, 0.08)', borderRadius: '12px' }}>
-            {capturedPieces.gote.map((piece, idx) => renderCapturedPieceTile(piece, idx, 'gote', 'captured'))}
-            {customDecks.gote.map((piece, idx) => renderCustomDeckPieceTile(piece, idx, 'gote'))}
-            {capturedPieces.gote.length === 0 && customDecks.gote.length === 0 && (
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', alignSelf: 'center', paddingLeft: '4px' }}>なし</span>
-            )}
-          </div>
-        </div>
-
-        {/* Graveyard (墓所) */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <div style={{
-            fontSize: '11px',
-            color: isResurrectActive ? 'var(--color-gold)' : '#555',
-            fontFamily: 'var(--font-cyber)',
-            fontWeight: 'bold',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px'
-          }}>
-            墓所 (Graveyard) {isResurrectActive && <span style={{ color: 'var(--color-shinku)' }}>[蘇生対象を選択してください]</span>}
-          </div>
-          <div style={{
-            display: 'flex',
-            gap: '8px',
-            flexWrap: 'wrap',
-            minHeight: '38px',
-            padding: '8px',
-            background: isResurrectActive ? 'rgba(212,175,55,0.06)' : 'rgba(139, 92, 26, 0.01)',
-            border: `1.5px ${isResurrectActive ? 'solid var(--color-gold)' : 'dashed rgba(139, 92, 26, 0.15)'}`,
-            borderRadius: '12px',
-            transition: 'all 0.3s ease'
-          }}>
-            {sharedPieces.map((piece, idx) => renderCapturedPieceTile(piece, idx, 'sente', 'shared'))}
-            {sharedPieces.length === 0 && (
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', alignSelf: 'center', paddingLeft: '4px' }}>空</span>
-            )}
-          </div>
-        </div>
-
-        {/* Sente Hand */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <div style={{ fontSize: '11px', color: 'var(--color-shinku)', fontFamily: 'var(--font-cyber)', fontWeight: 'bold' }}>
-            ▲ {playerNames.sente || 'プレイヤー1'} 手札・持ち駒
-          </div>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', minHeight: '38px', padding: '8px', background: 'rgba(139, 92, 26, 0.02)', border: '1px solid rgba(139, 92, 26, 0.08)', borderRadius: '12px' }}>
-            {capturedPieces.sente.map((piece, idx) => renderCapturedPieceTile(piece, idx, 'sente', 'captured'))}
-            {customDecks.sente.map((piece, idx) => renderCustomDeckPieceTile(piece, idx, 'sente'))}
-            {capturedPieces.sente.length === 0 && customDecks.sente.length === 0 && (
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', alignSelf: 'center', paddingLeft: '4px' }}>なし</span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Control Buttons */}
-      <div style={{ display: 'flex', gap: '12px' }}>
+      {/* 操作（目立たせない） */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', fontSize: '12px' }}>
         <button
-          className="cyber-btn cyber-btn-purple"
-          style={{ flex: 1, padding: '12px', fontSize: '12px' }}
+          type="button"
+          style={{ background: 'none', border: 'none', color: '#78716c', textDecoration: 'underline', cursor: 'pointer', padding: '6px' }}
           onClick={onPassTurn}
           disabled={!!winner || phase === 'placement'}
         >
-          手番パス
+          手番をパス
         </button>
-        
         <button
-          className="cyber-btn cyber-btn-danger"
-          style={{ flex: 1, padding: '12px', fontSize: '12px' }}
-          onClick={onResetGame}
+          type="button"
+          style={{ background: 'none', border: 'none', color: '#9e2a2b', textDecoration: 'underline', cursor: 'pointer', padding: '6px' }}
+          onClick={() => { if (window.confirm('この対局を最初から指し直しますか？')) onResetGame(); }}
         >
-          対局リセット
+          最初から指し直す
         </button>
       </div>
 

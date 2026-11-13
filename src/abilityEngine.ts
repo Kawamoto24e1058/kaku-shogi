@@ -29,7 +29,7 @@ const RANDOM_AFTER_ONCE_COOLDOWN = 4;
 const inBounds = (y: number, x: number) => y >= 0 && y < SIZE && x >= 0 && x < SIZE;
 const isObstacle = (p: Piece | null) => !!p && (p.type === 'wall' || p.type === 'hazard' || !!p.isObstacle);
 
-function abilityMatchesEvent(a: AbilityProgram, event: ProgramTriggerEvent): boolean {
+export function abilityMatchesEvent(a: AbilityProgram, event: ProgramTriggerEvent): boolean {
   if (a.trigger === event) return true;
   return a.trigger === 'EVERY_N_TURNS' && event === 'TURN_START';
 }
@@ -602,10 +602,10 @@ export function runAbilityPrograms(
     }
   });
 
-  // 充填手番を駒に書き戻す（盤上にいる場合）
+  // 充填手番を駒に書き戻す（盤上にいる場合）。一度使った能力は相手にも見えるようにする（abilityRevealed）
   if (anyTriggered && state.selfPos) {
     const me = nextBoard[state.selfPos.y][state.selfPos.x];
-    if (me && me.id === piece.id) nextBoard[state.selfPos.y][state.selfPos.x] = { ...me, abilityCooldowns: cooldowns };
+    if (me && me.id === piece.id) nextBoard[state.selfPos.y][state.selfPos.x] = { ...me, abilityCooldowns: cooldowns, abilityRevealed: true };
   }
 
   // 代価で捨てる持ち駒は、元から持っていた駒の新しい方から

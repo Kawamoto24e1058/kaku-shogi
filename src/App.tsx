@@ -28,7 +28,7 @@ import {
   drainTilePlacements
 } from './gameLogic';
 import { tickAbilityCooldowns } from './abilityEngine';
-import { ProgramAbilityList } from './components/ProgramAbilityList';
+import { PieceInfo } from './components/PieceInfo';
 import { PieceCreator } from './components/PieceCreator';
 import { GameBoard } from './components/GameBoard';
 import { ControlPanel } from './components/ControlPanel';
@@ -3807,16 +3807,14 @@ export const App: React.FC = () => {
         <div className="mobile-peek" role="dialog" aria-label={`${inspectedPiece.word} の能力`}>
           <div className="mobile-peek-head">
             <div style={{ minWidth: 0 }}>
-              <div className="mobile-peek-title">
-                {inspectedPiece.owner === 'sente' ? '▲' : '▽'} {inspectedPiece.word}
-                {inspectedPiece.effect_name && !inspectedPiece.isKing && !inspectedPiece.isPawn && <span className="mobile-peek-sub">《{inspectedPiece.isPromoted ? inspectedPiece.promoted_effect?.effect_name : inspectedPiece.effect_name}》</span>}
-              </div>
+              <div className="mobile-peek-title">駒の情報</div>
             </div>
             <button type="button" className="mobile-peek-close" onClick={() => setInspectedPiece(null)} aria-label="閉じる">×</button>
           </div>
           <div className="mobile-peek-body">
-            {inspectedPiece.abilities?.length || inspectedPiece.trait
-              ? <ProgramAbilityList piece={inspectedPiece} />
+            {/* 相手の駒の能力は、一度使われるまで見せない（PieceInfo） */}
+            {inspectedPiece.abilities?.length || inspectedPiece.trait || !inspectedPiece.custom_ability
+              ? <PieceInfo piece={inspectedPiece} viewer={onlineMode ? myRole : vsAiMode ? 'sente' : null} />
               : <p style={{ fontSize: '12px', lineHeight: 1.7, whiteSpace: 'pre-line', margin: 0 }}>{getPieceDescription(inspectedPiece) || '特殊能力はありません。'}</p>}
           </div>
         </div>
@@ -4170,6 +4168,7 @@ export const App: React.FC = () => {
                   onHoverPiece={setHoveredPiece}
                   isResurrectActive={state.activeAbilityMode && suspendedAbility?.type === 'resurrect'}
                   isViewerOpponent={shouldRotate}
+                  viewer={onlineMode ? myRole : vsAiMode ? 'sente' : null}
                   canTriggerActiveAbility={canTriggerActiveAbility}
                   onTriggerActiveAbility={handleTriggerActiveAbility}
                 />

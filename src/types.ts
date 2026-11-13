@@ -183,6 +183,8 @@ export interface Piece extends PieceData {
   cooldownTurnsRemaining?: number; // Alias for coolDownTurnsRemaining
   maxCooldown?: number;            // Original cooldown turns limit
   isRevealed: boolean;            // Reveal state for STEALTH_TRAP pieces (starts as false for opponent)
+  /** 能力を一度使った（相手にも能力・性質の中身が見える）。使うまでは、相手の画面では「まだ分からない」と出す */
+  abilityRevealed?: boolean;
   stunTurnsRemaining?: number;    // Action-lock/immobility curse (0 = active, > 0 = stunned)
   deathCountdown?: number;        // Death countdown curse (decrements every turn, 0 = vaporized)
   hasMovedManually?: boolean;     // Flag to mute automatic abilities until first manual move
