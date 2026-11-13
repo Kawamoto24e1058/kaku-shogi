@@ -166,7 +166,7 @@ function playGame(senteEntries: PoolEntry[], goteEntries: PoolEntry[]): GameResu
       again = false;
       actions++;
       if (actions > 6) return { winner: null, plies: ply, error: 'extra action loop (>6 actions in one turn)', maxPieces, extraActionChain, abilityTriggers, ...res0 };
-      const move = chooseCpuMove(board, hands[turn], [], turn, rand);
+      const move = chooseCpuMove(board, hands[turn], [], turn, rand, process.env.EASY_SIDE === turn ? 'easy' : 'normal');
       if (!move) break;
       if (move.type === 'move' && move.from) {
         const piece = board[move.from[0]][move.from[1]]!;

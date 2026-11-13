@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { loadCpuLevel, saveCpuLevel, type CpuLevel } from '../cpuAi';
 import { dailyKey, dailyWords } from '../../shared/challenge';
 import { getDailyBest } from '../dailyRecord';
 import { readInviteRoomCode, readDailyParam, clearInviteParam, openXShare, roomInviteUrl } from '../share';
@@ -442,6 +443,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   const [fromDailyShare] = useState(() => readDailyParam());
   const [inputCode, setInputCode] = useState(inviteCode || '');
   const [currentStep, setCurrentStep] = useState<'title' | 'mode_select'>(inviteCode || fromDailyShare ? 'mode_select' : 'title');
+  const [cpuLevel, setCpuLevel] = useState<CpuLevel>(() => loadCpuLevel());
   const [selectedTab, setSelectedTab] = useState<'ai' | 'random' | 'custom'>(inviteCode ? 'custom' : 'ai');
   const [copied, setCopied] = useState(false);
 
@@ -709,6 +711,20 @@ export const StartScreen: React.FC<StartScreenProps> = ({
               {selectedTab === 'ai' && (
                 <div className="flex flex-col items-center text-center gap-4 animate-[fadeIn_0.3s_ease-out]">
                   <p className="text-sm font-bold text-stone-700">次の画面で、好きな言葉から駒を3枚作ります</p>
+                  <div role="radiogroup" aria-label="CPUの強さ" className="flex gap-2">
+                    {([['easy', 'やさしい'], ['normal', 'ふつう']] as const).map(([key, label]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        role="radio"
+                        aria-checked={cpuLevel === key}
+                        onClick={() => { setCpuLevel(key); saveCpuLevel(key); }}
+                        className={`px-4 py-1.5 rounded-full text-xs font-bold border-2 cursor-pointer transition-colors ${cpuLevel === key ? 'bg-amber-800 border-amber-800 text-white' : 'bg-white border-stone-300 text-stone-700 hover:border-amber-500'}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                   <button
                     type="button"
                     onClick={onStartGame}

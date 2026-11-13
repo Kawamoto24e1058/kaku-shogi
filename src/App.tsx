@@ -55,7 +55,7 @@ function isSignatureActivation(piece: Piece, trigger: string): boolean {
   return (piece.abilities ?? []).some(a => a.trigger === trigger && a.cooldown >= 4);
 }
 import { recordDailyResult } from './dailyRecord';
-import { chooseCpuMove } from './cpuAi';
+import { chooseCpuMove, loadCpuLevel } from './cpuAi';
 
 /** 対局中に再読み込みしたときに戻るための情報（sessionStorage のキー） */
 const RESUME_KEY = 'kaku_online_resume';
@@ -1683,6 +1683,9 @@ export const App: React.FC = () => {
   }, []);
 
   // 相手の接続が切れてからの経過時間を表示するための時計（切れているときだけ動かす）
+  // 初めての対局でだけ出す短い説明（一度閉じたら出さない）
+  const [firstTips, setFirstTips] = useState(() => { try { return !localStorage.getItem('kaku-shogi:tips-seen'); } catch { return false; } });
+  const dismissFirstTips = () => { setFirstTips(false); try { localStorage.setItem('kaku-shogi:tips-seen', '1'); } catch { /* 保存できなくても閉じる */ } };
   const [clockNow, setClockNow] = useState(() => Date.now());
   useEffect(() => {
     if (!opponentOfflineSince) return;
@@ -3535,7 +3538,7 @@ export const App: React.FC = () => {
 
       if (cancelled) return;
       const board = state.board;
-      const chosenMove = chooseCpuMove(board, state.capturedPieces.gote, state.customDecks.gote || []);
+      const chosenMove = chooseCpuMove(board, state.capturedPieces.gote, state.customDecks.gote || [], 'gote', Math.random, dailyChallenge ? 'normal' : loadCpuLevel());
       if (!chosenMove) {
         handlePassTurn();
         return;
@@ -4004,6 +4007,18 @@ export const App: React.FC = () => {
                         </button>
                       )}
                     </div>
+                    {firstTips && state.phase === 'playing' && !state.winner && (
+                      <div role="note" className="mx-auto my-2 max-w-xl text-xs leading-relaxed text-stone-800 bg-amber-50 border border-amber-900/20 rounded-xl px-4 py-3 shadow-sm">
+                        <div className="font-extrabold text-amber-950 mb-1">はじめての方へ（4つだけ）</div>
+                        <ol className="list-decimal pl-5 space-y-0.5">
+                          <li>駒をタップ → 光ったマスをタップで動きます</li>
+                          <li>作った3枚は、手元から自分の陣地（手前3段）の空きマスに出せます</li>
+                          <li>⚡のある駒は能力持ち。長押し（PCはマウスを乗せる）で、効く範囲が見えます</li>
+                          <li>相手の玉を取れば勝ち。250手で決着しなければ判定です</li>
+                        </ol>
+                        <button type="button" className="mt-2 font-bold text-amber-900 underline cursor-pointer" onClick={dismissFirstTips}>わかった</button>
+                      </div>
+                    )}
                     {onlineMode && myRole && opponentOnline === false && opponentOfflineSince && state.phase === 'playing' && (() => {
                       const waited = Math.floor((clockNow - opponentOfflineSince) / 1000);
                       const remaining = Math.max(0, OPPONENT_TIMEOUT_SEC - waited);
