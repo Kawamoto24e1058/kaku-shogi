@@ -805,8 +805,8 @@ button, input, [role="button"] {
 @media (max-width: 480px) {
   /* ヘッダー縮小 */
   .app-header-title {
-    font-size: 18px !important;
-    letter-spacing: 4px !important;
+    font-size: 15px !important;
+    letter-spacing: 3px !important;
   }
 
   .app-header-subtitle {
@@ -1912,4 +1912,42 @@ button, input, [role="button"] {
 
 @media (prefers-reduced-motion: reduce) {
   .ability-toast { animation: none; }
+}
+
+/* 取れる駒のいるマス（移動先のうち、相手の駒がいるところ） */
+.move-highlight-capture {
+  border-color: #dc2626 !important;
+  border-style: solid !important;
+  border-width: 2px !important;
+  background-color: rgba(220, 38, 38, 0.16) !important;
+  animation: none !important;
+}
+
+/* 直前の手の1行（手番の帯のすぐ下） */
+.last-move-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px auto 0;
+  max-width: 36rem;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #57534e;
+}
+.last-move-dot {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  background: rgba(234, 179, 8, 0.55);
+  border: 1px solid rgba(202, 138, 4, 0.8);
+}
+.last-move-capture { color: #b91c1c; }
+
+/* 対局中のヘッダーは細く（盤と持ち駒を1画面に収めるため） */
+.app-header-slim {
+  padding: 4px 14px !important;
+  margin: 4px 8px !important;
+  min-height: 0 !important;
 }

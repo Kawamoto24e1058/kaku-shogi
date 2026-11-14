@@ -28,6 +28,8 @@ function isProgramCharging(p: Piece): boolean {
 }
 
 interface GameBoardProps {
+  /** 直前の手（動いた元と先に印を付ける） */
+  lastMove?: { from: [number, number] | null; to: [number, number] } | null;
   board: Board;
   tileBoard?: (TileState | null)[][];
   turn: Player;
@@ -70,6 +72,7 @@ interface GameBoardProps {
 
 
 export const GameBoard: React.FC<GameBoardProps> = ({
+  lastMove = null,
   board,
   tileBoard,
   turn,
@@ -882,6 +885,14 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 
     const isEffectPreview = isAbilityEffectPreview(y, x);
 
+    // 直前の手: 動いた先は濃く、動いた元は薄く（選択・移動先の表示があればそちらを優先）
+    if (lastMove && lastMove.to[0] === y && lastMove.to[1] === x) {
+      cellStyle.background = 'rgba(234, 179, 8, 0.28)';
+      cellStyle.borderColor = 'rgba(202, 138, 4, 0.75)';
+    } else if (lastMove?.from && lastMove.from[0] === y && lastMove.from[1] === x) {
+      cellStyle.background = 'rgba(234, 179, 8, 0.12)';
+    }
+
     if (isSel) {
       cellStyle.borderColor = 'var(--color-gold)';
       cellStyle.background = 'rgba(212, 175, 55, 0.12)';
@@ -894,6 +905,9 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       } else {
         cellClassName += ' move-highlight-normal';
       }
+      // 取れる駒のいるマスは赤で区別する
+      const moverOwner = selectedCell ? board[selectedCell[0]]?.[selectedCell[1]]?.owner : undefined;
+      if (piece && moverOwner && piece.owner !== moverOwner) cellClassName += ' move-highlight-capture';
     } else if (previewTargets.has(`${y},${x}`)) {
       // 能力の先読み: このマスに効く
       cellStyle.borderColor = 'rgba(220, 38, 38, 0.9)';
