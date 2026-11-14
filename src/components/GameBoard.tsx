@@ -1106,7 +1106,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         const isWeathered = activePiece.coolDownTurnsRemaining === 99;
 
         if (!activePiece.isRevealed && isMyPiece) {
-          opacityVal = 0.55;
+          opacityVal = 0.8; // 相手からは見えていない自分の駒。薄すぎると自分でも見えにくいので 0.8（点線の枠で区別）
           borderStyleVal = 'dashed';
         }
 
