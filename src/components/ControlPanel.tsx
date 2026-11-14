@@ -32,6 +32,10 @@ interface ControlPanelProps {
   isViewerOpponent?: boolean;
   /** 画面を見ている側（相手の駒の能力を隠すため）。1台で交代に指すときは null（すべて見える） */
   viewer?: Player | null;
+  /** 指定すると、その側の持ち駒の1行だけを出す（盤のすぐ上・下に置く用） */
+  handOwner?: Player;
+  /** 持ち駒を出さない（盤の上下に別に出すとき） */
+  hideHands?: boolean;
   canTriggerActiveAbility?: boolean;
   onTriggerActiveAbility?: () => void;
 }
@@ -59,6 +63,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   isResurrectActive,
   isViewerOpponent = false,
   viewer = null,
+  handOwner,
+  hideHands = false,
   canTriggerActiveAbility = false,
   onTriggerActiveAbility,
 }) => {
@@ -369,6 +375,30 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     );
   };
 
+  // 持ち駒の1行（名前＋駒。多いときは横にスクロール）
+  const renderHandRow = (owner: Player) => {
+    const name = owner === 'gote' ? (vsAiMode ? 'CPU' : playerNames.gote || '後手') : (playerNames.sente || '先手');
+    const label = viewer ? (owner === viewer ? 'あなたの持ち駒' : `${name} の持ち駒`) : `${name} の持ち駒`;
+    const empty = capturedPieces[owner].length === 0 && customDecks[owner].length === 0;
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minHeight: '28px' }}>
+        <div style={{ flexShrink: 0, fontSize: '11px', fontWeight: 'bold', color: owner === viewer ? 'var(--color-shinku)' : '#78716c' }}>
+          {label}{empty && <span style={{ fontWeight: 'normal', marginLeft: '6px' }}>なし</span>}
+        </div>
+        {!empty && (
+          <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', padding: '2px 0' }}>
+            {capturedPieces[owner].map((piece, idx) => renderCapturedPieceTile(piece, idx, owner, 'captured'))}
+            {customDecks[owner].map((piece, idx) => renderCustomDeckPieceTile(piece, idx, owner))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  if (handOwner) {
+    return <div className="board-hand-row" style={{ padding: '2px 4px' }}>{renderHandRow(handOwner)}</div>;
+  }
+
   return (
     <div className="cp-stack" style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
       
@@ -395,37 +425,22 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         );
       })()}
 
-      {/* 持ち駒（相手 → 自分の順。墓所は駒があるとき・蘇生で選ぶときだけ） */}
-      <div className="cyber-panel cp-hands" style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '10px', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
-        {(['gote', 'sente'] as const).map(owner => {
-          const name = owner === 'gote' ? (vsAiMode ? 'CPU' : playerNames.gote || '後手') : (playerNames.sente || '先手');
-          const label = viewer ? (owner === viewer ? 'あなたの持ち駒' : `${name} の持ち駒`) : `${name} の持ち駒`;
-          const empty = capturedPieces[owner].length === 0 && customDecks[owner].length === 0;
-          return (
-            <div key={owner} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 'bold', color: owner === viewer ? 'var(--color-shinku)' : '#78716c' }}>
-                {label}{empty && <span style={{ fontWeight: 'normal', marginLeft: '6px' }}>なし</span>}
+      {/* 持ち駒（相手 → 自分の順）。盤の上下に出すときは、ここには墓所だけ */}
+      {(!hideHands || sharedPieces.length > 0 || isResurrectActive) && (
+        <div className="cyber-panel cp-hands" style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '10px', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
+          {!hideHands && (['gote', 'sente'] as const).map(owner => <React.Fragment key={owner}>{renderHandRow(owner)}</React.Fragment>)}
+          {(sharedPieces.length > 0 || isResurrectActive) && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 'bold', color: isResurrectActive ? 'var(--color-gold)' : '#78716c' }}>
+                墓所（能力で消えた駒）{isResurrectActive && <span style={{ color: 'var(--color-shinku)' }}>：よみがえらせる駒を選んでください</span>}
               </div>
-              {!empty && (
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {capturedPieces[owner].map((piece, idx) => renderCapturedPieceTile(piece, idx, owner, 'captured'))}
-                  {customDecks[owner].map((piece, idx) => renderCustomDeckPieceTile(piece, idx, owner))}
-                </div>
-              )}
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {sharedPieces.map((piece, idx) => renderCapturedPieceTile(piece, idx, 'sente', 'shared'))}
+              </div>
             </div>
-          );
-        })}
-        {(sharedPieces.length > 0 || isResurrectActive) && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <div style={{ fontSize: '11px', fontWeight: 'bold', color: isResurrectActive ? 'var(--color-gold)' : '#78716c' }}>
-              墓所（能力で消えた駒）{isResurrectActive && <span style={{ color: 'var(--color-shinku)' }}>：よみがえらせる駒を選んでください</span>}
-            </div>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {sharedPieces.map((piece, idx) => renderCapturedPieceTile(piece, idx, 'sente', 'shared'))}
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* 操作（目立たせない） */}
       <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', fontSize: '12px' }}>

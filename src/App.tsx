@@ -1683,6 +1683,41 @@ export const App: React.FC = () => {
   }, []);
 
   // 相手の接続が切れてからの経過時間を表示するための時計（切れているときだけ動かす）
+  // 直前の手（盤の印と「CPU：爆弾 ７八→５五」の1行）。手番が替わったときに、手番の始めの盤と比べて求める。
+  // CPU・オンライン・1台で交代 のどれでも同じやり方で分かる（能力で他の駒が動いても、手番の側で動いた駒を拾う）
+  const [lastMove, setLastMove] = useState<{ player: Player; from: [number, number] | null; to: [number, number]; word: string; captured: string | null } | null>(null);
+  const turnStartRef = useRef<{ board: Board; turn: Player } | null>(null);
+  useEffect(() => {
+    if (state.phase !== 'playing' && state.phase !== 'finished') { turnStartRef.current = null; setLastMove(null); return; }
+    const prev = turnStartRef.current;
+    if (prev && (prev.turn !== state.turn || state.phase === 'finished') && prev.board !== state.board) {
+      const where = (b: Board) => {
+        const m = new Map<string, [number, number]>();
+        b.forEach((row, y) => row.forEach((p, x) => { if (p) m.set(p.id, [y, x]); }));
+        return m;
+      };
+      const before = where(prev.board);
+      const moved: { id: string; from: [number, number] | null; to: [number, number] }[] = [];
+      state.board.forEach((row, y) => row.forEach((p, x) => {
+        if (!p || p.owner !== prev.turn) return;
+        const was = before.get(p.id);
+        if (!was || was[0] !== y || was[1] !== x) moved.push({ id: p.id, from: was ?? null, to: [y, x] });
+      }));
+      // 盤に新しく出た駒（打った駒）か、動いた駒のうち最初のもの
+      const main = moved.find(m => !m.from) ?? moved[0];
+      if (main) {
+        const taken = prev.board[main.to[0]][main.to[1]];
+        setLastMove({
+          player: prev.turn,
+          from: main.from,
+          to: main.to,
+          word: state.board[main.to[0]][main.to[1]]?.word ?? '',
+          captured: taken && taken.owner !== prev.turn ? taken.word : null,
+        });
+      }
+    }
+    if (!prev || prev.turn !== state.turn) turnStartRef.current = { board: state.board, turn: state.turn };
+  }, [state.turn, state.phase, state.board]);
   // 初めての対局でだけ出す短い説明（一度閉じたら出さない）
   const [firstTips, setFirstTips] = useState(() => { try { return !localStorage.getItem('kaku-shogi:tips-seen'); } catch { return false; } });
   const dismissFirstTips = () => { setFirstTips(false); try { localStorage.setItem('kaku-shogi:tips-seen', '1'); } catch { /* 保存できなくても閉じる */ } };
@@ -3792,6 +3827,38 @@ export const App: React.FC = () => {
   const shouldRotate = onlineMode
     ? (myRole === 'gote')
     : (vsAiMode ? false : state.turn === 'gote');
+  // 画面を見ている側（相手の駒の能力を隠す・持ち駒の上下を決める）。1台で交代に指すときは null
+  const viewerSide: Player | null = onlineMode ? myRole : vsAiMode ? 'sente' : null;
+  // 盤の上に相手、すぐ下に自分の持ち駒（盤を回すときは入れ替わる）
+  const topHandOwner: Player = shouldRotate ? 'sente' : 'gote';
+  const controlPanelProps = {
+    turn: state.turn,
+    phase: state.phase,
+    customPiecesToPlace: state.turn === 'sente' ? piecesToPlace.sente : piecesToPlace.gote,
+    winner: state.winner,
+    logs: state.logs,
+    selectedPiece: selectedPieceObject,
+    hoveredPiece,
+    onResetGame: handleResetGame,
+    onPassTurn: handlePassTurn,
+    vsAiMode,
+    playerNames,
+    capturedPieces: state.capturedPieces,
+    selectedCapturedPiece,
+    onCapturedPieceClick: handleCapturedPieceClick,
+    customDecks: state.customDecks,
+    selectedCustomDeckPiece,
+    onCustomDeckPieceClick: handleCustomDeckPieceClick,
+    sharedPieces: state.sharedPieces,
+    selectedSharedPiece,
+    onSharedPieceClick: handleSharedPieceClick,
+    onHoverPiece: setHoveredPiece,
+    isResurrectActive: state.activeAbilityMode && suspendedAbility?.type === 'resurrect',
+    isViewerOpponent: shouldRotate,
+    viewer: viewerSide,
+    canTriggerActiveAbility,
+    onTriggerActiveAbility: handleTriggerActiveAbility,
+  };
 
   return (
     <div
@@ -3875,8 +3942,8 @@ export const App: React.FC = () => {
 
       {/* Header */}
       {/* スタート画面は独自の見出しがあるので、共通ヘッダーは出さない（スマホで見出しが二重になっていた） */}
-      {state.phase !== 'start' && <header className="cyber-panel" style={{ padding: '12px 24px', margin: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
-        <h1 className="cyber-title app-header-title" style={{ fontSize: '20px', borderBottom: 'none', paddingBottom: 0 }}>
+      {state.phase !== 'start' && <header className="cyber-panel app-header-slim" style={{ padding: '6px 16px', margin: '6px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
+        <h1 className="cyber-title app-header-title" style={{ fontSize: '16px', borderBottom: 'none', paddingBottom: 0, margin: 0 }}>
           架空将棋
         </h1>
         <div className="app-header-subtitle" style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-cyber)' }}>
@@ -4005,6 +4072,16 @@ export const App: React.FC = () => {
                         </button>
                       )}
                     </div>
+                    {lastMove && (() => {
+                      const who = viewerSide ? (lastMove.player === viewerSide ? 'あなた' : vsAiMode ? 'CPU' : '相手') : (playerNames[lastMove.player] || (lastMove.player === 'sente' ? '先手' : '後手'));
+                      return (
+                        <div className="last-move-line" role="status" aria-live="polite">
+                          <span className="last-move-dot" aria-hidden="true" />
+                          {who}：{lastMove.word}{lastMove.from ? ` ${getCellLabel(...lastMove.from)}→` : ' を打って '}{getCellLabel(...lastMove.to)}
+                          {lastMove.captured && <span className="last-move-capture">（{lastMove.captured}を取った）</span>}
+                        </div>
+                      );
+                    })()}
                     {firstTips && state.phase === 'playing' && !state.winner && (
                       <div role="note" className="mx-auto my-2 max-w-xl text-xs leading-relaxed text-stone-800 bg-amber-50 border border-amber-900/20 rounded-xl px-4 py-3 shadow-sm">
                         <div className="font-extrabold text-amber-950 mb-1">はじめての方へ（4つだけ）</div>
@@ -4039,6 +4116,7 @@ export const App: React.FC = () => {
                     </>
                   );
                 })()}
+                <ControlPanel {...controlPanelProps} handOwner={topHandOwner} />
                 <GameBoard
                   board={state.board}
                   tileBoard={state.tileBoard}
@@ -4070,7 +4148,9 @@ export const App: React.FC = () => {
                   playerNames={playerNames}
                   activeAbilityAnimation={activeAbilityAnimation}
                   explosionEffects={explosionEffects}
+                  lastMove={state.phase === 'playing' || state.phase === 'finished' ? lastMove : null}
                 />
+                <ControlPanel {...controlPanelProps} handOwner={topHandOwner === 'gote' ? 'sente' : 'gote'} />
 
                 {/* Tactical Laser Beam */}
                 {laserEffect && (
@@ -4144,34 +4224,7 @@ export const App: React.FC = () => {
 
               {/* Right Side: Tactical Controls */}
               <div className="control-wrapper">
-                <ControlPanel
-                  turn={state.turn}
-                  phase={state.phase}
-                  customPiecesToPlace={state.turn === 'sente' ? piecesToPlace.sente : piecesToPlace.gote}
-                  winner={state.winner}
-                  logs={state.logs}
-                  selectedPiece={selectedPieceObject}
-                  hoveredPiece={hoveredPiece}
-                  onResetGame={handleResetGame}
-                  onPassTurn={handlePassTurn}
-                  vsAiMode={vsAiMode}
-                  playerNames={playerNames}
-                  capturedPieces={state.capturedPieces}
-                  selectedCapturedPiece={selectedCapturedPiece}
-                  onCapturedPieceClick={handleCapturedPieceClick}
-                  customDecks={state.customDecks}
-                  selectedCustomDeckPiece={selectedCustomDeckPiece}
-                  onCustomDeckPieceClick={handleCustomDeckPieceClick}
-                  sharedPieces={state.sharedPieces}
-                  selectedSharedPiece={selectedSharedPiece}
-                  onSharedPieceClick={handleSharedPieceClick}
-                  onHoverPiece={setHoveredPiece}
-                  isResurrectActive={state.activeAbilityMode && suspendedAbility?.type === 'resurrect'}
-                  isViewerOpponent={shouldRotate}
-                  viewer={onlineMode ? myRole : vsAiMode ? 'sente' : null}
-                  canTriggerActiveAbility={canTriggerActiveAbility}
-                  onTriggerActiveAbility={handleTriggerActiveAbility}
-                />
+                <ControlPanel {...controlPanelProps} hideHands />
               </div>
 
             </div>
