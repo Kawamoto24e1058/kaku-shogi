@@ -1951,3 +1951,37 @@ button, input, [role="button"] {
   margin: 4px 8px !important;
   min-height: 0 !important;
 }
+
+/* スマホ: 盤の下の駒の要約（高さ固定）。PC は右の情報パネルがあるので出さない */
+.piece-bar { display: none; }
+.mobile-peek-backdrop { display: none; }
+@media (max-width: 768px) {
+  .piece-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    margin: 4px 0;
+    padding: 0 10px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(139, 92, 26, 0.15);
+    font-size: 13px;
+  }
+  .piece-bar-name { font-weight: 900; color: #1a1a1a; flex-shrink: 0; }
+  .piece-bar-text { flex: 1; min-width: 0; color: #57534e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .piece-bar-hint { color: #a8a29e; font-size: 12px; }
+  .piece-bar-more {
+    flex-shrink: 0;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(158, 42, 43, 0.4);
+    background: #fff;
+    color: #9e2a2b;
+    font-weight: 800;
+    font-size: 12px;
+  }
+  .mobile-peek-backdrop { display: block; position: fixed; inset: 0; z-index: 299; background: rgba(0, 0, 0, 0.25); }
+  /* 盤の下の要約と「詳しく」があるので、スマホでは情報パネルを重ねて出さない */
+  .cp-info { display: none !important; }
+}

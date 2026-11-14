@@ -28,7 +28,7 @@ import {
   drainTilePlacements
 } from './gameLogic';
 import { tickAbilityCooldowns } from './abilityEngine';
-import { PieceInfo } from './components/PieceInfo';
+import { PieceInfo, pieceSummary } from './components/PieceInfo';
 import { PieceCreator } from './components/PieceCreator';
 import { GameBoard } from './components/GameBoard';
 import { ControlPanel } from './components/ControlPanel';
@@ -197,7 +197,9 @@ export const App: React.FC = () => {
   // 今日のお題で遊んでいるときの日付キー
   const [dailyChallenge, setDailyChallenge] = useState<{ key: string; gameId: string } | null>(null);
   const inspectedPiece = inspected?.phaseGroup === phaseGroup ? inspected.piece : null;
-  const setInspectedPiece = (piece: Piece | null) => setInspected(piece ? { piece, phaseGroup } : null);
+  const setInspectedPiece = (piece: Piece | null) => { setInspected(piece ? { piece, phaseGroup } : null); setPeekOpen(false); };
+  // スマホ: 駒をタップしても盤を隠さない。盤の下の1行に要約を出し、「詳しく」を押したときだけ下から説明を出す
+  const [peekOpen, setPeekOpen] = useState(false);
   const [validMoves, setValidMoves] = useState<[number, number][]>([]);
   const [vsAiMode, setVsAiMode] = useState<boolean>(true);
   const [onlineMode, setOnlineMode] = useState<boolean>(false);
@@ -3831,6 +3833,8 @@ export const App: React.FC = () => {
   const viewerSide: Player | null = onlineMode ? myRole : vsAiMode ? 'sente' : null;
   // 盤の上に相手、すぐ下に自分の持ち駒（盤を回すときは入れ替わる）
   const topHandOwner: Player = shouldRotate ? 'sente' : 'gote';
+  // タップした駒は、盤上の今の状態（充填の残りなど）で表示する
+  const liveInspected = inspectedPiece ? (state.board.flat().find(p => p?.id === inspectedPiece.id) ?? inspectedPiece) : null;
   const controlPanelProps = {
     turn: state.turn,
     phase: state.phase,
@@ -3870,18 +3874,21 @@ export const App: React.FC = () => {
       <SakuraShower />
       
       {/* スマホ: タップした駒の能力（画面下のシート） */}
-      {inspectedPiece && state.phase !== 'start' && state.phase !== 'setup' && (
+      {inspectedPiece && peekOpen && state.phase !== 'start' && state.phase !== 'setup' && (
+        <div className="mobile-peek-backdrop" onClick={() => setPeekOpen(false)} aria-hidden="true" />
+      )}
+      {inspectedPiece && peekOpen && state.phase !== 'start' && state.phase !== 'setup' && (
         <div className="mobile-peek" role="dialog" aria-label={`${inspectedPiece.word} の能力`}>
           <div className="mobile-peek-head">
             <div style={{ minWidth: 0 }}>
               <div className="mobile-peek-title">駒の情報</div>
             </div>
-            <button type="button" className="mobile-peek-close" onClick={() => setInspectedPiece(null)} aria-label="閉じる">×</button>
+            <button type="button" className="mobile-peek-close" onClick={() => setPeekOpen(false)} aria-label="閉じる">×</button>
           </div>
           <div className="mobile-peek-body">
             {/* 相手の駒の能力は、一度使われるまで見せない（PieceInfo） */}
             {inspectedPiece.abilities?.length || inspectedPiece.trait || !inspectedPiece.custom_ability
-              ? <PieceInfo piece={inspectedPiece} viewer={onlineMode ? myRole : vsAiMode ? 'sente' : null} />
+              ? <PieceInfo piece={liveInspected ?? inspectedPiece} viewer={viewerSide} />
               : <p style={{ fontSize: '12px', lineHeight: 1.7, whiteSpace: 'pre-line', margin: 0 }}>{getPieceDescription(inspectedPiece) || '特殊能力はありません。'}</p>}
           </div>
         </div>
@@ -4150,6 +4157,18 @@ export const App: React.FC = () => {
                   explosionEffects={explosionEffects}
                   lastMove={state.phase === 'playing' || state.phase === 'finished' ? lastMove : null}
                 />
+                {/* スマホ: 選んだ駒の要約（高さ固定で、盤がずれない） */}
+                <div className="piece-bar" aria-live="polite">
+                  {inspectedPiece ? (
+                    <>
+                      <span className="piece-bar-name">{liveInspected!.word}</span>
+                      <span className="piece-bar-text">{pieceSummary(liveInspected!, viewerSide)}</span>
+                      <button type="button" className="piece-bar-more" onClick={() => setPeekOpen(true)}>詳しく</button>
+                    </>
+                  ) : (
+                    <span className="piece-bar-hint">駒をタップすると、ここに能力が出ます</span>
+                  )}
+                </div>
                 <ControlPanel {...controlPanelProps} handOwner={topHandOwner === 'gote' ? 'sente' : 'gote'} />
 
                 {/* Tactical Laser Beam */}

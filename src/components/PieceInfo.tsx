@@ -3,6 +3,7 @@ import type { Piece, Player } from '../types';
 import { RangeGrid } from './RangeGrid';
 import { ProgramAbilityList } from './ProgramAbilityList';
 import { MOVE_STYLE_SPECS, type MoveStyle } from '../../shared/moveStyles';
+import { TRAIT_SPECS } from '../../shared/abilityProgram';
 
 /** 相手の駒の能力・性質を見せてよいか（一度使った能力・自分の駒・1台で交代に指すときは見える） */
 export function canSeeDetails(piece: Piece, viewer: Player | null): boolean {
@@ -47,3 +48,18 @@ export const PieceInfo: React.FC<{ piece: Piece; viewer: Player | null }> = ({ p
     </div>
   );
 };
+
+/** 盤の下の1行に出す要約（能力名と、使えるか・あと何手番か） */
+export function pieceSummary(piece: Piece, viewer: Player | null): string {
+  const owner = !viewer ? '' : piece.owner === viewer ? '' : '相手・';
+  const hasProgram = !!piece.abilities?.length || !!piece.trait;
+  if (!hasProgram) return `${owner}${piece.isKing ? '取られたら負け' : 'ふつうの駒'}`;
+  if (!canSeeDetails(piece, viewer)) return `${owner}能力はまだ分からない`;
+  const parts: string[] = [];
+  if (piece.trait) parts.push(TRAIT_SPECS[piece.trait.kind].label);
+  (piece.abilities ?? []).forEach((a, i) => {
+    const cd = piece.abilityCooldowns?.[i] ?? 0;
+    parts.push(`${a.name}${cd >= 99 ? '（使用済み）' : cd > 0 ? `（あと${cd}手番）` : '（使える）'}`);
+  });
+  return owner + parts.join('・');
+}
