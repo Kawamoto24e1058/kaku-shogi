@@ -42,9 +42,12 @@ const WORDS = { A: ['忍者', '雷', '爆弾'], B: ['ゴリラ', '桜', '寿司'
     for (const [label, page] of [['A', A], ['B', B]]) {
       await page.waitForSelector('input[aria-label="駒にする言葉"]', { timeout: 30000 });
       step(`${label}: 駒づくり画面`);
+      // 1枚ずつ作る（工房で完成 →「この駒にする」）
       for (const w of WORDS[label]) {
         await page.fill('input[aria-label="駒にする言葉"]', w);
         await page.click('button:has-text("作る")');
+        await page.waitForSelector('button:has-text("この駒にする")', { timeout: 90000 });
+        await page.click('button:has-text("この駒にする")');
         await page.waitForTimeout(300);
       }
     }
