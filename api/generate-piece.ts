@@ -22,7 +22,8 @@ setExtraNgWords((process.env.NG_WORDS || '').split(','));
 const MAX_WORD_LENGTH = 24;
 const PER_IP_PER_HOUR = Number(process.env.RATE_LIMIT_PER_HOUR || 10);
 const PER_IP_PER_DAY = Number(process.env.RATE_LIMIT_PER_DAY || 40);
-const PER_DEVICE_PER_DAY = Number(process.env.RATE_LIMIT_PER_DEVICE_PER_DAY || 30);
+// 端末ごと: 1局で新しい言葉は最大5回（3枚＋作り直し2回）。3局分の15回にする
+const PER_DEVICE_PER_DAY = Number(process.env.RATE_LIMIT_PER_DEVICE_PER_DAY || 15);
 const GLOBAL_PER_DAY = Number(process.env.GLOBAL_DAILY_LIMIT || 1000);
 // AI に使う時間の上限。混雑時は無料枠の回復（1分あたりの上限）を待つこともあるので長めにとる。
 // 過ぎたら近い単語の流用・待ち行列への登録まで済ませて応答する（ブラウザ側は60秒で打ち切る）
