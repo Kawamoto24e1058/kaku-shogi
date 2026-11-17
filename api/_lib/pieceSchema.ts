@@ -2,7 +2,7 @@
 // enum でエンジンが実行できる値だけに制限する（能力は shared/abilityProgram.ts の部品）。
 import { TRAJECTORIES, VISUAL_THEMES } from '../../shared/abilityCatalog.js';
 import {
-  PROGRAM_TRIGGERS, PROGRAM_CONDITIONS, PROGRAM_OPS, TARGET_WHO, TARGET_PICKS, TILE_KINDS, AURAS, TRAIT_KINDS, DRAWBACK_KINDS } from '../../shared/abilityProgram.js';
+  PROGRAM_TRIGGERS, PROGRAM_CONDITIONS, OFFERED_OPS, TARGET_WHO, TARGET_PICKS, TILE_KINDS, AURAS, TRAIT_KINDS, DRAWBACK_KINDS } from '../../shared/abilityProgram.js';
 import { MOVE_STYLES, MOVE_EXTRAS } from '../../shared/moveStyles.js';
 import { PROMOTION_KINDS } from '../../shared/promotion.js';
 
@@ -35,7 +35,7 @@ const abilityProgram = {
       type: 'ARRAY',
       items: {
         type: 'OBJECT',
-        properties: { op: enumOf(PROGRAM_OPS), value: { type: 'INTEGER' }, tile: enumOf(TILE_KINDS) },
+        properties: { op: enumOf(OFFERED_OPS), value: { type: 'INTEGER' }, tile: enumOf(TILE_KINDS) },
         required: ['op'],
       },
     },

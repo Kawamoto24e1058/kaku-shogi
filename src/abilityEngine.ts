@@ -340,6 +340,22 @@ function applyEffect(state: RunState, effect: ProgramEffect, target: ResolvedTar
       const dy = Math.sign(pos.y - center.y);
       const dx = Math.sign(pos.x - center.x);
       if (!dy && !dx) return false;
+      // 押し出し: 途中に駒がなく盤の外まで押し出せたら、その敵駒を取る（持ち駒にする。相撲の押し出し）
+      if (effect.op === 'PUSH' && enemyVictim) {
+        let cur = pos;
+        let ringOut = false;
+        for (let i = 0; i < value; i++) {
+          const next = { y: cur.y + dy, x: cur.x + dx };
+          if (!inBounds(next.y, next.x)) { ringOut = true; break; }
+          if (board[next.y][next.x]) break;
+          cur = next;
+        }
+        if (ringOut) {
+          const ok = core(state, 'CAPTURE', pos, {});
+          if (ok) log(state, `${label} を盤の外へ押し出して取りました！`);
+          return ok;
+        }
+      }
       const end = effect.op === 'PUSH' ? slide(board, pos, dy, dx, value) : slide(board, pos, -dy, -dx, value, center);
       if (end === pos) return false;
       log(state, `${label} を ${getCellLabel(end.y, end.x)} へ${effect.op === 'PUSH' ? '押し出しました' : '引き寄せました'}！`);

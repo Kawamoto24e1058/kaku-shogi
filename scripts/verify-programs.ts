@@ -205,17 +205,26 @@ for (const op of PROGRAM_OPS) {
 }
 
 {
-  // 引き寄せは隣の駒を選ばない（実際の AI 出力で「周囲1マスの最も近い敵を引き寄せる」が不発だった）
-  const fixed = normalizeAbilityPrograms([{ trigger: 'ON_MOVE', target: { area: 'ADJACENT', who: 'ENEMY', pick: 'NEAREST', count: 1 }, effects: [{ op: 'PULL', value: 1 }] }]);
-  check(!!fixed && fixed[0].target.area === 'RADIUS_2', '「周囲1マスを引き寄せる」は周囲2マスに広げる');
-  const abilities = program({ trigger: 'ON_MOVE', target: { area: 'CROSS', who: 'ENEMY', pick: 'NEAREST', count: 1 }, effects: [{ op: 'PULL', value: 1 }] });
+  // 分かりにくい部品はまとめる（呪い→消滅・麻痺→凍結・引き寄せ→押し出し・防御→盾）
+  // 能力は1つに絞られるので、1つずつ確かめる
+  const opOf = (op: string, who = 'ENEMY') => normalizeAbilityPrograms([{ trigger: 'ON_MOVE', target: { area: 'RADIUS_2', who, pick: 'NEAREST', count: 1 }, effects: [{ op, value: 1 }] }])?.[0]?.effects[0]?.op;
+  const merged = [opOf('DOOM'), opOf('STUN'), opOf('PULL'), opOf('GUARD', 'ALLY')].join(',');
+  check(merged === 'DESTROY,FREEZE,PUSH,SHIELD', '呪い・麻痺・引き寄せ・防御は、消滅・凍結・押し出し・盾にまとめる', merged);
+}
+
+{
+  // 押し出し: 盤の外まで押し出した敵駒は取る（持ち駒になる）。外まで届かなければ動かすだけ
+  const abilities = program({ trigger: 'ON_MOVE', target: { area: 'ROW', who: 'ENEMY', pick: 'NEAREST', count: 1 }, effects: [{ op: 'PUSH', value: 1 }] });
   const board = setup(abilities);
-  // 縦横の隣（4,5）に敵、上に2つ離れて（1,4）に敵。隣の敵は動かせないので、離れた敵を引き寄せる
-  board[3][4] = null;
-  board[2][4] = null;
-  board[1][4] = mk('gote', 'far-enemy');
+  for (let x = 0; x < 9; x++) if (x !== 4) board[4][x] = null;
+  board[4][8] = mk('gote', 'edge-enemy');
   const res = applyAutomatedEffect(board, [4, 4], 'ON_MOVE', 'sente', [], [5, 4]);
-  check(res.triggered && res.board[2][4]?.id === 'far-enemy', '隣の駒ではなく、引き寄せられる駒を選ぶ');
+  check(res.triggered && !res.board.flat().some(p => p?.id === 'edge-enemy') && res.capturedPieces.some(p => p.id === 'edge-enemy'), '盤の端の敵を押し出すと取れる（持ち駒になる）');
+  const board2 = setup(abilities);
+  for (let x = 0; x < 9; x++) if (x !== 4) board2[4][x] = null;
+  board2[4][6] = mk('gote', 'mid-enemy');
+  const res2 = applyAutomatedEffect(board2, [4, 4], 'ON_MOVE', 'sente', [], [5, 4]);
+  check(res2.triggered && res2.board[4][7]?.id === 'mid-enemy' && !res2.capturedPieces.some(p => p.id === 'mid-enemy'), '端まで届かない押し出しは、動かすだけで取らない');
 }
 
 {

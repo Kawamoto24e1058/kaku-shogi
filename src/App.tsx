@@ -85,6 +85,12 @@ export interface AbilityAnimationState {
   visualEffect?: VisualEffect;
 }
 
+/** 墓所（能力で消えた駒）に同じ駒が何度も入らないようにする（実機で同じ駒が10枚並んでいた） */
+function uniqueById(pieces: Piece[]): Piece[] {
+  const seen = new Set<string>();
+  return pieces.filter(p => (seen.has(p.id) ? false : (seen.add(p.id), true)));
+}
+
 export const App: React.FC = () => {
   // ユーザー名の読み込み（localStorage から）
   const savedSenteName = typeof window !== 'undefined' ? (localStorage.getItem('shogi_player_name_sente') || '') : '';
@@ -561,7 +567,7 @@ export const App: React.FC = () => {
             board: boardState,
             capturedPieces: capturedState,
             destroyedPieces: destroyedState,
-            sharedPieces: sharedState,
+            sharedPieces: uniqueById(sharedState),
             selectedCell: null,
             activeAbilityMode: true,
             activeAbilitySource: event.position,
@@ -882,7 +888,7 @@ export const App: React.FC = () => {
             ...prev,
             board: boardState,
             capturedPieces: capturedState,
-            sharedPieces: sharedState,
+            sharedPieces: uniqueById(sharedState),
             destroyedPieces: destroyedState,
             turn: activePlayer,
             selectedCell: null,
@@ -915,7 +921,7 @@ export const App: React.FC = () => {
             ...prev,
             board: boardState,
             capturedPieces: capturedState,
-            sharedPieces: sharedState,
+            sharedPieces: uniqueById(sharedState),
             destroyedPieces: destroyedState,
             selectedCell: null,
             activeAbilityMode: false,
@@ -2380,7 +2386,7 @@ export const App: React.FC = () => {
         capturedPieces: currentCaptured,
         customDecks: nextCustomDecks,
         destroyedPieces: currentDestroyedPieces,
-        sharedPieces: currentShared,
+        sharedPieces: uniqueById(currentShared),
         selectedCell: null,
         activeAbilityMode: false,
         activeAbilitySource: null,
@@ -2465,7 +2471,7 @@ export const App: React.FC = () => {
         capturedPieces: currentCaptured,
         customDecks: nextCustomDecks,
         destroyedPieces: currentDestroyedPieces,
-        sharedPieces: currentShared,
+        sharedPieces: uniqueById(currentShared),
         turn: nextPlayer,
         tileBoard: nextTileBoard,
         selectedCell: null,
@@ -2831,7 +2837,7 @@ export const App: React.FC = () => {
               ...prev,
               board: finalBoard,
               capturedPieces: nextCaptured,
-              sharedPieces: nextShared,
+              sharedPieces: uniqueById(nextShared),
               destroyedPieces: nextDestroyedPieces,
               selectedCell: null,
               activeAbilityMode: false,
@@ -2899,7 +2905,7 @@ export const App: React.FC = () => {
                 ...prev,
                 board: currentBoard,
                 capturedPieces: currentCaptured,
-                sharedPieces: nextShared,
+                sharedPieces: uniqueById(nextShared),
                 turn: activePlayer,
                 selectedCell: null,
                 activeAbilityMode: true,
@@ -3016,7 +3022,7 @@ export const App: React.FC = () => {
           ...prev,
           board: currentBoard,
           capturedPieces: currentCaptured,
-          sharedPieces: nextShared,
+          sharedPieces: uniqueById(nextShared),
           selectedCell: null,
           activeAbilityMode: false,
           activeAbilitySource: null,
@@ -4267,9 +4273,9 @@ export const App: React.FC = () => {
       {state.winner && (() => {
         const winnerName = state.winner === 'sente'
           ? (playerNames.sente || 'プレイヤー1')
-          : (playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2'));
+          : (vsAiMode ? 'CPU' : playerNames.gote || 'プレイヤー2');
         const loserName = state.winner === 'sente'
-          ? (playerNames.gote || (vsAiMode ? 'AI' : 'プレイヤー2'))
+          ? (vsAiMode ? 'CPU' : playerNames.gote || 'プレイヤー2')
           : (playerNames.sente || 'プレイヤー1');
 
         const isUserWinner = onlineMode
@@ -4285,20 +4291,20 @@ export const App: React.FC = () => {
 
         if (isUserWinner === true) {
           themeClass = 'victory-theme';
-          titleText = '作戦完了';
-          subtitleText = `🏆 ${winnerName} の勝利 / MISSION ACCOMPLISHED`;
-          detailsText = '敵陣営の王将の完全排除を確認。戦略的勝利を達成しました。';
+          titleText = '勝ち！';
+          subtitleText = `🏆 ${winnerName} の勝ち`;
+          detailsText = '相手の玉を取りました。';
         } else if (isUserWinner === false) {
           themeClass = 'defeat-theme';
-          titleText = '作戦失敗';
-          subtitleText = `💀 ${winnerName} の勝利 / MISSION FAILED`;
-          detailsText = '玉将の機能停止を検知。防衛システム限界。直ちに後退してください。';
+          titleText = '負け…';
+          subtitleText = `${winnerName} の勝ち`;
+          detailsText = 'あなたの玉が取られました。駒の組み合わせを変えて、もう一度挑戦してみましょう。';
         } else {
           // Local Mode
           themeClass = state.winner === 'sente' ? 'victory-theme' : 'defeat-theme';
           titleText = '対局終了';
-          subtitleText = `🏆 ${winnerName} の勝利 / GAME OVER`;
-          detailsText = `${winnerName} が ${loserName} に勝利しました。卓越した戦略による完全勝利です。`;
+          subtitleText = `🏆 ${winnerName} の勝ち`;
+          detailsText = '';
         }
 
         // 今日のお題: 勝ったら手数を記録し、自己ベストと比べる
@@ -4315,7 +4321,7 @@ export const App: React.FC = () => {
                 {subtitleText}
               </div>
               <p className="game-over-details">
-                {winnerName} が {loserName} に勝利しました。<br />
+                {winnerName} が {loserName} に勝ちました。<br />
                 {detailsText}
               </p>
               {daily && (
@@ -4325,7 +4331,7 @@ export const App: React.FC = () => {
                 </div>
               )}
               <button className="cyber-btn game-over-btn" onClick={handleResetGame}>
-                再起動 (REBOOT SYSTEM)
+                もう一度遊ぶ
               </button>
               <button
                 className="cyber-btn game-over-btn"
