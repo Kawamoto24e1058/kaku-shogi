@@ -55,6 +55,10 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
   const [shownStage, setShownStage] = useState(0);
 
   const maxPieces = 3;
+  // 作り直せる回数（「別の言葉にする」と、できた駒を×で外すのを合わせて）。
+  // 作り直すたびに新しい言葉で AI を呼び、1日の利用枠をすぐ使い切ってしまうため
+  const MAX_REDOS = 2;
+  const [redosLeft, setRedosLeft] = useState(MAX_REDOS);
   const leftRole = onlineMode ? (myRole || 'sente') : player;
   const rightRole = leftRole === 'sente' ? 'gote' : 'sente';
 
@@ -143,7 +147,11 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
     setForging(null);
   };
   // 別の言葉で作り直す（今日のお題は単語が決まっているので出さない）
-  const discardForged = () => setForging(null);
+  const discardForged = () => {
+    if (redosLeft <= 0) return;
+    setRedosLeft(n => n - 1);
+    setForging(null);
+  };
 
   // 不適切な駒の報告。報告した駒はこの端末では二度と出さず、デッキからも外す
   const handleReport = async (index: number) => {
@@ -162,6 +170,9 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
   };
 
   const handleDelete = (index: number) => {
+    if (redosLeft <= 0) return;
+    if (!window.confirm(`「${createdPieces[index]?.word}」を外して作り直しますか？（作り直しはあと${redosLeft}回）`)) return;
+    setRedosLeft(n => n - 1);
     setCreatedPieces(prev => prev.filter((_, i) => i !== index));
   };
 
@@ -252,6 +263,9 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
                 作る
               </button>
             </form>
+            <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+              {redosLeft > 0 ? `作り直しは${MAX_REDOS}回まで（あと${redosLeft}回）。` : '作り直しは使い切りました。この言葉で決まります。'}
+            </p>
             <p style={{ fontSize: '10.5px', color: 'var(--text-muted)', lineHeight: 1.6, marginTop: '6px' }}>
               入力した言葉はAI（Cloudflare Workers AI など）に送られ、できた駒はほかの人とも共有されます。個人情報や人を傷つける言葉は入れないでください。
             </p>
@@ -307,9 +321,9 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
                   <button type="button" className="cyber-btn cyber-btn-purple" onClick={acceptForged} style={{ flex: '1 1 200px', padding: '12px' }}>
                     {createdPieces.length + 1 >= maxPieces ? 'この駒にする（そろった！）' : 'この駒にする → 次の駒へ'}
                   </button>
-                  {!presetWords?.length && (
+                  {!presetWords?.length && redosLeft > 0 && (
                     <button type="button" className="cyber-btn" onClick={discardForged} style={{ flex: '0 1 auto', padding: '12px', background: '#fff', color: 'var(--text-primary)' }}>
-                      別の言葉にする
+                      別の言葉にする（あと{redosLeft}回）
                     </button>
                   )}
                 </div>
@@ -350,7 +364,7 @@ export const PieceCreator: React.FC<PieceCreatorProps> = ({
             <div key={piece.id} className="forged-chip" style={{ borderColor: (piece.appearance?.accent as string | undefined) || 'rgba(139, 92, 26, 0.3)' }}>
               <span className="forged-chip-word">{piece.word}</span>
               <span className="forged-chip-name">《{piece.effect_name}》</span>
-              {!presetWords?.length && !forging && (!onlineMode || !onlineSelfReady) && (
+              {!presetWords?.length && !forging && redosLeft > 0 && (!onlineMode || !onlineSelfReady) && (
                 <button type="button" onClick={() => handleDelete(index)} aria-label={`${piece.word} を外す`} title="外して作り直す">×</button>
               )}
               {onlineConfigured && !forging && (
