@@ -155,7 +155,8 @@ export const OP_SPECS: Record<ProgramOp, OpSpec> = {
   DESTROY: { value: null, cost: 5, label: '消滅させる' },
   // 捕獲は「相手の駒が減る」＋「自分の持ち駒が増える」。CPUが能力を狙うようにしたら、縦一列の捕獲が勝率80%になった
   CAPTURE: { value: null, cost: 8, label: '捕獲して持ち駒にする' },
-  PUSH: { value: [1, 8, 1], cost: 0.8, perValue: 0.3, label: 'マス押し出す' },
+  // 盤の外まで押し出すと取れる（相撲の押し出し）ので、ただ動かすだけより重く見積もる
+  PUSH: { value: [1, 8, 1], cost: 2, perValue: 0.5, label: 'マス押し出す（盤の外に出たら取る）' },
   PULL: { value: [1, 8, 1], cost: 0.8, perValue: 0.3, label: 'マス引き寄せる' },
   SWAP: { value: null, cost: 2, label: '自分と位置を入れ替える' },
   TELEPORT: { value: null, cost: 2, label: 'そのマスへ自分が瞬間移動する' },
@@ -258,10 +259,23 @@ function normalizeTarget(raw: unknown, selfOnly: boolean): ProgramTarget {
   return { area, who, pick, count: clamp(asInt(t.count, 1), 1, 9) };
 }
 
+/**
+ * まとめる部品（実機で「急に駒が消えた」「押し出すのは何のため？」と分かりにくかったもの）
+ *   呪い（N手番後に消える） → 消滅（その場で消える。何が起きたかすぐ分かる）
+ *   麻痺 → 凍結（どちらも「動けない」。名前が2つあると違いが分からない）
+ *   引き寄せ → 押し出し（押し出しは「盤の外に出したら取れる」と目的がはっきりしている）
+ *   防御（N手番効かない） → 盾（1回防ぐ）
+ */
+export const MERGED_OPS: Partial<Record<ProgramOp, ProgramOp>> = { DOOM: 'DESTROY', STUN: 'FREEZE', PULL: 'PUSH', GUARD: 'SHIELD' };
+/** AI に選ばせる部品（まとめた後に残るもの） */
+export const OFFERED_OPS = PROGRAM_OPS.filter(op => !MERGED_OPS[op]);
+
 function normalizeEffect(raw: unknown): ProgramEffect | null {
   const e = (raw && typeof raw === 'object' ? raw : { op: raw }) as Record<string, unknown>;
-  const op = oneOf(PROGRAM_OPS, e.op, '' as ProgramOp);
-  if (!op) return null;
+  const raw0 = oneOf(PROGRAM_OPS, e.op, '' as ProgramOp);
+  if (!raw0) return null;
+  // 分かりにくい・似ている部品は、分かりやすい部品にまとめる（遊ぶ人が「何が起きたか」「何のためか」すぐ分かるように）
+  const op = MERGED_OPS[raw0] ?? raw0;
   const spec = OP_SPECS[op];
   const out: ProgramEffect = { op };
   if (spec.value) out.value = clamp(asInt(e.value, spec.value[2]), spec.value[0], spec.value[1]);

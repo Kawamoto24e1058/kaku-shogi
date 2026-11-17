@@ -426,10 +426,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       })()}
 
       {/* 持ち駒（相手 → 自分の順）。盤の上下に出すときは、ここには墓所だけ */}
-      {(!hideHands || sharedPieces.length > 0 || isResurrectActive) && (
+      {(!hideHands || isResurrectActive) && (
         <div className="cyber-panel cp-hands" style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '10px', background: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(139, 92, 26, 0.15)', borderRadius: '16px' }}>
           {!hideHands && (['gote', 'sente'] as const).map(owner => <React.Fragment key={owner}>{renderHandRow(owner)}</React.Fragment>)}
-          {(sharedPieces.length > 0 || isResurrectActive) && (
+          {/* 墓所はよみがえらせる駒を選ぶときだけ（普段は見せない。今の能力には墓所を使うものがない） */}
+          {isResurrectActive && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <div style={{ fontSize: '11px', fontWeight: 'bold', color: isResurrectActive ? 'var(--color-gold)' : '#78716c' }}>
                 墓所（能力で消えた駒）{isResurrectActive && <span style={{ color: 'var(--color-shinku)' }}>：よみがえらせる駒を選んでください</span>}

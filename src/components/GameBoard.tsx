@@ -1654,6 +1654,26 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       >
         {pieceUI}
         {(() => {
+          // 状態の印（凍結・封印・盾）。能力を受けた駒が「なぜ動けないか」が盤ですぐ分かるように
+          const p = piece;
+          if (!p || (p.isStealth && p.owner !== (onlineMode ? (myRole || 'sente') : (vsAiMode ? 'sente' : localTurn)))) return null;
+          const marks: string[] = [];
+          const frozen = Math.max(p.isFrozen ? (p.frozenDuration ?? 1) : 0, p.stunTurnsRemaining ?? 0);
+          if (frozen > 0) marks.push(`❄${frozen}`);
+          if (p.isSilenced) marks.push('🔇');
+          if (p.hasShield) marks.push('🛡');
+          if ((p.deathCountdown ?? 0) > 0) marks.push(`💀${p.deathCountdown}`);
+          if (!marks.length) return null;
+          return (
+            <span
+              aria-label={`状態: ${marks.join(' ')}`}
+              style={{ position: 'absolute', bottom: '1px', left: '1px', zIndex: 12, pointerEvents: 'none', fontSize: '9px', fontWeight: 900, lineHeight: 1, padding: '2px 3px', borderRadius: '6px', color: '#1e3a8a', background: 'rgba(255, 255, 255, 0.92)', border: '1px solid rgba(30, 58, 138, 0.35)', transform: shouldRotate ? 'rotate(180deg)' : undefined }}
+            >
+              {marks.join('')}
+            </span>
+          );
+        })()}
+        {(() => {
           const pv = isMove ? movePreviews.get(`${y},${x}`) : undefined;
           if (!pv) return null;
           return (

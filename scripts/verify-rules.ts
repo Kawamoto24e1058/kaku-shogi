@@ -48,16 +48,16 @@ const fmt = (m: [number, number][]) => m.map(x => x.join(',')).sort().join(' ');
   const tiles = createEmptyTileBoard(); tiles[5][4] = { effectType: 'SANCTUARY', ownerPlayer: 'sente', duration: 3 };
   check(!!applyTileEffects(b, tiles, 'sente', []).board[5][4]?.hasAbsoluteGuard, '飛行の駒も、聖域の守りは受けられる');
 }
-// 6. 姿を消している敵を、能力で狙えるか
+// 6. 姿を消している敵を、能力で狙えるか（麻痺は凍結にまとめたので、凍結で確かめる）
 {
   const b = fresh();
   b[4][4] = mk({ abilities: normalizeAbilityPrograms([{ trigger: 'ON_MOVE', target: { area: 'ADJACENT', who: 'ENEMY', pick: 'NEAREST', count: 1 }, effects: [{ op: 'STUN', value: 1 }] }])! });
   b[3][4] = { ...pawn, id: 'ghost', owner: 'gote', isStealth: true, isRevealed: false } as Piece;
-  check(!applyAutomatedEffect(b, [4, 4], 'ON_MOVE', 'sente', []).board[3][4]?.stunTurnsRemaining, '姿を消した敵は、狙って選ぶ能力の対象にならない');
+  check(!applyAutomatedEffect(b, [4, 4], 'ON_MOVE', 'sente', []).board[3][4]?.isFrozen, '姿を消した敵は、狙って選ぶ能力の対象にならない');
   const b2 = fresh();
   b2[4][4] = mk({ abilities: normalizeAbilityPrograms([{ trigger: 'ON_MOVE', target: { area: 'ADJACENT', who: 'ENEMY', pick: 'ALL' }, effects: [{ op: 'STUN', value: 1 }] }])! });
   b2[3][4] = { ...pawn, id: 'ghost', owner: 'gote', isStealth: true, isRevealed: false } as Piece;
-  check(!!applyAutomatedEffect(b2, [4, 4], 'ON_MOVE', 'sente', []).board[3][4]?.stunTurnsRemaining, '姿を消した敵も、範囲の「すべて」に効く能力は受ける');
+  check(!!applyAutomatedEffect(b2, [4, 4], 'ON_MOVE', 'sente', []).board[3][4]?.isFrozen, '姿を消した敵も、範囲の「すべて」に効く能力は受ける');
 }
 // 7. 姿を消した敵のマスへ、普通に動いて取れるか
 {
